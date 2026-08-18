@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Handa Admin</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'DM Sans',Segoe UI,Arial,sans-serif;background:#111;color:#F2EDE8;min-height:100vh}
+  a{color:inherit}
+  .hidden{display:none !important}
+  /* ── Login screen ── */
+  #login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .login-box{width:100%;max-width:360px;background:#1C1C1C;border:1px solid #2a2a2a;border-radius:16px;padding:28px}
+  .login-box h1{font-size:20px;margin-bottom:4px}
+  .login-box p{color:#9A9390;font-size:13px;margin-bottom:20px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#9A9390;margin-bottom:6px}
+  .field input{width:100%;padding:11px 13px;border-radius:10px;border:2px solid #333;background:#2D2D2D;color:#F2EDE8;font-size:14px;outline:none}
+  .field input:focus{border-color:#E8392E}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:12px;border-radius:10px;border:none;background:#E8392E;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+  .btn:disabled{opacity:.6;cursor:default}
+  .err{color:#E8392E;font-size:13px;margin-top:10px;min-height:16px}
+  /* ── App shell ── */
+  #app-screen{display:flex;min-height:100vh}
+  nav{width:220px;flex-shrink:0;background:#1C1C1C;border-right:1px solid #2a2a2a;padding:20px 0;display:flex;flex-direction:column}
+  nav .brand{padding:0 20px 20px;font-weight:800;font-size:18px}
+  nav .brand span{color:#E8392E}
+  nav button.nav-item{display:block;width:100%;text-align:left;padding:12px 20px;background:none;border:none;color:#9A9390;font-size:14px;font-weight:600;cursor:pointer;border-left:3px solid transparent}
+  nav button.nav-item.on{color:#F2EDE8;border-left-color:#E8392E;background:rgba(232,57,46,.08)}
+  nav .spacer{flex:1}
+  nav .who{padding:14px 20px;font-size:12px;color:#9A9390;border-top:1px solid #2a2a2a}
+  nav .who b{color:#F2EDE8;display:block;font-size:13px}
+  nav button.logout{margin:8px 20px 0;padding:8px;border-radius:8px;border:1px solid #333;background:transparent;color:#9A9390;font-size:12px;cursor:pointer}
+  main{flex:1;padding:28px 32px;overflow-x:auto}
+  main h2{font-size:20px;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:28px}
+  .card{background:#1C1C1C;border:1px solid #2a2a2a;border-radius:14px;padding:16px}
+  .card .label{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#9A9390;margin-bottom:8px}
+  .card .value{font-size:24px;font-weight:800}
+  .card .breakdown{margin-top:10px;font-size:12px;color:#9A9390;display:flex;flex-direction:column;gap:3px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:#1C1C1C;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #2a2a2a}
+  th{color:#9A9390;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-flex;padding:3px 9px;border-radius:100px;font-size:11px;font-weight:700}
+  .pill.green{background:rgba(46,204,113,.15);color:#2ECC71}
+  .pill.red{background:rgba(232,57,46,.15);color:#E8392E}
+  .pill.amber{background:rgba(245,166,35,.15);color:#F5A623}
+  .pill.grey{background:rgba(154,147,144,.15);color:#9A9390}
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar input,.toolbar select{padding:8px 12px;border-radius:8px;border:2px solid #333;background:#2D2D2D;color:#F2EDE8;font-size:13px}
+  .action-btn{padding:5px 11px;border-radius:8px;border:1px solid #333;background:#242424;color:#F2EDE8;font-size:11px;cursor:pointer}
+  .action-btn:hover{border-color:#E8392E;color:#E8392E}
+  .empty{color:#9A9390;font-size:13px;padding:20px;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-box">
+    <h1>Handa <span style="color:#E8392E">Admin</span></h1>
+    <p>Sign in with an ADMIN-role account.</p>
+    <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="username"></div>
+    <div class="field"><label>Password</label><input id="login-password" type="password" autocomplete="current-password"></div>
+    <button class="btn" id="login-btn" onclick="doLogin()">Sign In</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<div id="app-screen" class="hidden">
+  <nav>
+    <div class="brand">Handa <span>Admin</span></div>
+    <button class="nav-item" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="nav-item" data-tab="users" onclick="switchTab('users')">Users</button>
+    <button class="nav-item" data-tab="vendors" onclick="switchTab('vendors')">Vendors</button>
+    <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
+    <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
+    <div class="spacer"></div>
+    <div class="who"><b id="who-name"></b><span id="who-email"></span></div>
+    <button class="logout" onclick="logout()">Sign out</button>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<script>
+const API = '/api';
+let accessToken = null;
+let currentUser = null;
+
+function authHeaders() {
+  return accessToken ? { 'Authorization': 'Bearer ' + accessToken } : {};
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts.headers || {}) },
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('Request failed (' + res.status + ')'));
+  return data;
+}
+
+function money(kobo) { return '₦' + ((kobo || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const err = document.getElementById('login-err');
+  const btn = document.getElementById('login-btn');
+  err.textContent = '';
+  if (!email || !password) { err.textContent = 'Email and password are required.'; return; }
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try {
+    const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    if (data.user.role !== 'ADMIN') { throw new Error('This account is not an admin account.'); }
+    accessToken = data.accessToken;
+    currentUser = data.user;
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app-screen').classList.remove('hidden');
+    document.getElementById('who-name').textContent = currentUser.name;
+    document.getElementById('who-email').textContent = currentUser.email || currentUser.phone || '';
+    switchTab('dashboard');
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+function logout() {
+  accessToken = null; currentUser = null;
+  document.getElementById('app-screen').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-password').value = '';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  const renderers = { dashboard: renderDashboard, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals };
+  renderers[tab]();
+}
+
+const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red' };
+function pill(status) { return '<span class="pill ' + (STATUS_PILL[status] || 'grey') + '">' + status + '</span>'; }
+
+async function renderDashboard() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Dashboard</h2><div class="empty">Loading...</div>';
+  try {
+    const s = await api('/admin/dashboard');
+    const roleRows = Object.entries(s.usersByRole).map(([k, v]) => k + ': ' + v).join('<br>');
+    const orderRows = Object.entries(s.ordersByStatus).map(([k, v]) => k + ': ' + v).join('<br>') || 'No orders yet';
+    main.innerHTML =
+      '<h2>Dashboard</h2>' +
+      '<div class="grid">' +
+        card('Users', Object.values(s.usersByRole).reduce((a, b) => a + b, 0), roleRows) +
+        card('Orders', Object.values(s.ordersByStatus).reduce((a, b) => a + b, 0), orderRows) +
+        card('Gross Merchandise Value', money(s.grossMerchandiseValueKobo), 'Delivered + confirmed orders') +
+        card('Held in Escrow', money(s.heldEscrowKobo), 'Awaiting release') +
+        card('Open Support Tickets', s.openTickets, '') +
+        card('Pending Withdrawals', s.pendingWithdrawals, '') +
+      '</div>';
+  } catch (e) {
+    main.innerHTML = '<h2>Dashboard</h2><div class="empty">' + e.message + '</div>';
+  }
+}
+function card(label, value, breakdown) {
+  return '<div class="card"><div class="label">' + label + '</div><div class="value">' + value + '</div>' + (breakdown ? '<div class="breakdown">' + breakdown + '</div>' : '') + '</div>';
+}
+
+async function renderUsers() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Users</h2>' +
+    '<div class="toolbar">' +
+      '<input id="user-q" placeholder="Search name/email/phone" onkeydown="if(event.key===\'Enter\')renderUsers()">' +
+      '<select id="user-role"><option value="">All roles</option><option>CUSTOMER</option><option>VENDOR</option><option>RIDER</option><option>SHOPPER</option><option>ADMIN</option></select>' +
+      '<button class="action-btn" onclick="renderUsers()">Filter</button>' +
+    '</div>' +
+    '<div id="users-table" class="empty">Loading...</div>';
+  const role = document.getElementById('user-role') ? document.getElementById('user-role').value : '';
+  const q = document.getElementById('user-q') ? document.getElementById('user-q').value : '';
+  try {
+    const params = new URLSearchParams({ ...(role && { role }), ...(q && { q }) });
+    const data = await api('/admin/users?' + params.toString());
+    const rows = data.users.map(u => {
+      const extra = u.vendorProfile ? u.vendorProfile.bizName + (u.vendorProfile.isVerified ? ' ✓' : '') : (u.riderProfile ? 'Rider' : (u.shopperProfile ? 'Shopper' : ''));
+      return '<tr><td>' + u.name + '</td><td>' + (u.email || u.phone || '—') + '</td><td>' + u.role + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
+        '<td>' + (u.status === 'ACTIVE'
+          ? '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'SUSPENDED\')">Suspend</button>'
+          : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + '</td></tr>';
+    }).join('');
+    document.getElementById('users-table').outerHTML = data.users.length
+      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Detail</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No users found.</div>';
+  } catch (e) {
+    document.getElementById('users-table').textContent = e.message;
+  }
+}
+async function setUserStatus(id, status) {
+  try { await api('/admin/users/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }); renderUsers(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderVendors() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Vendors</h2><div id="vendors-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/vendors');
+    const rows = data.vendors.map(v =>
+      '<tr><td>' + v.bizName + '</td><td>' + v.vtype + '</td><td>' + v.user.name + '</td><td>' + v.user.email + '</td>' +
+      '<td>' + (v.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
+      '<td><button class="action-btn" onclick="setVendorVerified(\'' + v.id + '\',' + (!v.isVerified) + ')">' + (v.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
+    ).join('');
+    document.getElementById('vendors-table').outerHTML = data.vendors.length
+      ? '<table><thead><tr><th>Business</th><th>Type</th><th>Owner</th><th>Email</th><th>Verified</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No vendors found.</div>';
+  } catch (e) {
+    document.getElementById('vendors-table').textContent = e.message;
+  }
+}
+async function setVendorVerified(id, isVerified) {
+  try { await api('/admin/vendors/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderVendors(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderTickets() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Support Tickets</h2><div id="tickets-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/support/tickets/all');
+    const rows = data.tickets.map(t =>
+      '<tr><td>' + t.category + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '</td>' +
+      '<td>' + pill(t.status) + '</td>' +
+      '<td>' + (t.status !== 'RESOLVED' ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">Resolve</button>' : '') + '</td></tr>'
+    ).join('');
+    document.getElementById('tickets-table').outerHTML = data.tickets.length
+      ? '<table><thead><tr><th>Category</th><th>Context</th><th>User</th><th>Description</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No support tickets.</div>';
+  } catch (e) {
+    document.getElementById('tickets-table').textContent = e.message;
+  }
+}
+async function resolveTicket(id) {
+  try { await api('/support/tickets/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'RESOLVED', resolution: 'Resolved by admin' }) }); renderTickets(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderWithdrawals() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Withdrawals</h2><div id="withdrawals-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/withdrawals');
+    const rows = data.withdrawals.map(w =>
+      '<tr><td>' + (w.wallet.user ? w.wallet.user.name : '—') + '</td><td>' + money(w.amountKobo) + '</td><td>' + w.bankName + '</td>' +
+      '<td>' + pill(w.status) + '</td><td>' + new Date(w.requestedAt).toLocaleString() + '</td></tr>'
+    ).join('');
+    document.getElementById('withdrawals-table').outerHTML = data.withdrawals.length
+      ? '<table><thead><tr><th>User</th><th>Amount</th><th>Bank</th><th>Status</th><th>Requested</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No withdrawals yet.</div>';
+  } catch (e) {
+    document.getElementById('withdrawals-table').textContent = e.message;
+  }
+}
+
+document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>

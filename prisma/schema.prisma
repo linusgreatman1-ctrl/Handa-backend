@@ -1,0 +1,885 @@
+// Handa Backend — Database Schema
+// Covers the Handa super-app: restaurant food delivery, raw food (grocery)
+// market with live "Shop For Me" video shopping, catering, home cooks,
+// event planners, custom cakes, an AI meal planner, and the riders /
+// independent shoppers who fulfill deliveries and shopping sessions.
+//
+// Money is stored as Int in kobo (1 NGN = 100 kobo) throughout, matching
+// Paystack's own API units and avoiding float rounding — same convention
+// as passnow-backend-new's Payment.amountKobo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// IDENTITY & ACCESS CONTROL
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  VENDOR // restaurant / grocery / caterer / home cook / event planner / cake designer
+  RIDER
+  SHOPPER // independent live shopper for "Shop For Me" sessions
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+  DELETED
+}
+
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  email        String?       @unique
+  phone        String?       @unique
+  passwordHash String? // null for guest accounts
+  isGuest      Boolean       @default(false)
+  role         Role          @default(CUSTOMER)
+  status       AccountStatus @default(ACTIVE)
+  avatarUrl    String?
+
+  address String?
+  state   String?
+  lga     String?
+  lat     Float?
+  lng     Float?
+
+  // Shared bank-account fields — every payable role (vendor/rider/shopper)
+  // withdraws to the same one linked account, matching the frontend's
+  // single bankName+bankAcct pair per user (no per-role duplication there).
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountName String? // resolved via Paystack NUBAN lookup at link time, not typed freely
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+
+  refreshTokens         RefreshToken[]
+  addresses             Address[]
+  vendorProfile         VendorProfile?
+  riderProfile          RiderProfile?
+  shopperProfile        ShopperProfile?
+  wallet                Wallet?
+  savedPaymentMethods   SavedPaymentMethod[]
+  ordersAsCustomer      Order[]               @relation("OrderCustomer")
+  bookingsAsCustomer    Booking[]             @relation("BookingCustomer")
+  shopSessionsAsCustomer ShopSession[]        @relation("ShopSessionCustomer")
+  registeredSellers     RegisteredSeller[]
+  ratingsGiven          Rating[]              @relation("RatingRater")
+  ratingsReceived       Rating[]              @relation("RatingRatee")
+  supportTickets        SupportTicket[]
+  notifications         Notification[]
+  notificationPref      NotificationPreference?
+  chatParticipants      ChatParticipant[]
+  chatMessages          ChatMessage[]
+
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  userAgent String?
+  ipAddress String?
+  revoked   Boolean   @default(false)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Saved delivery addresses, distinct from the single "home" address on User.
+model Address {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String // "Home", "Office", ...
+  line       String
+  state      String?
+  lga        String?
+  lat        Float?
+  lng        Float?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ROLE PROFILES
+// ─────────────────────────────────────────────────────────────────────────
+
+enum VendorType {
+  GROCERY // raw food market store
+  CATERER
+  HOME_COOK
+  EVENT_PLANNER
+  CAKE_DESIGNER
+}
+
+model VendorProfile {
+  id     String     @id @default(uuid())
+  userId String     @unique
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vtype  VendorType
+
+  bizName     String
+  description String?
+  bio         String?
+  emoji       String? // icon shown in the catalog card
+  bannerColor String?
+  tags        String[] @default([]) // cuisine tags / specialties / service tags
+  languages   String[] @default([])
+
+  isOnline       Boolean  @default(false) // "Go Online" toggle — receives new order broadcasts when true
+  isVerified     Boolean  @default(false)
+  ratingAvg      Float    @default(0)
+  ratingCount    Int      @default(0)
+
+  minOrderKobo     Int @default(0)
+  baseDeliveryFeeKobo Int @default(40000) // ₦400 base, matches frontend
+  prepTimeMinutes  Int? // typical prep/response time shown on cards
+  hourlyRateKobo   Int? // home cooks: rate for a cooking session
+  ratePeriod       String? // e.g. "per hour", "per event" — home cook / event planner
+
+  featuredUntil DateTime? // active "Get Featured" boost expiry
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  menuItems        MenuItem[]
+  servicePackages  ServicePackage[]
+  ordersReceived   Order[]           @relation("OrderVendor")
+  bookingsReceived Booking[]         @relation("BookingVendor")
+  shopSessionStore ShopSession[]     @relation("ShopSessionStore")
+  featureBoosts    FeatureBoost[]
+  commissionPeriods CommissionPeriod[]
+
+  @@index([vtype])
+  @@index([isOnline])
+}
+
+model RiderProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleType String? // "Motorcycle", "Bicycle", "Car"...
+  plateNumber String?
+
+  isOnline    Boolean @default(false)
+  ratingAvg   Float   @default(0)
+  ratingCount Int     @default(0)
+  deliveries  Int     @default(0)
+  acceptRate  Float   @default(0) // percent, 0-100
+
+  currentLat            Float?
+  currentLng            Float?
+  locationUpdatedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ordersAsRider       Order[]       @relation("OrderRider")
+  shopSessionsAsRider ShopSession[] @relation("ShopSessionRider")
+
+  @@index([isOnline])
+}
+
+model ShopperProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  market      String? // usual market they shop from
+  specialties String[] @default([])
+
+  isOnline    Boolean @default(false)
+  ratingAvg   Float   @default(0)
+  ratingCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shopSessions ShopSession[]      @relation("ShopSessionShopper")
+
+  @@index([isOnline])
+}
+
+// Market sellers a shopper buys from during a session — paid directly out
+// of session escrow at handover, not through the platform catalog.
+model RegisteredSeller {
+  id                String   @id @default(uuid())
+  shopperId         String
+  shopper           User     @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  name              String
+  phone             String
+  market            String?
+  bankName          String
+  bankAccountNumber String
+  bankAccountName   String
+  createdAt         DateTime @default(now())
+
+  payouts SellerPayout[]
+
+  @@index([shopperId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CATALOG
+// ─────────────────────────────────────────────────────────────────────────
+
+// One model backs dishes (RESTAURANT), raw items (GROCERY), cook specials
+// (HOME_COOK), and cakes (CAKE_DESIGNER) — they're all "a thing this vendor
+// sells", differing only in which fields they use.
+model MenuItem {
+  id          String        @id @default(uuid())
+  vendorId    String
+  vendor      VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  emoji       String?
+  imageUrl    String?
+  category    String? // e.g. "Swallow", "Drinks" (restaurant) / "Tubers", "Grains" (grocery)
+  unit        String? // grocery items: "kg", "paint bucket", "derica"...
+  priceKobo   Int
+  prepTimeMinutes Int?
+  popular     Boolean @default(false)
+  inStock     Boolean @default(true)
+  deliveryDays Int? // cakes: lead time in days
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([vendorId])
+  @@index([vendorId, category])
+}
+
+enum PackageKey {
+  BASIC
+  STANDARD
+  PREMIUM
+  WEDDING
+  CORPORATE
+  BIRTHDAY
+  BURIAL
+  NAMING
+}
+
+// Fixed-tier service packages sold by caterers and event planners.
+model ServicePackage {
+  id        String        @id @default(uuid())
+  vendorId  String
+  vendor    VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  key       PackageKey
+  label     String
+  priceKobo Int
+  includes  String[] @default([])
+  createdAt DateTime @default(now())
+
+  bookings Booking[]
+
+  @@index([vendorId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORDERS (restaurant / raw food / cake)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum OrderType {
+  RAW_FOOD
+  CAKE
+}
+
+enum OrderStatus {
+  PENDING // awaiting vendor accept
+  ACCEPTED
+  PREPARING
+  READY_FOR_PICKUP
+  RIDER_ASSIGNED
+  PICKED_UP
+  DELIVERED
+  CONFIRMED // customer confirmed receipt — triggers final escrow release
+  CANCELLED
+  DISPUTED
+}
+
+enum PaymentMethod {
+  CARD
+  BANK_TRANSFER
+  USSD
+  WALLET
+  CASH_ON_DELIVERY
+  POS
+}
+
+model Order {
+  id            String        @id @default(uuid())
+  orderNumber   String        @unique
+  type          OrderType
+  status        OrderStatus   @default(PENDING)
+  paymentMethod PaymentMethod
+
+  customerId String
+  customer   User          @relation("OrderCustomer", fields: [customerId], references: [id])
+  vendorId   String
+  vendor     VendorProfile @relation("OrderVendor", fields: [vendorId], references: [id])
+  riderId    String?
+  rider      RiderProfile? @relation("OrderRider", fields: [riderId], references: [id])
+
+  items OrderItem[]
+
+  subtotalKobo    Int
+  deliveryFeeKobo Int @default(0)
+  platformFeeKobo Int @default(0)
+  totalKobo       Int
+
+  deliveryAddress String
+  deliveryLat     Float?
+  deliveryLng     Float?
+  note            String?
+
+  cancelReason String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  acceptedAt   DateTime?
+  readyAt      DateTime?
+  pickedUpAt   DateTime?
+  deliveredAt  DateTime?
+  confirmedAt  DateTime?
+  cancelledAt  DateTime?
+
+  escrowHolds EscrowHold[]
+  ratings     Rating[]
+
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([riderId])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String?
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
+  name       String // snapshot, survives menu item edits/deletes
+  priceKobo  Int // snapshot
+  qty        Int
+  note       String?
+
+  @@index([orderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BOOKINGS (catering / home cook / event planning)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum BookingType {
+  CATERING
+  HOME_COOK
+  EVENT_PLANNING
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  DECLINED
+  CONFIRMED // deposit paid into escrow
+  COMPLETED
+  CANCELLED
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  bookingNumber String        @unique
+  type          BookingType
+  status        BookingStatus @default(REQUESTED)
+
+  customerId String
+  customer   User          @relation("BookingCustomer", fields: [customerId], references: [id])
+  vendorId   String
+  vendor     VendorProfile @relation("BookingVendor", fields: [vendorId], references: [id])
+
+  servicePackageId String?
+  servicePackage   ServicePackage? @relation(fields: [servicePackageId], references: [id])
+
+  // Free-form selected menu items / add-ons, e.g. [{menuItemId, name, qty, priceKobo}]
+  selectedItems Json?
+
+  eventDate   DateTime?
+  eventTime   String?
+  venue       String?
+  guestCount  Int?
+  phone       String?
+  notes       String?
+
+  paymentMethod PaymentMethod
+  totalKobo     Int
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  confirmedAt DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  escrowHolds EscrowHold[]
+  ratings     Rating[]
+
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LIVE SHOPPING ("Shop For Me")
+// ─────────────────────────────────────────────────────────────────────────
+
+enum ShopSessionStatus {
+  SEARCHING // looking for an available shopper
+  MATCHED
+  BUILDING_LIST
+  LIVE_CALL
+  PACKAGING
+  FINDING_RIDER
+  RIDER_ASSIGNED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+model ShopSession {
+  id     String            @id @default(uuid())
+  status ShopSessionStatus @default(SEARCHING)
+
+  customerId String
+  customer   User            @relation("ShopSessionCustomer", fields: [customerId], references: [id])
+  shopperId  String?
+  shopper    ShopperProfile? @relation("ShopSessionShopper", fields: [shopperId], references: [id])
+  storeId    String? // optional: a specific GROCERY vendor this session targets
+  store      VendorProfile?  @relation("ShopSessionStore", fields: [storeId], references: [id])
+  riderId    String?
+  rider      RiderProfile?   @relation("ShopSessionRider", fields: [riderId], references: [id])
+
+  items ShopSessionItem[]
+
+  sessionFeeKobo Int // tiered by item count: <=5 items ₦3,000 / <=10 ₦4,000 / else ₦5,000
+  riderFeeKobo   Int @default(0)
+  itemsTotalKobo Int @default(0) // sum of approved items' price, filled in as shopper prices them
+  depositKobo    Int @default(0) // total confirmed Paystack payment received for this session (session fee + shopping budget for market sellers)
+
+  deliveryAddress String?
+  deliveryLat     Float?
+  deliveryLng     Float?
+
+  createdAt   DateTime  @default(now())
+  matchedAt   DateTime?
+  deliveredAt DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  escrowHolds    EscrowHold[]
+  sellerPayouts  SellerPayout[]
+  ratings        Rating[]
+
+  @@index([customerId])
+  @@index([shopperId])
+  @@index([riderId])
+  @@index([status])
+}
+
+enum ShopItemAddedBy {
+  CUSTOMER
+  SHOPPER
+}
+
+model ShopSessionItem {
+  id          String          @id @default(uuid())
+  sessionId   String
+  session     ShopSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text        String // free-text request, e.g. "2kg tomatoes"
+  priceKobo   Int? // filled in by the shopper once found in-market
+  approved    Boolean         @default(false)
+  addedBy     ShopItemAddedBy @default(CUSTOMER)
+  createdAt   DateTime        @default(now())
+  approvedAt  DateTime?
+
+  @@index([sessionId])
+}
+
+model SellerPayout {
+  id         String            @id @default(uuid())
+  sessionId  String
+  session    ShopSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sellerId   String
+  seller     RegisteredSeller  @relation(fields: [sellerId], references: [id])
+  amountKobo Int
+  status     PayoutStatus      @default(PENDING)
+  reference  String?
+  paidAt     DateTime?
+  createdAt  DateTime          @default(now())
+
+  @@index([sessionId])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WALLET, ESCROW, WITHDRAWALS, PAYMENTS
+// ─────────────────────────────────────────────────────────────────────────
+
+model Wallet {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceKobo  Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  transactions Transaction[]
+  withdrawals  Withdrawal[]
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  ESCROW_HOLD
+  ESCROW_RELEASE
+  ESCROW_REFUND
+  PAYOUT // e.g. a rider/vendor/shopper receiving a released escrow amount
+  COMMISSION_PAYMENT
+  FEATURE_BOOST_PAYMENT
+  ADJUSTMENT
+}
+
+// Generic reference to whatever this transaction/hold is about, since it
+// can be an Order, a Booking, or a ShopSession.
+enum ContextType {
+  ORDER
+  BOOKING
+  SHOP_SESSION
+}
+
+model Transaction {
+  id             String          @id @default(uuid())
+  walletId       String
+  wallet         Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type           TransactionType
+  amountKobo     Int // positive = credit, negative = debit
+  balanceAfterKobo Int
+  contextType    ContextType?
+  contextId      String?
+  reference      String?
+  description    String?
+  createdAt      DateTime        @default(now())
+
+  @@index([walletId])
+  @@index([contextType, contextId])
+}
+
+enum EscrowStatus {
+  HELD
+  RELEASED
+  DISPUTED
+  REFUNDED
+}
+
+enum PayeeRole {
+  VENDOR
+  RIDER
+  SHOPPER
+  SELLER
+  PLATFORM
+}
+
+// One hold per beneficiary so payouts can be released itemized — an Order
+// has one (to the vendor, plus one to the rider once delivered); a
+// ShopSession has up to three (session fee to the shopper, delivery fee to
+// the rider, item costs to market sellers via SellerPayout).
+model EscrowHold {
+  id          String       @id @default(uuid())
+  contextType ContextType
+  orderId     String?
+  order       Order?       @relation(fields: [orderId], references: [id])
+  bookingId   String?
+  booking     Booking?     @relation(fields: [bookingId], references: [id])
+  shopSessionId String?
+  shopSession ShopSession? @relation(fields: [shopSessionId], references: [id])
+
+  payerId   String
+  payeeId   String? // null when payeeRole = PLATFORM
+  payeeRole PayeeRole
+  amountKobo Int
+  status    EscrowStatus @default(HELD)
+
+  autoReleaseAt DateTime?
+  releasedAt    DateTime?
+  refundedAt    DateTime?
+  disputeId     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([contextType, orderId])
+  @@index([contextType, bookingId])
+  @@index([contextType, shopSessionId])
+  @@index([payerId])
+  @@index([payeeId])
+  @@index([status])
+}
+
+model Withdrawal {
+  id                String           @id @default(uuid())
+  userId            String
+  walletId          String
+  wallet            Wallet           @relation(fields: [walletId], references: [id])
+  amountKobo        Int
+  bankName          String
+  bankAccountNumber String
+  bankAccountName   String
+  status            WithdrawalStatus @default(PENDING)
+  paystackTransferCode String?
+  failureReason     String?
+  requestedAt       DateTime         @default(now())
+  completedAt       DateTime?
+
+  @@index([userId])
+  @@index([status])
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// A tokenized reference to a card, never the raw PAN — mirrors what
+// Paystack's charge-authorization flow returns.
+model SavedPaymentMethod {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gateway           String   @default("paystack")
+  authorizationCode String
+  cardType          String?
+  last4             String?
+  expMonth          String?
+  expYear           String?
+  bank              String?
+  isDefault         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@unique([userId, authorizationCode])
+}
+
+// Idempotency log for Paystack webhook deliveries — (reference) unique so a
+// duplicate delivery of the same event is a safe no-op.
+model PaymentWebhookEvent {
+  id          String   @id @default(uuid())
+  provider    String   @default("paystack")
+  eventRef    String   @unique
+  payload     Json
+  processedAt DateTime @default(now())
+}
+
+model CommissionPeriod {
+  id          String              @id @default(uuid())
+  vendorId    String
+  vendor      VendorProfile       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  periodStart DateTime
+  periodEnd   DateTime
+  amountDueKobo  Int
+  amountPaidKobo Int              @default(0)
+  status      CommissionStatus    @default(PENDING)
+  paidAt      DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@index([vendorId])
+}
+
+enum CommissionStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+model FeatureBoost {
+  id            String        @id @default(uuid())
+  vendorId      String
+  vendor        VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  amountPaidKobo Int
+  startAt       DateTime      @default(now())
+  endAt         DateTime
+  createdAt     DateTime      @default(now())
+
+  @@index([vendorId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// RATINGS, SUPPORT, NOTIFICATIONS, CHAT
+// ─────────────────────────────────────────────────────────────────────────
+
+enum RateeRole {
+  VENDOR
+  RIDER
+  SHOPPER
+}
+
+model Rating {
+  id          String      @id @default(uuid())
+  contextType ContextType
+  orderId     String?
+  order       Order?      @relation(fields: [orderId], references: [id])
+  bookingId   String?
+  booking     Booking?    @relation(fields: [bookingId], references: [id])
+  shopSessionId String?
+  shopSession ShopSession? @relation(fields: [shopSessionId], references: [id])
+
+  raterId   String
+  rater     User      @relation("RatingRater", fields: [raterId], references: [id])
+  rateeId   String
+  ratee     User      @relation("RatingRatee", fields: [rateeId], references: [id])
+  rateeRole RateeRole
+
+  score   Int // 1-5
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([orderId, rateeRole])
+  @@unique([bookingId, rateeRole])
+  @@unique([shopSessionId, rateeRole])
+  @@index([rateeId])
+}
+
+enum TicketContext {
+  ORDER
+  SHOP_SESSION
+  RIDER
+  VENDOR
+  CUSTOMER
+  GENERAL
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id          String        @id @default(uuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  context     TicketContext
+  category    String
+  description String?
+  contextId   String? // orderId / shopSessionId / riderId etc., loosely typed on purpose
+  status      TicketStatus  @default(OPEN)
+  resolution  String?
+  createdAt   DateTime      @default(now())
+  resolvedAt  DateTime?
+
+  @@index([userId])
+  @@index([status])
+}
+
+enum NotificationType {
+  ORDER_UPDATE
+  PROMOTION
+  RIDER_ALERT
+  NEW_FEATURE
+  CHAT
+  SYSTEM
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  read      Boolean           @default(false)
+  createdAt DateTime          @default(now())
+
+  @@index([userId, read])
+}
+
+model NotificationPreference {
+  id            String  @id @default(uuid())
+  userId        String  @unique
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderUpdates  Boolean @default(true)
+  promotions    Boolean @default(true)
+  riderAlerts   Boolean @default(true)
+  newFeatures   Boolean @default(true)
+}
+
+enum ChatContextType {
+  ORDER
+  BOOKING
+  SHOP_SESSION
+  SUPPORT
+  DIRECT
+}
+
+model ChatThread {
+  id          String           @id @default(uuid())
+  contextType ChatContextType
+  contextId   String?
+  createdAt   DateTime         @default(now())
+
+  participants ChatParticipant[]
+  messages     ChatMessage[]
+
+  @@index([contextType, contextId])
+}
+
+model ChatParticipant {
+  id         String     @id @default(uuid())
+  threadId   String
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime?
+
+  @@unique([threadId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id            String     @id @default(uuid())
+  threadId      String
+  thread        ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId      String
+  sender        User       @relation(fields: [senderId], references: [id])
+  body          String
+  attachmentUrl String?
+  createdAt     DateTime   @default(now())
+
+  @@index([threadId])
+}

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "handa-backend-dev",
+      "runtimeExecutable": "railway",
+      "runtimeArgs": ["run", "node", "src/server.js"],
+      "port": 4000
+    }
+  ]
+}
