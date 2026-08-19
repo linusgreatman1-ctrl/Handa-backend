@@ -1123,6 +1123,89 @@ async function submitAddRole(){
   }
 }
 
+// ── KYC documents ─────────────────────────────────────────────────────
+// Real upload + admin review, replacing the hardcoded "✅ Verified" badges
+// that used to sit on the shopper profile screen. window._kycDocs is the
+// caller's own submitted documents (any role) — profile screens render
+// whichever subset of doc types applies to them.
+window._kycDocs = null;
+var KYC_DOC_TYPES = {
+  vendor: [['GOVERNMENT_ID','Government ID'], ['PROOF_OF_ADDRESS','Proof of Address']],
+  rider: [['GOVERNMENT_ID','Government ID'], ['PROOF_OF_ADDRESS','Proof of Address'], ['VEHICLE_DOCUMENT','Vehicle Document']],
+  shopper: [['GOVERNMENT_ID','Government ID'], ['PROOF_OF_ADDRESS','Proof of Address']],
+};
+async function loadMyKycDocuments(){
+  try{ var res = await api('/kyc/documents'); window._kycDocs = res.documents; }
+  catch(e){ window._kycDocs = window._kycDocs || []; }
+}
+function _kycStatusPill(doc){
+  if (!doc) return '<span style="font-size:11px;color:#9A9390;background:#242424;padding:3px 9px;border-radius:20px;">Not submitted</span>';
+  if (doc.status === 'APPROVED') return '<span style="font-size:11px;color:#4ADE80;background:rgba(46,204,113,.15);padding:3px 9px;border-radius:20px;font-weight:700;">Approved &#x2705;</span>';
+  if (doc.status === 'REJECTED') return '<span style="font-size:11px;color:#E8392E;background:rgba(232,57,46,.12);padding:3px 9px;border-radius:20px;font-weight:700;">Rejected'+(doc.rejectionReason?' — '+doc.rejectionReason:'')+'</span>';
+  return '<span style="font-size:11px;color:#F5A623;background:rgba(245,166,35,.15);padding:3px 9px;border-radius:20px;font-weight:700;">Pending review</span>';
+}
+function renderKycSection(profileType){
+  var types = KYC_DOC_TYPES[profileType] || [];
+  var docsByType = {};
+  (window._kycDocs||[]).forEach(function(d){
+    var existing = docsByType[d.docType];
+    if (!existing || new Date(d.createdAt) > new Date(existing.createdAt)) docsByType[d.docType] = d;
+  });
+  var rows = types.map(function(t){
+    var doc = docsByType[t[0]];
+    var canUpload = !doc || doc.status === 'REJECTED';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2A2850;">'
+      + '<div><div style="font-size:13px;color:#F2EDE8;font-weight:600;">'+t[1]+'</div><div style="margin-top:4px;">'+_kycStatusPill(doc)+'</div></div>'
+      + (canUpload ? '<button onclick="triggerKycUpload(\''+t[0]+'\',\''+profileType+'\')" style="background:#242424;border:1px solid #2A2850;border-radius:7px;padding:6px 11px;color:#9A9390;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(doc?'Re-upload':'Upload')+'</button>' : '')
+      + '</div>';
+  }).join('');
+  return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;" id="kyc-section-'+profileType+'">'
+    + '<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:4px;">&#x1F4C4; Documents</div>'
+    + '<div style="font-size:11px;color:#9A9390;margin-bottom:8px;">Submit these to get verified and go online.</div>'
+    + rows + '</div>';
+}
+var _kycUploadTarget=null, _kycUploadProfileType=null;
+function triggerKycUpload(docType, profileType){
+  _kycUploadTarget = docType; _kycUploadProfileType = profileType;
+  var inp = document.getElementById('kyc-file-input');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type='file'; inp.accept='image/*'; inp.id='kyc-file-input'; inp.style.display='none';
+    inp.onchange = function(){ submitKycUpload(inp); };
+    document.body.appendChild(inp);
+  }
+  inp.click();
+}
+async function submitKycUpload(inputEl){
+  var file = inputEl.files && inputEl.files[0];
+  var docType = _kycUploadTarget, profileType = _kycUploadProfileType;
+  inputEl.value = '';
+  if (!file || !docType) return;
+  var fd = new FormData();
+  fd.append('document', file);
+  fd.append('docType', docType);
+  try{
+    // Raw fetch, not api() — a FormData body needs the browser to set its
+    // own multipart Content-Type (with boundary); api() always forces
+    // application/json.
+    var res = await fetch(API_BASE+'/kyc/documents', { method:'POST', headers:{ 'Authorization':'Bearer '+_accessToken }, body: fd });
+    var data = {}; try{ data = await res.json(); }catch(e){}
+    if (!res.ok) throw new Error(data.error||'Upload failed');
+    showToast&&showToast('Document submitted for review','success');
+    await loadMyKycDocuments();
+    var renderers = { vendor: renderVendorProfile, rider: renderRiderProfile, shopper: buildShopperProfile };
+    if (profileType && renderers[profileType]) renderers[profileType]();
+  }catch(err){
+    showToast&&showToast(err.message||'Could not upload document','warning');
+  }
+}
+function refreshKycSection(profileType){
+  loadMyKycDocuments().then(function(){
+    var el = document.getElementById('kyc-section-'+profileType);
+    if (el) el.outerHTML = renderKycSection(profileType);
+  });
+}
+
 // Fetches real vendors + their menu items and reshapes them into the exact
 // D.rests/D.dishes/D.raw/D.rawStores/D.caterers/D.ep/D.cooks/D.cakes/
 // D.shoppers structure the prototype's existing render functions already
@@ -4360,9 +4443,11 @@ function renderVendorProfile(){
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="showEditProcedure(\'Profile\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
+    +renderKycSection('vendor')
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
+  refreshKycSection('vendor');
 }
 
 function riderNav(tab){
@@ -4509,9 +4594,11 @@ function renderRiderProfile(){
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="showEditProcedure(\''+r[0]+'\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
+    +renderKycSection('rider')
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
+  refreshKycSection('rider');
 }
 
 function showOrderProcessing(){
@@ -5417,8 +5504,11 @@ function showScreen(screenId){ shopperNav('home'); }
 
 
 var _vendorOnline=false;
-function toggleVendorOnline(){
-  _vendorOnline=!_vendorOnline;
+async function toggleVendorOnline(){
+  var goingOnline=!_vendorOnline;
+  try{ await api('/users/me/availability',{method:'PATCH',body:JSON.stringify({isOnline:goingOnline,profile:'vendor'})}); }
+  catch(err){ showToast&&showToast(err.message||'Could not update availability','warning'); return; }
+  _vendorOnline=goingOnline;
   clearTimeout(window._vendorOnlineTimer);
   var dot=document.getElementById('vendor-status-dot');
   var lbl=document.getElementById('vendor-status-lbl');
@@ -5683,7 +5773,6 @@ function buildShopperProfile(){
   var nm=S.user?S.user.name:'Aisha Abdullahi';
   var em=S.user?(S.user.email||'aisha@email.com'):'aisha@email.com';
   var prows=[['Full Name',nm],['Email',em],['Phone','+234 804 567 8901'],['NIN','***** 8901 (Verified)'],['State of Origin','Lagos State'],['Home Market','Mile 12, Lagos']];
-  var docs=['Government ID','Proof of Address','BVN'];
   var html=''
     +'<div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:20px;padding:20px;margin-bottom:16px;">'
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
@@ -5718,10 +5807,7 @@ function buildShopperProfile(){
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Session Fee</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">&#x20a6;1,500</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Platform Cut</span><span style="font-size:13px;font-weight:700;color:#E8392E;">20% (&#x20a6;300)</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:12px;color:#9A9390;">Your Earnings</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">80% (&#x20a6;1,200)</span></div></div>'
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
-    +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:12px;">&#x1F4C4; Documents</div>'
-    +docs.map(function(doc){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#F2EDE8;">'+doc+'</span><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;color:#9A9390;">Verified &#x2705;</span><button onclick="showEditProcedure(\'Document\')" style="background:#242424;border:1px solid #2A2850;border-radius:7px;padding:4px 9px;color:#9A9390;font-size:11px;cursor:pointer;">Update</button></div></div>';}).join('')
-    +'</div>'
+    +renderKycSection('shopper')
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;overflow:hidden;margin-bottom:14px;">'
     +'<div onclick="showNotificationsProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F514;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Notifications</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
     +'<div onclick="showSafetyProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F6E1;&#xFE0F;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Safety & Security</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
@@ -5730,6 +5816,7 @@ function buildShopperProfile(){
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-weight:800;font-size:14px;cursor:pointer;">Sign Out</button>';
   body.innerHTML=html;
   renderSellerRegistryList();
+  refreshKycSection('shopper');
 }
 
 

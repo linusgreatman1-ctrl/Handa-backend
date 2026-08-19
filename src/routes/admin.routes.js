@@ -12,6 +12,11 @@ router.patch("/users/:id/status", ctrl.updateUserStatus);
 
 router.get("/vendors", ctrl.listVendorsForAdmin);
 router.patch("/vendors/:id/verify", ctrl.setVendorVerified);
+router.patch("/riders/:id/verify", ctrl.setRiderVerified);
+router.patch("/shoppers/:id/verify", ctrl.setShopperVerified);
+
+router.get("/kyc-documents", ctrl.listKycDocumentsForAdmin);
+router.patch("/kyc-documents/:id", ctrl.reviewKycDocument);
 
 router.get("/withdrawals", ctrl.listWithdrawalsForAdmin);
 

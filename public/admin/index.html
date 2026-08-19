@@ -77,6 +77,7 @@
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
     <button class="nav-item" data-tab="shopsessions" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
+    <button class="nav-item" data-tab="kyc" onclick="switchTab('kyc')">KYC Documents</button>
     <div class="spacer"></div>
     <div class="who"><b id="who-name"></b><span id="who-email"></span></div>
     <button class="logout" onclick="logout()">Sign out</button>
@@ -140,7 +141,7 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions };
+  const renderers = { dashboard: renderDashboard, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, kyc: renderKycDocuments };
   renderers[tab]();
 }
 
@@ -189,10 +190,16 @@ async function renderUsers() {
     const data = await api('/admin/users?' + params.toString());
     const rows = data.users.map(u => {
       const extra = u.vendorProfile ? u.vendorProfile.bizName + (u.vendorProfile.isVerified ? ' ✓' : '') : (u.riderProfile ? 'Rider' : (u.shopperProfile ? 'Shopper' : ''));
+      let verifyBtn = '';
+      if (u.riderProfile) {
+        verifyBtn = '<button class="action-btn" onclick="setProfileVerified(\'rider\',\'' + u.riderProfile.id + '\',' + (!u.riderProfile.isVerified) + ')">' + (u.riderProfile.isVerified ? 'Unverify' : 'Verify') + '</button>';
+      } else if (u.shopperProfile) {
+        verifyBtn = '<button class="action-btn" onclick="setProfileVerified(\'shopper\',\'' + u.shopperProfile.id + '\',' + (!u.shopperProfile.isVerified) + ')">' + (u.shopperProfile.isVerified ? 'Unverify' : 'Verify') + '</button>';
+      }
       return '<tr><td>' + u.name + '</td><td>' + (u.email || u.phone || '—') + '</td><td>' + u.role + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
         '<td>' + (u.status === 'ACTIVE'
           ? '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'SUSPENDED\')">Suspend</button>'
-          : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + '</td></tr>';
+          : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + ' ' + verifyBtn + '</td></tr>';
     }).join('');
     document.getElementById('users-table').outerHTML = data.users.length
       ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Detail</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
@@ -203,6 +210,10 @@ async function renderUsers() {
 }
 async function setUserStatus(id, status) {
   try { await api('/admin/users/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }); renderUsers(); }
+  catch (e) { alert(e.message); }
+}
+async function setProfileVerified(kind, id, isVerified) {
+  try { await api('/admin/' + kind + 's/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderUsers(); }
   catch (e) { alert(e.message); }
 }
 
@@ -265,6 +276,43 @@ async function renderWithdrawals() {
   } catch (e) {
     document.getElementById('withdrawals-table').textContent = e.message;
   }
+}
+
+const KYC_STATUS_FILTERS = ['PENDING', 'APPROVED', 'REJECTED'];
+async function renderKycDocuments(status) {
+  status = status || 'PENDING';
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>KYC Documents</h2>'
+    + '<div class="toolbar">' + KYC_STATUS_FILTERS.map(function(s){
+        return '<button class="action-btn" style="' + (s === status ? 'opacity:1' : 'opacity:.55') + '" onclick="renderKycDocuments(\'' + s + '\')">' + s + '</button>';
+      }).join(' ') + '</div>'
+    + '<div id="kyc-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/kyc-documents?status=' + status);
+    const rows = data.documents.map(function(d){
+      const who = d.user ? d.user.name + ' (' + d.user.role + ')' : '—';
+      const actions = status === 'PENDING'
+        ? '<button class="action-btn" onclick="reviewKycDoc(\'' + d.id + '\',\'APPROVED\')">Approve</button> '
+          + '<button class="action-btn" onclick="reviewKycDoc(\'' + d.id + '\',\'REJECTED\')">Reject</button>'
+        : (d.rejectionReason || '');
+      return '<tr><td><a href="' + d.fileUrl + '" target="_blank">View</a></td><td>' + who + '</td><td>' + d.docType + '</td>'
+        + '<td>' + pill(d.status) + '</td><td>' + new Date(d.createdAt).toLocaleString() + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    document.getElementById('kyc-table').outerHTML = data.documents.length
+      ? '<table><thead><tr><th>Document</th><th>Submitted by</th><th>Type</th><th>Status</th><th>Submitted</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No ' + status.toLowerCase() + ' documents.</div>';
+  } catch (e) {
+    document.getElementById('kyc-table').textContent = e.message;
+  }
+}
+async function reviewKycDoc(id, status) {
+  let rejectionReason;
+  if (status === 'REJECTED') {
+    rejectionReason = prompt('Reason for rejecting this document?') || '';
+    if (rejectionReason === null) return;
+  }
+  try { await api('/admin/kyc-documents/' + id, { method: 'PATCH', body: JSON.stringify({ status, rejectionReason }) }); renderKycDocuments('PENDING'); }
+  catch (e) { alert(e.message); }
 }
 
 async function renderShopSessions() {

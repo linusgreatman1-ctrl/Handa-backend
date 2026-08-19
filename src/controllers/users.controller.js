@@ -155,16 +155,22 @@ async function setAvailability(req, res, next) {
     if (typeof isOnline !== "boolean") return res.status(400).json({ error: "isOnline (boolean) is required." });
 
     const target = profile || { VENDOR: "vendor", RIDER: "rider", SHOPPER: "shopper" }[req.user.role];
+    const targetProfile = { vendor: req.user.vendorProfile, rider: req.user.riderProfile, shopper: req.user.shopperProfile }[target];
+    if (!targetProfile) return res.status(400).json({ error: "This account has no matching profile to toggle." });
+
+    // Going offline is always allowed; going live requires admin-reviewed
+    // KYC documents to have earned this profile a verified flag first.
+    if (isOnline && !targetProfile.isVerified) {
+      return res.status(403).json({ error: "Your account is pending verification. Submit your documents and wait for admin approval before going online." });
+    }
 
     let updated;
-    if (target === "vendor" && req.user.vendorProfile) {
-      updated = await prisma.vendorProfile.update({ where: { id: req.user.vendorProfile.id }, data: { isOnline } });
-    } else if (target === "rider" && req.user.riderProfile) {
-      updated = await prisma.riderProfile.update({ where: { id: req.user.riderProfile.id }, data: { isOnline } });
-    } else if (target === "shopper" && req.user.shopperProfile) {
-      updated = await prisma.shopperProfile.update({ where: { id: req.user.shopperProfile.id }, data: { isOnline } });
-    } else {
-      return res.status(400).json({ error: "This account has no matching profile to toggle." });
+    if (target === "vendor") {
+      updated = await prisma.vendorProfile.update({ where: { id: targetProfile.id }, data: { isOnline } });
+    } else if (target === "rider") {
+      updated = await prisma.riderProfile.update({ where: { id: targetProfile.id }, data: { isOnline } });
+    } else if (target === "shopper") {
+      updated = await prisma.shopperProfile.update({ where: { id: targetProfile.id }, data: { isOnline } });
     }
 
     req.app.get("io")?.emit("presence:update", { userId: req.user.id, role: target, isOnline });

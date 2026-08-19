@@ -29,9 +29,9 @@ async function requireAuth(req, res, next) {
         name: true,
         email: true,
         phone: true,
-        vendorProfile: { select: { id: true, vtype: true } },
-        riderProfile: { select: { id: true } },
-        shopperProfile: { select: { id: true } },
+        vendorProfile: { select: { id: true, vtype: true, isVerified: true } },
+        riderProfile: { select: { id: true, isVerified: true } },
+        shopperProfile: { select: { id: true, isVerified: true } },
       },
     });
 

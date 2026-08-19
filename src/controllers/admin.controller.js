@@ -47,9 +47,9 @@ async function listUsers(req, res, next) {
         where,
         select: {
           id: true, name: true, email: true, phone: true, role: true, status: true, createdAt: true, lastLoginAt: true,
-          vendorProfile: { select: { vtype: true, bizName: true, isVerified: true, isOnline: true } },
-          riderProfile: { select: { isOnline: true, ratingAvg: true, deliveries: true } },
-          shopperProfile: { select: { isOnline: true, ratingAvg: true } },
+          vendorProfile: { select: { id: true, vtype: true, bizName: true, isVerified: true, isOnline: true } },
+          riderProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true, deliveries: true } },
+          shopperProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true } },
         },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
@@ -100,6 +100,60 @@ async function setVendorVerified(req, res, next) {
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const vendor = await prisma.vendorProfile.update({ where: { id: req.params.id }, data: { isVerified } });
     res.json({ vendor });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setRiderVerified(req, res, next) {
+  try {
+    const { isVerified } = req.body;
+    if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
+    const rider = await prisma.riderProfile.update({ where: { id: req.params.id }, data: { isVerified } });
+    res.json({ rider });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setShopperVerified(req, res, next) {
+  try {
+    const { isVerified } = req.body;
+    if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
+    const shopper = await prisma.shopperProfile.update({ where: { id: req.params.id }, data: { isVerified } });
+    res.json({ shopper });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// KYC review queue — every submitted document, most recent first, so an
+// admin can work top-down. Filter by status (defaults to the actual work
+// queue: PENDING) via ?status=.
+async function listKycDocumentsForAdmin(req, res, next) {
+  try {
+    const { status } = req.query;
+    const documents = await prisma.kycDocument.findMany({
+      where: { status: status || "PENDING" },
+      include: { user: { select: { name: true, email: true, phone: true, role: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    res.json({ documents });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function reviewKycDocument(req, res, next) {
+  try {
+    const { status, rejectionReason } = req.body;
+    if (!["APPROVED", "REJECTED"].includes(status)) return res.status(400).json({ error: "status must be APPROVED or REJECTED." });
+    const document = await prisma.kycDocument.update({
+      where: { id: req.params.id },
+      data: { status, rejectionReason: status === "REJECTED" ? rejectionReason || null : null, reviewedAt: new Date() },
+    });
+    res.json({ document });
   } catch (err) {
     next(err);
   }
@@ -185,4 +239,17 @@ async function getShopSessionTimeline(req, res, next) {
   }
 }
 
-module.exports = { dashboardStats, listUsers, updateUserStatus, listVendorsForAdmin, setVendorVerified, listWithdrawalsForAdmin, listShopSessionsForAdmin, getShopSessionTimeline };
+module.exports = {
+  dashboardStats,
+  listUsers,
+  updateUserStatus,
+  listVendorsForAdmin,
+  setVendorVerified,
+  setRiderVerified,
+  setShopperVerified,
+  listKycDocumentsForAdmin,
+  reviewKycDocument,
+  listWithdrawalsForAdmin,
+  listShopSessionsForAdmin,
+  getShopSessionTimeline,
+};

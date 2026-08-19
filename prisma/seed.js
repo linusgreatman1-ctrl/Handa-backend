@@ -50,7 +50,7 @@ async function main() {
           bizName: "Mile 12 Fresh Market",
           emoji: "🥬",
           tags: ["Tubers", "Grains", "Vegetables"],
-          isOnline: true,
+          isOnline: true, isVerified: true,
           baseDeliveryFeeKobo: 50000,
           menuItems: {
             create: [
@@ -76,7 +76,7 @@ async function main() {
           bizName: "Funke's Delicious Catering",
           emoji: "🍽️",
           tags: ["Weddings", "Corporate"],
-          isOnline: true,
+          isOnline: true, isVerified: true,
           servicePackages: {
             create: [
               { key: "BASIC", label: "Basic (50 guests)", priceKobo: 15000000, includes: ["Jollof rice", "Chicken", "Salad", "Drinks"] },
@@ -101,7 +101,7 @@ async function main() {
           bizName: "Ngozi's Home Kitchen",
           emoji: "👩‍🍳",
           tags: ["Igbo cuisine", "Meal prep"],
-          isOnline: true,
+          isOnline: true, isVerified: true,
           hourlyRateKobo: 500000,
           ratePeriod: "per session",
           menuItems: { create: [{ name: "Ofe Nsala Special", priceKobo: 450000, emoji: "🍲", popular: true }] },
@@ -122,7 +122,7 @@ async function main() {
           bizName: "Tolu Events Co.",
           emoji: "🎉",
           tags: ["Weddings", "Birthdays", "Corporate"],
-          isOnline: true,
+          isOnline: true, isVerified: true,
           servicePackages: {
             // All 8 fixed package types the frontend's event-planner booking
             // screen offers (see _epPackages in public/app/index.html) —
@@ -155,7 +155,7 @@ async function main() {
           vtype: "CAKE_DESIGNER",
           bizName: "Bisi's Custom Cakes",
           emoji: "🎂",
-          isOnline: true,
+          isOnline: true, isVerified: true,
           menuItems: {
             create: [
               { name: "2-Tier Wedding Cake", priceKobo: 4500000, deliveryDays: 3, emoji: "🎂", category: "Wedding" },
@@ -172,7 +172,7 @@ async function main() {
     email: "rider@example.com",
     phone: "+2348010000008",
     role: "RIDER",
-    extra: { riderProfile: { create: { vehicleType: "Motorcycle", plateNumber: "LG-234-NK", isOnline: true, ratingAvg: 4.9, ratingCount: 340, deliveries: 1240, acceptRate: 94 } } },
+    extra: { riderProfile: { create: { vehicleType: "Motorcycle", plateNumber: "LG-234-NK", isOnline: true, isVerified: true, ratingAvg: 4.9, ratingCount: 340, deliveries: 1240, acceptRate: 94 } } },
   });
 
   await makeUser({
@@ -180,7 +180,7 @@ async function main() {
     email: "shopper@example.com",
     phone: "+2348010000009",
     role: "SHOPPER",
-    extra: { shopperProfile: { create: { market: "Mile 12 Market", isOnline: true, specialties: ["Vegetables", "Spices"] } } },
+    extra: { shopperProfile: { create: { market: "Mile 12 Market", isOnline: true, isVerified: true, specialties: ["Vegetables", "Spices"] } } },
   });
 
   // Logs into the /admin panel — see public/admin/index.html.
