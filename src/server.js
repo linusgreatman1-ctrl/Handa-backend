@@ -104,7 +104,6 @@ app.use("/app", express.static(path.join(__dirname, "..", "public", "app")));
 
 app.get("/health", (req, res) => res.json({ status: "ok", service: "handa-backend" }));
 app.use("/internal-seed", require("./routes/internalSeed.routes"));
-app.use("/internal-db-fix", require("./routes/internalDbFix.routes"));
 app.get("/", (req, res) => res.json({ service: "handa-backend", status: "ok", app: "/app", admin: "/admin", health: "/health", api: "/api" }));
 
 app.use("/api/auth", authRoutes);
