@@ -198,9 +198,16 @@ async function main() {
   console.log("Seed complete. Demo login: any seeded email + password: password123");
 }
 
-main()
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+// Reusable from src/routes/internalSeed.routes.js (a one-time HTTP trigger
+// used when direct external DB access to the host isn't available), as
+// well as from the CLI (`npm run seed`) below.
+module.exports = main;
+
+if (require.main === module) {
+  main()
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
