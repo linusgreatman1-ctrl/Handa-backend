@@ -120,4 +120,69 @@ async function listWithdrawalsForAdmin(req, res, next) {
   }
 }
 
-module.exports = { dashboardStats, listUsers, updateUserStatus, listVendorsForAdmin, setVendorVerified, listWithdrawalsForAdmin };
+// "Live Shop-For-Me" control center — every session with who's on it and
+// where it's at, most recent first. Powers the admin panel's monitoring
+// table; getShopSessionTimeline below powers the click-through detail.
+async function listShopSessionsForAdmin(req, res, next) {
+  try {
+    const { status } = req.query;
+    const sessions = await prisma.shopSession.findMany({
+      where: { ...(status && { status }) },
+      include: {
+        customer: { select: { name: true } },
+        shopper: { include: { user: { select: { name: true } } } },
+        rider: { include: { user: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    res.json({
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        status: s.status,
+        customerName: s.customer?.name || "—",
+        shopperName: s.shopper?.user?.name || "—",
+        riderName: s.rider?.user?.name || "—",
+        itemsTotalKobo: s.itemsTotalKobo,
+        sessionFeeKobo: s.sessionFeeKobo,
+        createdAt: s.createdAt,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getShopSessionTimeline(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({
+      where: { id: req.params.id },
+      include: {
+        customer: { select: { name: true, phone: true } },
+        shopper: { include: { user: { select: { name: true, phone: true } } } },
+        rider: { include: { user: { select: { name: true, phone: true } } } },
+        items: true,
+        escrowHolds: true,
+        sellerPayouts: { include: { seller: true } },
+      },
+    });
+    if (!session) return res.status(404).json({ error: "Session not found." });
+
+    // A simple ordered checklist derived from the timestamps this model
+    // already tracks, rather than a separate event-log table — good
+    // enough for "what stage did this reach and when."
+    const timeline = [
+      { label: "Request created", at: session.createdAt },
+      { label: "Shopper matched", at: session.matchedAt },
+      { label: "Delivered", at: session.deliveredAt },
+      { label: "Completed", at: session.completedAt },
+      { label: "Cancelled", at: session.cancelledAt },
+    ].filter((t) => t.at);
+
+    res.json({ session, timeline });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { dashboardStats, listUsers, updateUserStatus, listVendorsForAdmin, setVendorVerified, listWithdrawalsForAdmin, listShopSessionsForAdmin, getShopSessionTimeline };

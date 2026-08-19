@@ -15,4 +15,7 @@ router.patch("/vendors/:id/verify", ctrl.setVendorVerified);
 
 router.get("/withdrawals", ctrl.listWithdrawalsForAdmin);
 
+router.get("/shop-sessions", ctrl.listShopSessionsForAdmin);
+router.get("/shop-sessions/:id", ctrl.getShopSessionTimeline);
+
 module.exports = router;

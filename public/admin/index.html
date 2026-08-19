@@ -76,6 +76,7 @@
     <button class="nav-item" data-tab="vendors" onclick="switchTab('vendors')">Vendors</button>
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
+    <button class="nav-item" data-tab="shopsessions" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
     <div class="spacer"></div>
     <div class="who"><b id="who-name"></b><span id="who-email"></span></div>
     <button class="logout" onclick="logout()">Sign out</button>
@@ -139,7 +140,7 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals };
+  const renderers = { dashboard: renderDashboard, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions };
   renderers[tab]();
 }
 
@@ -263,6 +264,60 @@ async function renderWithdrawals() {
       : '<div class="empty">No withdrawals yet.</div>';
   } catch (e) {
     document.getElementById('withdrawals-table').textContent = e.message;
+  }
+}
+
+async function renderShopSessions() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Live Shop-For-Me</h2><div id="shopsessions-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/shop-sessions');
+    const rows = data.sessions.map(s =>
+      '<tr style="cursor:pointer" onclick="renderShopSessionDetail(\'' + s.id + '\')"><td>' + s.id.slice(0, 8) + '</td><td>' + s.customerName + '</td><td>' + s.shopperName + '</td><td>' + s.riderName + '</td>' +
+      '<td>' + pill(s.status) + '</td><td>' + money(s.itemsTotalKobo + s.sessionFeeKobo) + '</td><td>' + new Date(s.createdAt).toLocaleString() + '</td></tr>'
+    ).join('');
+    document.getElementById('shopsessions-table').outerHTML = data.sessions.length
+      ? '<table><thead><tr><th>ID</th><th>Customer</th><th>Shopper</th><th>Rider</th><th>Status</th><th>Value</th><th>Created</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No Shop-For-Me sessions yet.</div>';
+  } catch (e) {
+    document.getElementById('shopsessions-table').textContent = e.message;
+  }
+}
+
+const SFM_STAGES = ['SEARCHING', 'MATCHED', 'BUILDING_LIST', 'LIVE_CALL', 'PACKAGING', 'FINDING_RIDER', 'RIDER_ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'];
+
+async function renderShopSessionDetail(id) {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Session Detail</h2><div class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/shop-sessions/' + id);
+    const s = data.session;
+    const stageIdx = SFM_STAGES.indexOf(s.status);
+    const stageFlow = SFM_STAGES.map((stage, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:6px 0">' +
+      '<span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:' + (i <= stageIdx && stageIdx >= 0 ? '#2ECC71' : '#333') + '"></span>' +
+      '<span style="font-size:13px;color:' + (i <= stageIdx && stageIdx >= 0 ? '#F2EDE8' : '#9A9390') + '">' + stage.replace(/_/g, ' ') + '</span></div>'
+    ).join('');
+    const items = (s.items || []).map(it =>
+      '<tr><td>' + it.text + '</td><td>' + (it.priceKobo != null ? money(it.priceKobo) : '—') + '</td><td>' + (it.approved ? pill('ACTIVE') : pill('PENDING')) + '</td></tr>'
+    ).join('');
+    const escrow = (s.escrowHolds || []).map(h =>
+      '<tr><td>' + h.payeeRole + '</td><td>' + money(h.amountKobo) + '</td><td>' + pill(h.status) + '</td></tr>'
+    ).join('');
+    main.innerHTML =
+      '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'shopsessions\')">&larr; Back to list</button>' +
+      '<h2>Session ' + s.id.slice(0, 8) + '</h2>' +
+      '<div class="grid">' +
+        card('Customer', s.customer ? s.customer.name : '—', s.customer ? s.customer.phone : '') +
+        card('Shopper', s.shopper && s.shopper.user ? s.shopper.user.name : 'Not matched', '') +
+        card('Rider', s.rider && s.rider.user ? s.rider.user.name : 'Not assigned', '') +
+        card('Status', s.status.replace(/_/g, ' '), '') +
+      '</div>' +
+      '<h2>Timeline</h2><div class="card" style="margin-bottom:24px">' + stageFlow + '</div>' +
+      '<h2>Items</h2>' + (items ? '<table><thead><tr><th>Item</th><th>Price</th><th>Approved</th></tr></thead><tbody>' + items + '</tbody></table>' : '<div class="empty">No items.</div>') +
+      '<h2 style="margin-top:24px">Escrow Holds</h2>' + (escrow ? '<table><thead><tr><th>Payee</th><th>Amount</th><th>Status</th></tr></thead><tbody>' + escrow + '</tbody></table>' : '<div class="empty">No escrow holds.</div>');
+  } catch (e) {
+    main.innerHTML = '<div class="empty">' + e.message + '</div>';
   }
 }
 
