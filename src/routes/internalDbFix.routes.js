@@ -35,17 +35,16 @@ router.get("/", async (req, res) => {
       `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'EscrowHold' AND column_name = 'orderId') AS exists`
     );
     const vendorTypeCounts = await prisma.$queryRawUnsafe(
-      `SELECT vtype, COUNT(*) FROM "VendorProfile" GROUP BY vtype`
+      `SELECT vtype, COUNT(*)::int AS count FROM "VendorProfile" GROUP BY vtype`
     );
-    res.json({
-      migrations,
-      vendorTypeEnum,
-      orderTableExists,
-      orderItemTableExists,
-      ratingOrderIdCol,
-      escrowOrderIdCol,
-      vendorTypeCounts,
-    });
+    res.json(
+      JSON.parse(
+        JSON.stringify(
+          { migrations, vendorTypeEnum, orderTableExists, orderItemTableExists, ratingOrderIdCol, escrowOrderIdCol, vendorTypeCounts },
+          (key, value) => (typeof value === "bigint" ? value.toString() : value)
+        )
+      )
+    );
   } catch (err) {
     res.status(500).json({ error: err.message, stack: err.stack });
   }
