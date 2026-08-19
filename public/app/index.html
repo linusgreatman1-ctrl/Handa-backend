@@ -631,7 +631,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
   </div>
   <div style="padding:16px;" id="history-list"></div>
 </div>
-<div id="screen-etrack" class="escreen"><div style="background:#111;padding:44px 20px 14px;border-bottom:1px solid #2A2850"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><h2 style="font-weight:800;font-size:20px;margin:0">📍 Track Order</h2></div><div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div></div>
+<div id="screen-etrack" class="escreen"><div style="background:#111;padding:44px 20px 14px;border-bottom:1px solid #2A2850"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><h2 style="font-weight:800;font-size:20px;margin:0">📍 Track Order</h2></div><div id="etrack-body" style="padding:16px;overflow-y:auto;flex:1"><div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div></div></div>
 <nav id="bnav" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;z-index:1000;justify-content:space-around;align-items:center"><button class="ntab active" id="nav-home" onclick="eGo('home')"><div class="ntab-icon">🏠</div><div class="ntab-label">Home</div></button><button class="ntab" id="nav-history" onclick="eGo('history')"><div class="ntab-icon">📋</div><div class="ntab-label">History</div></button><button class="ntab" id="nav-track" onclick="eGo('track')"><div class="ntab-icon">📍</div><div class="ntab-label">Track</div></button><button class="ntab" id="nav-profile" onclick="eGo('profile')"><div class="ntab-icon">👤</div><div class="ntab-label">Me</div></button></nav>
 
 
@@ -2656,6 +2656,7 @@ function buildShop() {
 
 
 function renderShopPhase(phase) {
+  window._sfmPhase = phase;
   const body = document.getElementById('shop-body');
 
   // ── PHASE 1: Build Shopping List ──────────────────────────────────────
@@ -2781,7 +2782,7 @@ function renderShopPhase(phase) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
         <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s ease-in-out infinite;flex-shrink:0;"></div>
         <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
-        <span style="font-size:12px;color:#9A9390;margin-left:auto;">Aisha A. ★4.9</span>
+        <span style="font-size:12px;color:#9A9390;margin-left:auto;">${sfmShopperName()} ★${sfmShopperRating()}</span>
         <button onclick="sfmEndCall();showToast('Call ended','warning');renderShopPhase('buildList')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">End</button>
       </div>
       <div class="video-frame" style="margin-bottom:14px;height:185px;">
@@ -2800,7 +2801,7 @@ function renderShopPhase(phase) {
       <div id="approval-items"></div>
 
       <div style="margin-top:12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;">
-        <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with Aisha</div>
+        <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${sfmShopperName()}</div>
         <div id="live-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:80px;overflow-y:auto;">
           <div style="font-size:12px;color:#9A9390;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-start;">Madam I don reach the tomato section. I dey show you now 🍅</div>
         </div>
@@ -2817,32 +2818,37 @@ function renderShopPhase(phase) {
   // ── PHASE 5: Shopper Packages Items ───────────────────────────────────
   } else if (phase === 'packaging') {
     const total = shopItems.reduce((s,i)=>s+(i.price||0),0);
+    const shopperNm = sfmShopperName();
+    const liveStatus = (window._sfmSession&&window._sfmSession.status)||'PACKAGING';
+    const waitingText = liveStatus==='FINDING_RIDER'
+      ? shopperNm+' is finding a rider to pick up your items'
+      : shopperNm+' is now packaging your items';
     body.innerHTML = `<div class="fi" style="text-align:center;padding:20px 0;">
       <div style="font-size:72px;margin-bottom:16px;">📦</div>
       <div class="h2">All Items Approved!</div>
-      <p style="color:#9A9390;font-size:14px;margin-top:8px;margin-bottom:22px;">Aisha is now packaging your items at Mile 12 Market</p>
+      <p style="color:#9A9390;font-size:14px;margin-top:8px;margin-bottom:22px;">${waitingText}</p>
       <div class="card" style="text-align:left;margin-bottom:18px;">
         <div style="font-weight:700;font-size:14px;margin-bottom:12px;">📋 Items Being Packaged:</div>
         ${shopItems.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2A2850;">
           <div style="display:flex;gap:8px;align-items:center;"><span class="badge b-green" style="font-size:10px;">✓</span><span style="font-size:13px;">${i.text}</span></div>
-          <span style="font-weight:700;font-size:13px;">₦${(i.price||(Math.floor(Math.random()*600)+250)).toLocaleString()}</span>
+          <span style="font-weight:700;font-size:13px;">₦${(i.price||0).toLocaleString()}</span>
         </div>`).join('')}
         <div style="display:flex;justify-content:space-between;padding:12px 0 0;">
           <span style="font-weight:800;">Items Total</span>
-          <span style="font-weight:900;font-size:17px;color:#F2EDE8;">₦${(total||3800).toLocaleString()}</span>
+          <span style="font-weight:900;font-size:17px;color:#F2EDE8;">₦${total.toLocaleString()}</span>
         </div>
       </div>
       <div style="background:rgba(245,166,35,0.12);border:1.5px solid rgba(184,120,0,.25);border-radius:13px;padding:14px;margin-bottom:18px;text-align:left;">
         <div style="font-weight:800;font-size:13px;color:#F5A623;margin-bottom:9px;">⏳ What Happens Next</div>
-        ${[['🏍️','Aisha is finding a rider to pick up your items'],['🤝','Aisha & rider will jointly confirm all items'],['🔓','Once confirmed, CityChef escrow pays your market sellers directly'],['🏪','Each seller receives an instant bank transfer — no cash needed'],['🚀','Rider picks up and delivers to you']].map(([ic,t])=>`<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:7px;"><span style="flex-shrink:0;">${ic}</span><span style="font-size:12px;color:#9A9390;">${t}</span></div>`).join('')}
+        ${[['🏍️',shopperNm+' is finding a rider to pick up your items'],['🤝',shopperNm+' & rider will jointly confirm all items'],['🔓','Once confirmed, escrow pays your market sellers directly'],['🏪','Each seller receives an instant bank transfer — no cash needed'],['🚀','Rider picks up and delivers to you']].map(([ic,t])=>`<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:7px;"><span style="flex-shrink:0;">${ic}</span><span style="font-size:12px;color:#9A9390;">${t}</span></div>`).join('')}
       </div>
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:11px 14px;margin-bottom:18px;text-align:left;">
-        <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to Aisha after the rider confirms pickup of all your items.</div>
+        <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to ${shopperNm} after the rider confirms pickup of all your items.</div>
       </div>
       <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:18px;">
         <div style="font-size:32px;animation:float 2s ease-in-out infinite;flex-shrink:0;">🧑‍💼</div>
         <div style="flex:1;">
-          <div style="font-weight:700;font-size:14px;">Aisha is searching for a rider...</div>
+          <div style="font-weight:700;font-size:14px;">${waitingText}...</div>
           <div style="font-size:12px;color:#9A9390;margin-top:3px;">This usually takes 2–5 minutes</div>
           <div style="margin-top:8px;display:flex;gap:5px;">
             <div style="width:7px;height:7px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out 0s infinite;"></div>
@@ -2850,79 +2856,70 @@ function renderShopPhase(phase) {
             <div style="width:7px;height:7px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out .5s infinite;"></div>
           </div>
         </div>
-        <button class="btn btn-sm btn-primary" onclick="renderShopPhase('riderArrived')" style="flex-shrink:0;font-size:12px;">▶ Simulate</button>
       </div>
     </div>`;
 
-  // ── PHASE 6: Rider Arrives at Shopper — Joint Confirmation ─────────────
+  // ── PHASE 6: Rider Assigned — heading to collect from the shopper ──────
   } else if (phase === 'riderArrived') {
+    const shopperNm = sfmShopperName();
+    const riderNm = sfmRiderName();
+    const riderVehicle = sfmRiderVehicle();
     body.innerHTML = `<div class="fi">
       <div style="text-align:center;margin-bottom:18px;">
-        <div style="font-size:56px;margin-bottom:10px;">🤝</div>
-        <div style="font-weight:800;font-size:19px;">Rider Has Arrived!</div>
-        <p style="font-size:13px;color:#9A9390;margin-top:5px;">Aisha & rider are confirming your items together</p>
+        <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
+        <div style="font-weight:800;font-size:19px;">Rider Assigned!</div>
+        <p style="font-size:13px;color:#9A9390;margin-top:5px;">${riderNm} is on the way to collect your items from ${shopperNm}</p>
       </div>
 
       <!-- Shopper + Rider cards side by side -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
         <div class="card" style="text-align:center;border-color:#F5A623;">
           <div style="font-size:32px;margin-bottom:6px;">👩🏾</div>
-          <div style="font-weight:800;font-size:13px;">Aisha</div>
+          <div style="font-weight:800;font-size:13px;">${shopperNm}</div>
           <div style="font-size:11px;color:#9A9390;margin-top:2px;">Shopper</div>
           <div class="badge b-gold" style="margin-top:7px;display:inline-flex;font-size:10px;">📦 Items Ready</div>
         </div>
         <div class="card" style="text-align:center;border-color:#6430C8;">
           <div style="font-size:32px;margin-bottom:6px;">👨🏿</div>
-          <div style="font-weight:800;font-size:13px;">Chidi</div>
-          <div style="font-size:11px;color:#9A9390;margin-top:2px;">Rider • Honda CB</div>
-          <div class="badge b-purple" style="margin-top:7px;display:inline-flex;font-size:10px;">🏍️ At Location</div>
+          <div style="font-weight:800;font-size:13px;">${riderNm}</div>
+          <div style="font-size:11px;color:#9A9390;margin-top:2px;">Rider${riderVehicle?' • '+riderVehicle:''}</div>
+          <div class="badge b-purple" style="margin-top:7px;display:inline-flex;font-size:10px;">🏍️ En Route</div>
         </div>
       </div>
 
-      <!-- Joint item confirmation checklist -->
+      <!-- Your approved items, for reference -->
       <div class="card" style="margin-bottom:14px;">
-        <div style="font-weight:800;font-size:14px;margin-bottom:3px;">📋 Joint Item Confirmation</div>
-        <div style="font-size:12px;color:#9A9390;margin-bottom:12px;">Aisha & rider are checking each item together before handover</div>
+        <div style="font-weight:800;font-size:14px;margin-bottom:3px;">📋 Your Approved Items</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:12px;">${riderNm} will collect these from ${shopperNm}</div>
         ${shopItems.map((i,idx)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;${idx<shopItems.length-1?'border-bottom:1px solid #2A2850;':''}">
           <span style="font-size:13px;flex:1;">${i.text}</span>
-          <span class="badge b-green" style="font-size:11px;">✓ Confirmed</span>
+          <span class="badge b-green" style="font-size:11px;">✓</span>
         </div>`).join('')}
       </div>
 
-      <!-- Escrow release info -->
-      <div style="background:linear-gradient(135deg,rgba(26,140,80,.08),rgba(26,140,80,.04));border:1.5px solid rgba(26,140,80,.25);border-radius:14px;padding:15px;margin-bottom:14px;">
-        <div style="font-weight:800;font-size:14px;color:#2ECC71;margin-bottom:10px;">🔓 Escrow Being Released</div>
+      <!-- Escrow status -->
+      <div style="background:linear-gradient(135deg,rgba(26,140,80,.08),rgba(26,140,80,.04));border:1.5px solid rgba(26,140,80,.25);border-radius:14px;padding:15px;margin-bottom:16px;">
+        <div style="font-weight:800;font-size:14px;color:#2ECC71;margin-bottom:10px;">🔒 Escrow Status</div>
         ${[
-          ['🏪','CityChef escrow pays your market sellers directly to their bank accounts'],
-          ['📲','Each seller receives an instant transfer + SMS confirmation'],
-          ['🏍️','Rider picks up your packaged items from Aisha'],
-          ['📍','Your delivery tracking begins immediately']
+          ['🏍️','Delivery fee for '+riderNm+' is held in escrow, released once you confirm delivery'],
+          ['🏪','Session fee for '+shopperNm+' and your market sellers are settled once delivery is confirmed'],
+          ['📍','You get a live update the moment '+riderNm+' picks up your items']
         ].map(([ic,t])=>`<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px;"><span style="flex-shrink:0;">${ic}</span><span style="font-size:12px;color:#9A9390;">${t}</span></div>`).join('')}
       </div>
-
-      <!-- Confirmation badge -->
-      <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:13px 15px;margin-bottom:16px;display:flex;gap:12px;align-items:center;">
-        <span style="font-size:28px;flex-shrink:0;">✅</span>
-        <div><div style="font-weight:800;font-size:14px;color:#2ECC71;">All items confirmed!</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Rider is now collecting from Aisha. Escrow released.</div></div>
-      </div>
-
-      <button class="btn btn-primary" id="shop-track-rider-btn" style="background:linear-gradient(135deg,#6430C8,#5020A8);" onclick="renderShopPhase('customerTracking')">🏍️ Track My Rider →</button>
     </div>`;
-    // Auto-advance to tracking after 30 seconds
-    setTimeout(()=>{ const b=document.getElementById('shop-track-rider-btn'); if(b) renderShopPhase('customerTracking'); }, 30000);
 
   // ── PHASE 7: Customer Tracks the Rider ────────────────────────────────
   } else if (phase === 'customerTracking') {
-    let eta = 720;
+    const riderNm = sfmRiderName();
+    const riderVehicle = sfmRiderVehicle();
+    const deliveryCode = (window._sfmSession&&window._sfmSession.deliveryCode)||'····';
     body.innerHTML = `<div class="fi">
-      <div class="map-box" style="height:200px;margin-bottom:14px;">
+      <div class="map-box" style="height:160px;margin-bottom:14px;">
         <div class="map-grid"></div>
         <svg style="position:absolute;inset:0;width:100%;height:100%;">
           <line x1="0" y1="38%" x2="100%" y2="38%" stroke="rgba(100,48,200,.1)" stroke-width="3"/>
           <line x1="32%" y1="0" x2="32%" y2="100%" stroke="rgba(100,48,200,.1)" stroke-width="3"/>
-          <path d="M60 170 Q 130 110 220 85 Q 285 65 340 28" stroke="#6430C8" stroke-width="3" fill="none" stroke-dasharray="8,5" stroke-linecap="round"/>
         </svg>
-        <div class="map-dot-blue" style="bottom:20%;left:14%;"></div>
         <div style="position:absolute;top:32%;left:27%;font-size:22px;animation:carPulse 2s ease-in-out infinite;">
           🏍️
           <div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid #6430C8;animation:pingAnim 1.4s ease-in-out infinite;"></div>
@@ -2936,9 +2933,9 @@ function renderShopPhase(phase) {
         <div style="display:flex;gap:12px;align-items:center;">
           <div style="width:52px;height:52px;background:rgba(100,48,200,0.10);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">👨🏿</div>
           <div style="flex:1;">
-            <div style="font-weight:800;font-size:15px;">Chidi Okonkwo</div>
-            <div style="font-size:12px;color:#9A9390;margin-top:2px;">Honda CB 125 &nbsp;•&nbsp; LG-234-NK</div>
-            <div style="font-size:12px;color:#F5A623;font-weight:700;margin-top:2px;">★ 4.8</div>
+            <div style="font-weight:800;font-size:15px;">${riderNm}</div>
+            <div style="font-size:12px;color:#9A9390;margin-top:2px;">${riderVehicle||'On the way'}</div>
+            <div style="font-size:12px;color:#F5A623;font-weight:700;margin-top:2px;">★ ${sfmRiderRating()}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:7px;">
             <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openShopRiderCallModal()">📞</button>
@@ -2947,11 +2944,18 @@ function renderShopPhase(phase) {
         </div>
       </div>
 
-      <!-- ETA + escrow status -->
+      <!-- Delivery code — give this to the rider on arrival -->
+      <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;text-align:center;">
+        <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Delivery Code</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${deliveryCode}</div>
+        <div style="font-size:11px;color:#9A9390;margin-top:6px;">Give this to ${riderNm} when they arrive to confirm delivery</div>
+      </div>
+
+      <!-- Status -->
       <div style="display:flex;gap:10px;margin-bottom:12px;">
         <div class="card" style="flex:1;text-align:center;padding:13px 8px;">
-          <div style="font-size:11px;color:#9A9390;">ETA</div>
-          <div style="font-weight:800;font-size:20px;margin-top:4px;font-family:\'Playfair Display\',serif;" id="shop-eta-display">12:00</div>
+          <div style="font-size:11px;color:#9A9390;">Status</div>
+          <div style="font-weight:800;font-size:13px;margin-top:4px;color:#6430C8;">🏍️ On the way</div>
         </div>
         <div class="card" style="flex:1;text-align:center;padding:13px 8px;">
           <div style="font-size:11px;color:#9A9390;">Items</div>
@@ -2963,35 +2967,19 @@ function renderShopPhase(phase) {
         </div>
       </div>
 
-      <!-- Shopper status -->
-      <div class="card" style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">
-        <div style="width:40px;height:40px;background:rgba(245,166,35,0.12);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">👩🏾</div>
-        <div style="flex:1;">
-          <div style="font-weight:700;font-size:13px;">Aisha — awaiting your confirmation</div>
-          <div style="font-size:12px;color:#9A9390;margin-top:2px;">Escrow locked • Released only when you confirm delivery</div>
-        </div>
-      </div>
-
       <!-- Safety -->
       <div style="display:flex;gap:9px;margin-bottom:12px;">
         <button class="safety-btn" onclick="openSOSModal()"><span style="font-size:18px;">🆘</span>SOS</button>
         <button class="safety-btn" onclick="openShareTripModal()"><span style="font-size:18px;">📤</span>Share</button>
       </div>
 
-      <button class="btn btn-primary" id="shop-rider-arrived-btn" onclick="renderShopPhase('delivered')">✅ Rider Arrived — Confirm Items</button>
+      <div style="font-size:12px;color:#9A9390;text-align:center;">You'll be notified the moment ${riderNm} arrives and delivery is confirmed.</div>
     </div>`;
-
-    // ETA countdown
-    const iv = setInterval(()=>{
-      eta--; const el=document.getElementById('shop-eta-display'); if(!el){clearInterval(iv);return;}
-      const m=Math.floor(eta/60), s=eta%60; el.textContent=m+':'+(s<10?'0':'')+s;
-      if(eta<=0){clearInterval(iv); renderShopPhase('delivered');}
-    },1000);
-    // Auto-advance after 30s if Rider Arrived not clicked
-    setTimeout(()=>{ const b=document.getElementById('shop-rider-arrived-btn'); if(b) renderShopPhase('delivered'); }, 30000);
 
   // ── PHASE 8: Rider delivers — customer confirms & releases escrow ────────
   } else if (phase === 'delivered') {
+    const riderNm = sfmRiderName();
+    const shopperNm = sfmShopperName();
     const itemsCost = shopItems.reduce((s,i)=>s+(i.price||450),0) || 2500;
     const itemCount = shopItems.length;
     const sessionFee = itemCount <= 5 ? 3000 : itemCount <= 10 ? 4000 : 5000;
@@ -3025,7 +3013,7 @@ function renderShopPhase(phase) {
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.25);border-radius:13px;padding:13px 15px;margin-bottom:14px;">
         <div style="display:flex;gap:10px;align-items:center;">
           <span style="font-size:24px;">✅</span>
-          <div><div style="font-weight:800;font-size:13px;color:#2ECC71;">Market Sellers Paid Directly by CityChef</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦${itemsCost.toLocaleString()} was distributed by CityChef escrow to Aisha's registered market sellers when Chidi confirmed pickup. Each seller received an instant bank transfer.</div></div>
+          <div><div style="font-weight:800;font-size:13px;color:#2ECC71;">Market Sellers Paid Directly by Escrow</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦${itemsCost.toLocaleString()} was distributed by escrow to ${shopperNm}'s registered market sellers when ${riderNm} confirmed pickup. Each seller received an instant bank transfer.</div></div>
         </div>
       </div>
 
@@ -3035,21 +3023,21 @@ function renderShopPhase(phase) {
       <!-- Payment 2: Shopper session fee → shopper app balance -->
       <div style="border:1.5px solid #2A2850;border-radius:16px;padding:15px;margin-bottom:11px;background:#242424;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-          <div><div style="font-weight:800;font-size:14px;">🧑‍💼 Shopper Session Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Credited to Aisha's CityChef App Balance</div></div>
+          <div><div style="font-weight:800;font-size:14px;">🧑‍💼 Shopper Session Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Credited to ${shopperNm}'s App Balance</div></div>
           <div style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;color:#E8392E;">₦${sessionFee.toLocaleString()}</div>
         </div>
-        <div style="background:#1C1C1C;border-radius:10px;padding:10px 12px;font-size:13px;color:#9A9390;margin-bottom:10px;">This is Aisha's fee for shopping live for you.</div>
-        <button onclick="this.style.background='#2ECC71';this.style.color='white';this.textContent='✓ Session Fee Released';this.style.pointerEvents='none';showToast('Session fee released to Aisha ✓','success');" style="width:100%;background:rgba(232,57,46,0.10);border:1.5px solid rgba(232,71,10,.3);border-radius:12px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#E8392E;font-family:\'DM Sans\',sans-serif;transition:all .2s;">🔓 Confirm &amp; Release ₦${sessionFee.toLocaleString()} Session Fee</button>
+        <div style="background:#1C1C1C;border-radius:10px;padding:10px 12px;font-size:13px;color:#9A9390;margin-bottom:10px;">This is ${shopperNm}'s fee for shopping live for you.</div>
+        <button onclick="this.style.background='#2ECC71';this.style.color='white';this.textContent='✓ Session Fee Released';this.style.pointerEvents='none';showToast('Session fee released to '+shopperNm+' ✓','success');" style="width:100%;background:rgba(232,57,46,0.10);border:1.5px solid rgba(232,71,10,.3);border-radius:12px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#E8392E;font-family:\'DM Sans\',sans-serif;transition:all .2s;">🔓 Confirm &amp; Release ₦${sessionFee.toLocaleString()} Session Fee</button>
       </div>
 
       <!-- Payment 3: Rider fee → rider app balance -->
       <div style="border:1.5px solid #2A2850;border-radius:16px;padding:15px;margin-bottom:16px;background:#242424;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-          <div><div style="font-weight:800;font-size:14px;">🏍️ Rider Delivery Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Chidi delivered your items from the market</div></div>
+          <div><div style="font-weight:800;font-size:14px;">🏍️ Rider Delivery Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">${riderNm} delivered your items from the market</div></div>
           <div style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;color:#6430C8;">₦${riderFee.toLocaleString()}</div>
         </div>
-        <div style="background:#1C1C1C;border-radius:10px;padding:10px 12px;font-size:13px;color:#9A9390;margin-bottom:10px;">This pays Chidi for picking up and delivering your shopping to you.</div>
-        <button onclick="this.style.background='#2ECC71';this.style.color='white';this.textContent='✓ Rider Fee Released';this.style.pointerEvents='none';showToast('Rider fee released to Chidi ✓','success');" style="width:100%;background:rgba(100,48,200,0.10);border:1.5px solid rgba(100,48,200,.3);border-radius:12px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#6430C8;font-family:\'DM Sans\',sans-serif;transition:all .2s;">🔓 Confirm &amp; Release ₦${riderFee.toLocaleString()} Rider Fee</button>
+        <div style="background:#1C1C1C;border-radius:10px;padding:10px 12px;font-size:13px;color:#9A9390;margin-bottom:10px;">This pays ${riderNm} for picking up and delivering your shopping to you.</div>
+        <button onclick="this.style.background='#2ECC71';this.style.color='white';this.textContent='✓ Rider Fee Released';this.style.pointerEvents='none';showToast('Rider fee released to '+riderNm+' ✓','success');" style="width:100%;background:rgba(100,48,200,0.10);border:1.5px solid rgba(100,48,200,.3);border-radius:12px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#6430C8;font-family:\'DM Sans\',sans-serif;transition:all .2s;">🔓 Confirm &amp; Release ₦${riderFee.toLocaleString()} Rider Fee</button>
       </div>
 
       <!-- 90s auto-release countdown -->
@@ -3166,15 +3154,120 @@ function sfmShopperRating(){
   var s=window._sfmSession;
   return (s&&s.shopper&&s.shopper.ratingAvg)?s.shopper.ratingAvg.toFixed(1):'New';
 }
+function sfmRiderName(){
+  var s=window._sfmSession;
+  return (s&&s.rider&&s.rider.user&&s.rider.user.name)||'your rider';
+}
+function sfmRiderRating(){
+  var s=window._sfmSession;
+  return (s&&s.rider&&s.rider.ratingAvg)?s.rider.ratingAvg.toFixed(1):'New';
+}
+function sfmRiderVehicle(){
+  var s=window._sfmSession;
+  var r=s&&s.rider;
+  if(!r)return'';
+  return [r.vehicleType,r.plateNumber].filter(Boolean).join(' • ');
+}
 
+// Real status → customer phase map. FINDING_RIDER shares the 'packaging'
+// screen (nothing new for the customer to do in either state — just
+// waiting on the shopper), matching the doc's own delivery-code mockup
+// once a rider is actually assigned.
+var SFM_STATUS_PHASE = { LIVE_CALL:'liveCall', PACKAGING:'packaging', FINDING_RIDER:'packaging', RIDER_ASSIGNED:'riderArrived', OUT_FOR_DELIVERY:'customerTracking', DELIVERED:'delivered' };
+var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packaging','riderArrived','customerTracking','delivered','done'];
 function onSfmStatus(status){
-  if(status==='MATCHED'&&(S.curScreen==='liveshop'||S.curScreen==='sfm')){
+  if(!(S.curScreen==='liveshop'||S.curScreen==='sfm')||!window._sfmSession)return;
+  if(status==='MATCHED'){
     clearInterval(window._sfmPollIv);
     api('/shop-sessions/'+window._sfmSession.id).then(function(res){
       window._sfmSession=res.session;
       renderShopPhase('shopperProfile');
     });
+    return;
   }
+  var nextPhase=SFM_STATUS_PHASE[status];
+  if(!nextPhase)return;
+  // Forward-only: ignore a stray/duplicate push that would rewind a
+  // screen the customer (or an earlier event) already advanced past.
+  var curIdx=SFM_PHASE_ORDER.indexOf(window._sfmPhase);
+  var nextIdx=SFM_PHASE_ORDER.indexOf(nextPhase);
+  if(curIdx>=0&&nextIdx>=0&&nextIdx<=curIdx)return;
+  api('/shop-sessions/'+window._sfmSession.id).then(function(res){
+    window._sfmSession=res.session;
+    renderShopPhase(nextPhase);
+  });
+}
+
+// ── Customer Track screen (regular Order deliveries) ────────────────────
+// Backend already pushes a real order:status event for every transition
+// (see orders.controller.js) and the central socket handler (see
+// window._socket.on('order:status',...) near the top of this file) already
+// calls onOrderStatusPush(p) — this was previously a dead hook with no
+// implementation, so the screen never updated. Shop-For-Me sessions have
+// their own dedicated tracking flow (renderShopPhase) and aren't shown here.
+var ORDER_TRACK_STATUSES = ['ACCEPTED','PREPARING','READY_FOR_PICKUP','RIDER_ASSIGNED','PICKED_UP'];
+var ORDER_STATUS_LABEL = {
+  ACCEPTED:'Vendor accepted your order', PREPARING:'Being prepared',
+  READY_FOR_PICKUP:'Ready — waiting for a rider', RIDER_ASSIGNED:'Rider assigned, heading to vendor',
+  PICKED_UP:'Rider picked up — on the way to you',
+};
+window._trackOrder = null;
+async function renderEtrack(){
+  var body = document.getElementById('etrack-body');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;padding:40px 0;color:#9A9390;font-size:13px;">Loading…</div>';
+  try{
+    var res = await api('/orders');
+    var active = (res.orders||[]).filter(function(o){ return ORDER_TRACK_STATUSES.indexOf(o.status)>=0; })
+      .sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); })[0];
+    window._trackOrder = active || null;
+    if (!active) {
+      body.innerHTML = '<div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div>';
+      return;
+    }
+    if (_socket) _socket.emit('order:join', { orderId: active.id });
+    renderEtrackBody();
+  }catch(err){
+    body.innerHTML = '<div style="text-align:center;padding:40px 16px;color:#E8392E;font-size:13px;">'+(err.message||'Could not load your order')+'</div>';
+  }
+}
+function renderEtrackBody(){
+  var body = document.getElementById('etrack-body');
+  var o = window._trackOrder;
+  if (!body || !o) return;
+  var vendorNm = (o.vendor&&o.vendor.bizName)||'Vendor';
+  var riderNm = (o.rider&&o.rider.user&&o.rider.user.name)||null;
+  var riderVehicle = o.rider ? [o.rider.vehicleType,o.rider.plateNumber].filter(Boolean).join(' • ') : '';
+  var hasRider = ['RIDER_ASSIGNED','PICKED_UP'].indexOf(o.status)>=0;
+  body.innerHTML = '<div class="card" style="margin-bottom:14px;">'
+    + '<div style="font-weight:800;font-size:15px;margin-bottom:4px;">'+vendorNm+'</div>'
+    + '<div style="font-size:12px;color:#9A9390;">'+(o.items||[]).map(function(i){return i.qty+'x '+i.name;}).join(', ')+'</div>'
+    + '<div style="margin-top:10px;padding:8px 12px;background:rgba(245,166,35,.12);border-radius:10px;font-size:13px;font-weight:700;color:#F5A623;">'+(ORDER_STATUS_LABEL[o.status]||o.status)+'</div>'
+    + '</div>'
+    + (hasRider ? (
+      '<div class="card" style="margin-bottom:14px;">'
+      + '<div style="display:flex;gap:12px;align-items:center;">'
+      + '<div style="width:48px;height:48px;background:rgba(100,48,200,0.10);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;">🏍️</div>'
+      + '<div style="flex:1;"><div style="font-weight:800;font-size:14px;">'+(riderNm||'Rider assigned')+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+(riderVehicle||'')+'</div></div>'
+      + '</div></div>'
+      + (o.deliveryCode ? (
+        '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:14px;text-align:center;">'
+        + '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Delivery Code</div>'
+        + '<div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">'+o.deliveryCode+'</div>'
+        + '<div style="font-size:11px;color:#9A9390;margin-top:6px;">Give this to '+(riderNm||'the rider')+' when they arrive</div>'
+        + '</div>'
+      ) : '')
+    ) : '<div style="font-size:12px;color:#9A9390;text-align:center;padding:8px 0 14px;">A rider will be assigned once your order is ready.</div>');
+}
+// Wired to the central _socket.on('order:status',...) handler near the
+// top of this file, which already calls this if it's defined.
+function onOrderStatusPush(p){
+  if (S.curScreen!=='track' || !window._trackOrder || p.orderId!==window._trackOrder.id) return;
+  api('/orders/'+p.orderId).then(function(res){
+    if (['DELIVERED','CONFIRMED','CANCELLED'].indexOf(res.order.status)>=0) { renderEtrack(); return; }
+    window._trackOrder = res.order;
+    renderEtrackBody();
+  });
 }
 
 async function depositAndFindShopper() {
@@ -3499,6 +3592,7 @@ function shopperNav(tab) {
 
 
 function renderShopperPhase(phase) {
+  window._shopperPhase = phase;
   const body = document.getElementById('shopper-body');
 
   // PHASE A: Accepted — head to market
@@ -3567,7 +3661,7 @@ function renderShopperPhase(phase) {
 
       <!-- Chat -->
       <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;margin-top:10px;">
-        <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with Amara</div>
+        <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${shopperCustomerName()}</div>
         <div id="shopper-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:70px;overflow-y:auto;">
           <div style="font-size:12px;background:#1C1C1C;padding:7px 10px;border-radius:10px;max-width:88%;color:#F2EDE8;">Aisha please show me the tomatoes, I want to see how fresh they are</div>
         </div>
@@ -3614,10 +3708,10 @@ function renderShopperPhase(phase) {
       <p style="color:#9A9390;font-size:14px;margin-bottom:18px;">Request a rider to pick up and deliver the packaged items</p>
       <div class="card" style="margin-bottom:14px;">
         <div style="font-weight:700;font-size:14px;margin-bottom:12px;">📦 Delivery Details</div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Pickup</span><span style="font-weight:700;font-size:13px;">Mile 12 Market (Your Location)</span></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Deliver to</span><span style="font-weight:700;font-size:13px;">Amara O. — Ikorodu Rd</span></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Package size</span><span style="font-weight:700;font-size:13px;">Small (3 items)</span></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:13px;color:#9A9390;">Delivery fee</span><span style="font-weight:700;font-size:13px;color:#E8392E;">₦800 (from escrow)</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Pickup</span><span style="font-weight:700;font-size:13px;">Your Location</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Deliver to</span><span style="font-weight:700;font-size:13px;">${shopperCustomerName()} — ${(window._shopperSession&&window._shopperSession.deliveryAddress)||'Address pending'}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Package size</span><span style="font-weight:700;font-size:13px;">${(window._shopperSession&&window._shopperSession.items&&window._shopperSession.items.length)||0} items</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:13px;color:#9A9390;">Delivery fee</span><span style="font-weight:700;font-size:13px;color:#E8392E;">₦${Number(Math.round(((window._shopperSession&&window._shopperSession.riderFeeKobo)||0)/100)).toLocaleString()} (from escrow)</span></div>
       </div>
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:12px 14px;margin-bottom:16px;">
         <div style="font-size:13px;color:#9A9390;">🔒 Rider delivery fee is deducted from the user's escrow. You do not pay the rider — the app handles it automatically.</div>
@@ -3631,8 +3725,9 @@ function renderShopperPhase(phase) {
       <button class="btn btn-outline" style="margin-top:9px;" onclick="renderShopperPhase('packaging')">← Back</button>
     </div>`;
 
-  // PHASE E: Searching for rider — then shows rider on map when found
+  // PHASE E: Searching for rider — real-time reveal on RIDER_ASSIGNED push
   } else if (phase === 'riderSearch') {
+    shopperBindStatusListener();
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
       <div style="text-align:center;margin-bottom:20px;">
         <div style="position:relative;width:80px;height:80px;margin:0 auto 14px;">
@@ -3640,62 +3735,27 @@ function renderShopperPhase(phase) {
           <div style="position:absolute;inset:0;border-radius:50%;border:2px solid #6430C8;animation:ripple 1.6s ease-out .55s infinite;"></div>
           <div style="width:80px;height:80px;border-radius:50%;background:rgba(100,48,200,0.10);border:2px solid #6430C8;display:flex;align-items:center;justify-content:center;font-size:34px;">🏍️</div>
         </div>
-        <div class="h3" id="rider-search-title">Finding a Rider...</div>
-        <p style="color:#9A9390;font-size:14px;margin-top:6px;" id="rider-search-sub">Searching near Mile 12 Market</p>
+        <div class="h3">Finding a Rider...</div>
+        <p style="color:#9A9390;font-size:14px;margin-top:6px;">You'll be notified the moment a rider accepts</p>
       </div>
-      <div style="display:flex;justify-content:center;gap:7px;margin-bottom:18px;">
+      <div style="display:flex;justify-content:center;gap:7px;">
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out 0s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out .22s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out .44s infinite;"></div>
       </div>
-      <!-- Map will be revealed when rider is found -->
-      <div id="rider-found-map" style="display:none;">
-        <div class="map-box" style="height:160px;margin-bottom:12px;border-radius:14px;overflow:hidden;">
-          <div class="map-grid"></div>
-          <svg style="position:absolute;inset:0;width:100%;height:100%;"><path d="M260 120 Q 180 80 100 60 Q 55 48 30 35" stroke="#6430C8" stroke-width="3" fill="none" stroke-dasharray="7,5" stroke-linecap="round"/></svg>
-          <!-- Rider moving dot -->
-          <div style="position:absolute;top:68%;right:18%;font-size:22px;animation:carPulse 2s ease-in-out infinite;">🏍️<div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid #6430C8;animation:pingAnim 1.4s ease-in-out infinite;"></div></div>
-          <!-- Shopper location -->
-          <div style="position:absolute;top:12%;left:7%;font-size:18px;">📦</div>
-          <div class="map-overlay-bottom"></div>
-          <div style="position:absolute;top:9px;left:10px;background:rgba(255,255,255,.9);border-radius:9px;padding:5px 10px;font-size:11px;font-weight:700;color:#6430C8;">🏍️ Chidi — 1.8 km away</div>
-        </div>
-        <div style="background:rgba(100,48,200,0.10);border:1.5px solid rgba(100,48,200,.25);border-radius:14px;padding:14px;margin-bottom:12px;">
-          <div style="display:flex;gap:12px;align-items:center;margin-bottom:11px;">
-            <div style="width:48px;height:48px;background:rgba(100,48,200,.15);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;">👨🏿</div>
-            <div style="flex:1;">
-              <div style="font-weight:800;font-size:15px;">Chidi Okonkwo</div>
-              <div style="font-size:12px;color:#9A9390;margin-top:2px;">Honda CB 125 &nbsp;•&nbsp; LG-234-NK &nbsp;•&nbsp; ★4.8</div>
-              <div style="font-size:12px;color:#6430C8;font-weight:700;margin-top:3px;">📍 1.8 km away &nbsp;•&nbsp; ~4 min ETA</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;">
-            <button onclick="openShopRiderCallModal()" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:11px;padding:9px 5px;font-weight:700;font-size:12px;cursor:pointer;color:#2ECC71;font-family:\'DM Sans\',sans-serif;">📞 In-App</button>
-            <button onclick="showToast('Opening phone dialler 📱','info')" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(26,95,212,.3);border-radius:11px;padding:9px 5px;font-weight:700;font-size:12px;cursor:pointer;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;">📱 Phone</button>
-            <button onclick="showToast('Opening WhatsApp 💬','success')" style="flex:1;background:rgba(37,211,102,.1);border:1.5px solid rgba(37,211,102,.3);border-radius:11px;padding:9px 5px;font-weight:700;font-size:12px;cursor:pointer;color:#128C7E;font-family:\'DM Sans\',sans-serif;">💬 WhatsApp</button>
-          </div>
-        </div>
-        <div style="font-size:12px;color:#9A9390;text-align:center;margin-bottom:14px;">Chidi is on his way to Mile 12 Market to collect your items</div>
-        <button class="btn btn-primary" style="background:linear-gradient(135deg,#6430C8,#5020A8);" onclick="renderShopperPhase('riderFound')">→ Rider Arrived — Confirm Items</button>
-      </div>
     </div>`;
-    setTimeout(() => {
-      const title = document.getElementById('rider-search-title');
-      const sub = document.getElementById('rider-search-sub');
-      const mapDiv = document.getElementById('rider-found-map');
-      if(title) title.textContent = 'Rider Found! 🎉';
-      if(sub) sub.textContent = 'Chidi is heading to your location';
-      if(mapDiv) mapDiv.style.display = 'block';
-      showToast('Rider found! Chidi is 1.8km away 🏍️','success');
-    }, 3000);
 
   // PHASE F: Rider found — joint confirmation
   } else if (phase === 'riderFound') {
+    var _rNm=shopperRiderName();
+    var _cNm=shopperCustomerName();
+    var _rVeh=(function(){var r=window._shopperSession&&window._shopperSession.rider;return r?[r.vehicleType,r.plateNumber].filter(Boolean).join(' • '):'';})();
+    var _rRating=(window._shopperSession&&window._shopperSession.rider&&window._shopperSession.rider.ratingAvg)?window._shopperSession.rider.ratingAvg.toFixed(1):'New';
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
       <div style="text-align:center;margin-bottom:18px;">
-        <div style="font-size:56px;margin-bottom:10px;">🤝</div>
-        <div class="h2">Rider Arrived!</div>
-        <p style="color:#9A9390;font-size:13px;margin-top:5px;">Confirm all items with the rider before handover</p>
+        <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
+        <div class="h2">Rider Assigned!</div>
+        <p style="color:#9A9390;font-size:13px;margin-top:5px;">Confirm all items with the rider once they arrive to collect</p>
       </div>
 
       <!-- Rider info -->
@@ -3703,25 +3763,25 @@ function renderShopperPhase(phase) {
         <div style="display:flex;gap:13px;align-items:center;">
           <div style="width:52px;height:52px;background:rgba(100,48,200,0.10);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">👨🏿</div>
           <div style="flex:1;">
-            <div style="font-weight:800;font-size:15px;">Chidi Okonkwo</div>
-            <div style="font-size:12px;color:#9A9390;margin-top:2px;">Honda CB 125 &nbsp;•&nbsp; LG-234-NK &nbsp;•&nbsp; ★4.8</div>
-            <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ At your location</div>
+            <div style="font-weight:800;font-size:15px;">${_rNm}</div>
+            <div style="font-size:12px;color:#9A9390;margin-top:2px;">${_rVeh?_rVeh+' &nbsp;•&nbsp; ':''}★${_rRating}</div>
+            <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ Assigned</div>
           </div>
-          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="showToast('Calling Chidi... 📞','success')">📞</button>
+          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="showToast('Calling '+'${_rNm}'+'... 📞','success')">📞</button>
         </div>
       </div>
 
       <!-- Joint item checklist — both shopper and rider tick each item -->
       <div class="card" style="margin-bottom:14px;">
         <div style="font-weight:800;font-size:14px;margin-bottom:4px;">📋 Joint Item Check</div>
-        <div style="font-size:12px;color:#9A9390;margin-bottom:12px;">You and Chidi must confirm each item together before handover</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:12px;">You and ${_rNm} must confirm each item together before handover</div>
         <div id="joint-confirm-list"></div>
       </div>
 
       <!-- Shopper must call customer before confirming — for rider's safety -->
       <div style="background:rgba(232,57,46,0.10);border:1.5px solid rgba(232,71,10,.25);border-radius:13px;padding:13px 15px;margin-bottom:13px;">
         <div style="font-weight:800;font-size:13px;color:#E8392E;margin-bottom:6px;">📞 Call Customer First — Required</div>
-        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">You must call Amara in Chidi's presence to confirm the items. This protects Chidi in case of any dispute. The confirm button unlocks only after the call.</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">You must call ${_cNm} in ${_rNm}'s presence to confirm the items. This protects ${_rNm} in case of any dispute. The confirm button unlocks only after the call.</div>
         <div id="customer-call-confirmed" style="display:none;background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.3);border-radius:9px;padding:8px 11px;font-size:12px;color:#2ECC71;font-weight:700;margin-bottom:10px;">✅ Customer confirmed — you can now proceed</div>
         <div id="shopper-call-box">
           <div style="display:flex;gap:8px;">
@@ -3739,8 +3799,8 @@ function renderShopperPhase(phase) {
           ['📲','Each market seller receives a direct bank transfer + SMS confirmation'],
           ['⏳','Your session fee (80%) held in escrow until customer confirms delivery'],
           ['⏳','Rider delivery fee held in escrow until customer confirms delivery'],
-          ['🏍️','Chidi collects items and rides to Amara'],
-          ['📍','Both you and Amara track Chidi live on the map'],
+          ['🏍️',_rNm+' collects items and rides to '+_cNm],
+          ['📍','Both you and '+_cNm+' can track '+_rNm+' until delivery is confirmed'],
           ['✅','You are free to accept new sessions immediately after this']
         ].map(([ic,t])=>`<div style="display:flex;gap:9px;align-items:flex-start;margin-bottom:7px;"><span style="flex-shrink:0;">${ic}</span><span style="font-size:12px;color:#9A9390;">${t}</span></div>`).join('')}
       </div>
@@ -3788,7 +3848,7 @@ function renderShopperPhase(phase) {
 
       <div style="background:#1C1C1C;border-radius:13px;padding:12px 14px;margin-bottom:18px;">
         <div style="font-size:12px;color:#9A9390;line-height:1.7;">
-          📱 Your session fee <strong style="color:#F5A623;">₦2,400</strong> will be credited to your CityChef app balance once Amara confirms delivery.<br>
+          📱 Your session fee <strong style="color:#F5A623;">₦2,400</strong> will be credited to your app balance once ${shopperCustomerName()} confirms delivery.<br>
           ⏳ Rider delivery fee released when customer confirms receipt.
         </div>
       </div>
@@ -3805,6 +3865,8 @@ function renderShopperPhase(phase) {
   } else if (phase === 'escrowReleased') {
     const paid = window._spPaidSellers || [];
     const total = paid.reduce((s,r) => s + (parseFloat(r.amount)||0), 0);
+    const custNm = shopperCustomerName();
+    const rdrNm = shopperRiderName();
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;text-align:center;">
       <div style="font-size:68px;margin-bottom:14px;">🎉</div>
       <div class="h2">Payments Sent!</div>
@@ -3830,21 +3892,20 @@ function renderShopperPhase(phase) {
 
       <div style="background:rgba(245,166,35,0.12);border:1.5px solid rgba(184,120,0,.2);border-radius:13px;padding:12px 14px;margin-bottom:14px;text-align:left;">
         <div style="font-weight:700;font-size:13px;color:#F5A623;margin-bottom:4px;">📱 Your Earnings — Pending Delivery</div>
-        <div style="font-size:12px;color:#9A9390;">Your ₦2,400 session fee + rider fee will hit your CityChef app balance once Amara confirms delivery.</div>
+        <div style="font-size:12px;color:#9A9390;">Your session fee + rider fee will hit your app balance once ${custNm} confirms delivery.</div>
       </div>
 
       <div class="card" style="margin-bottom:16px;text-align:left;">
-        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">🏍️ Chidi is delivering — Track Live</div>
-        <div style="font-size:13px;color:#9A9390;margin-bottom:10px;">Both you and Amara can track Chidi until items are delivered</div>
+        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">🏍️ ${rdrNm} is delivering</div>
+        <div style="font-size:13px;color:#9A9390;margin-bottom:10px;">You'll be notified once ${custNm} confirms the delivery is complete</div>
         <div style="display:flex;gap:9px;">
-          <button class="btn btn-outline" style="flex:1;font-size:12px;" onclick="showToast('Opening live tracker 📍','info')">📍 Track Rider</button>
-          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="showToast('Calling Chidi 📞','success')">📞</button>
+          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="showToast('Calling '+'${rdrNm}'+' 📞','success')">📞 Call ${rdrNm}</button>
         </div>
       </div>
 
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.25);border-radius:13px;padding:13px 15px;margin-bottom:18px;text-align:left;">
         <div style="font-weight:800;font-size:13px;color:#2ECC71;margin-bottom:6px;">✅ You are free to accept new sessions!</div>
-        <div style="font-size:12px;color:#9A9390;">Your session with Amara is complete. Return to your dashboard to accept new requests while Chidi completes the delivery.</div>
+        <div style="font-size:12px;color:#9A9390;">Your session with ${custNm} is complete. Return to your dashboard to accept new requests while ${rdrNm} completes the delivery.</div>
       </div>
 
       <button class="btn btn-primary" onclick="renderShopperHome();showToast('Back to dashboard — ready for new sessions! 🛒','success')">🏠 Back to Dashboard</button>
@@ -3920,6 +3981,23 @@ function shopperBindItemSocketListeners(){
   });
 }
 
+// Reveals the real rider once one actually accepts — replaces the old
+// fake 3-second reveal timer on the 'riderSearch' screen.
+function shopperBindStatusListener(){
+  if(!_socket||_socket._shopperStatusBound)return;
+  _socket._shopperStatusBound=true;
+  _socket.on('shop-session:status',function(p){
+    if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
+    window._shopperSession.status=p.status;
+    if(p.status==='RIDER_ASSIGNED'&&window._shopperPhase==='riderSearch'){
+      api('/shop-sessions/'+window._shopperSession.id).then(function(res){
+        window._shopperSession=res.session;
+        renderShopperPhase('riderFound');
+      });
+    }
+  });
+}
+
 async function shopperEndCallAndPackage(){
   sfmEndCall();
   if(window._shopperSession){
@@ -3962,6 +4040,15 @@ async function sendShopperChat() {
   }
 }
 
+
+function shopperCustomerName(){
+  var s=window._shopperSession;
+  return (s&&s.customer&&s.customer.name)||'the customer';
+}
+function shopperRiderName(){
+  var s=window._shopperSession;
+  return (s&&s.rider&&s.rider.user&&s.rider.user.name)||'your rider';
+}
 
 window._shopperSession = null;
 async function shopperAcceptSession(sessionId) {
@@ -4013,9 +4100,11 @@ function shopperHandoverConfirmed() {
 
 
 function shopperCallCustomer(type) {
-  if(type==='inapp') showToast('In-app call to Amara connecting... 📞','success');
-  else if(type==='phone') showToast('Opening phone dialler — +234 801 234 5678','info');
-  else { window.open('https://wa.me/2348012345678','_blank'); showToast('Opening WhatsApp call to Amara 💬','success'); }
+  var custNm = shopperCustomerName();
+  var custPhone = (window._shopperSession&&window._shopperSession.customer&&window._shopperSession.customer.phone)||'';
+  if(type==='inapp') showToast('In-app call to '+custNm+' connecting... 📞','success');
+  else if(type==='phone') showToast('Opening phone dialler'+(custPhone?' — '+custPhone:'')+'','info');
+  else { if(custPhone) window.open('https://wa.me/'+custPhone.replace(/\D/g,''),'_blank'); showToast('Opening WhatsApp call to '+custNm+' 💬','success'); }
 
   // Show "connecting" state on the call box
   const callBox = document.getElementById('shopper-call-box');
@@ -4023,8 +4112,8 @@ function shopperCallCustomer(type) {
     callBox.innerHTML = `<div style="display:flex;align-items:center;gap:10px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:10px;padding:10px 13px;">
       <span style="font-size:20px;animation:pulse 1s infinite;">📞</span>
       <div>
-        <div style="font-weight:700;font-size:13px;color:#2ECC71;">Calling Amara...</div>
-        <div style="font-size:11px;color:#9A9390;">Confirm items with her in Chidi's presence</div>
+        <div style="font-weight:700;font-size:13px;color:#2ECC71;">Calling ${custNm}...</div>
+        <div style="font-size:11px;color:#9A9390;">Confirm items with them in the rider's presence</div>
       </div>
     </div>`;
   }
@@ -4041,11 +4130,11 @@ function shopperCallCustomer(type) {
     }
     if(callBox) {
       callBox.innerHTML = `<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:10px;padding:10px 13px;font-size:12px;color:#2ECC71;font-weight:700;">
-        ✅ Amara confirmed items — you may now confirm handover
+        ✅ ${custNm} confirmed items — you may now confirm handover
       </div>`;
     }
     renderJointConfirmList();
-    showToast('Amara confirmed all items ✅','success');
+    showToast(custNm+' confirmed all items ✅','success');
   }, 2000);
 }
 
@@ -4811,7 +4900,7 @@ async function renderRiderDeliveries(){
     // How to start
     +'<div style="background:rgba(245,166,35,.06);border:1.5px solid rgba(245,166,35,.2);border-radius:14px;padding:14px;">'
     +'<div style="font-size:13px;font-weight:700;color:#F5A623;margin-bottom:6px;">&#x1F4A1; Tap Go Online to start receiving deliveries</div>'
-    +'<div style="font-size:12px;color:#9A9390;">Shop-For-Me sessions needing a rider appear here once you\'re online.</div>'
+    +'<div style="font-size:12px;color:#9A9390;">Shop-For-Me sessions and food/grocery orders needing a rider appear here once you\'re online.</div>'
     +'</div>'
     +'</div>';
 
@@ -4820,6 +4909,7 @@ async function renderRiderDeliveries(){
     if(el)el.textContent='₦'+Number(Math.round(res.balanceKobo/100)).toLocaleString();
   }).catch(function(){});
 
+  riderBindDispatchListeners();
   if(S.rdrOnline)loadRiderAvailableDeliveries();
 }
 
@@ -4828,18 +4918,41 @@ async function loadRiderAvailableDeliveries(){
   if(!list)return;
   list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">Looking for deliveries…</div>';
   try{
-    var res=await api('/shop-sessions?as=available');
-    if(!res.sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
-    list.innerHTML=res.sessions.map(function(s){
+    var results=await Promise.all([
+      api('/shop-sessions?as=available').catch(function(){return {sessions:[]};}),
+      api('/orders?as=available').catch(function(){return {orders:[]};}),
+    ]);
+    var sessions=results[0].sessions||[];
+    var orders=results[1].orders||[];
+    if(!sessions.length&&!orders.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
+    var sessionCards=sessions.map(function(s){
       return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
         +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 Shop-For-Me Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div><span style="background:#F5A623;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
         +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(s.customer?s.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.deliveryAddress||'Address on acceptance')+'</div></div>'
         +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderDelivery(\''+s.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button></div>'
         +'</div>';
-    }).join('');
+    });
+    var orderCards=orders.map(function(o){
+      var vendorName=(o.vendor&&o.vendor.bizName)||'Vendor';
+      return '<div style="background:linear-gradient(135deg,#1a1e2a,#1C1C1C);border:2px solid #3B9FE8;border-radius:18px;padding:18px;margin-bottom:12px;">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🍽️</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#3B9FE8;">🔔 Order Delivery — '+vendorName+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(o.deliveryFeeKobo/100)).toLocaleString()+' fee • '+o.items.length+' items</div></div><span style="background:#3B9FE8;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
+        +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(o.customer?o.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(o.deliveryAddress||'Address on acceptance')+'</div></div>'
+        +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderOrderDelivery(\''+o.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#3B9FE8,#1A6FBF);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button></div>'
+        +'</div>';
+    });
+    list.innerHTML=sessionCards.concat(orderCards).join('');
   }catch(err){
     list.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px">'+(err.message||'Could not load deliveries')+'</div>';
   }
+}
+
+// Live refresh — a rider who's already online should see new deliveries
+// appear without reloading, for both delivery types.
+function riderBindDispatchListeners(){
+  if(!_socket||_socket._riderDispatchBound)return;
+  _socket._riderDispatchBound=true;
+  _socket.on('dispatch:new-shop-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
+  _socket.on('dispatch:new-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
 }
 
 function renderRiderMap(){
@@ -6292,11 +6405,26 @@ function declineVendorOrder(btn){
 }
 
 window._riderActiveSession=null;
+window._riderActiveType=null; // 'SHOP_SESSION' | 'ORDER'
 async function acceptRiderDelivery(sessionId){
   try{
     var res=await api('/shop-sessions/'+sessionId+'/accept-delivery',{method:'POST'});
     window._riderActiveSession=res.session;
+    window._riderActiveType='SHOP_SESSION';
     if(_socket)_socket.emit('shop-session:join',{sessionId:sessionId});
+    riderNav('map');
+    setTimeout(function(){riderMapPhase1();},350);
+  }catch(err){
+    showToast&&showToast(err.message||'Could not accept this delivery','warning');
+    loadRiderAvailableDeliveries();
+  }
+}
+async function acceptRiderOrderDelivery(orderId){
+  try{
+    var res=await api('/orders/'+orderId+'/accept-delivery',{method:'POST'});
+    window._riderActiveSession=res.order;
+    window._riderActiveType='ORDER';
+    if(_socket)_socket.emit('order:join',{orderId:orderId});
     riderNav('map');
     setTimeout(function(){riderMapPhase1();},350);
   }catch(err){
@@ -6309,16 +6437,19 @@ function riderMapPhase1(){
   var body=document.getElementById('rider-body');
   if(!body)return;
   var s=window._riderActiveSession;
+  var isOrder=window._riderActiveType==='ORDER';
   var customerName=(s&&s.customer&&s.customer.name)||'the customer';
+  var pickupLabel=isOrder?((s&&s.vendor&&s.vendor.bizName)||'Vendor'):'Shopper';
+  var pickupHeading=isOrder?'Picking Up From '+pickupLabel:'Picking Up From Shopper';
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
     +'<div style="width:10px;height:10px;border-radius:50%;background:#F5A623;flex-shrink:0;animation:pulse .8s infinite;"></div>'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:17px;font-weight:900;color:#F5A623;">Picking Up From Shopper</div>'
+    +'<div style="font-family:\'Playfair Display\',serif;font-size:17px;font-weight:900;color:#F5A623;">'+pickupHeading+'</div>'
     +'</div></div>'
     +'<div class="mapbox" style="margin:0 16px 14px;border-radius:18px;height:220px;">'
     +'<div class="mgrid"></div><div class="mroad"></div>'
-    +'<div class="mpin" style="left:10%"><div class="mpc" style="width:40px;height:40px;background:#E8392E;">&#x1F6D2;</div><div class="mpl">Shopper</div></div>'
+    +'<div class="mpin" style="left:10%"><div class="mpc" style="width:40px;height:40px;background:#E8392E;">'+(isOrder?'&#x1F3EA;':'&#x1F6D2;')+'</div><div class="mpl">'+pickupLabel+'</div></div>'
     +'<div class="mpin mrider" style="left:42%"><div class="mpc" style="width:48px;height:48px;background:#F5A623;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#F5A623;font-weight:800;">You</div></div>'
     +'<div class="mpin" style="right:8%"><div class="mpc" style="width:40px;height:40px;background:#2ECC71;">&#x1F3E0;</div><div class="mpl">'+customerName.split(' ')[0]+'</div></div>'
     +'<div class="mlive">&#x25CF; LIVE</div>'
@@ -6391,21 +6522,26 @@ function submitHandoverCode(){
   if(cb) cb(code.trim());
 }
 
+function riderBasePath(){
+  return window._riderActiveType==='ORDER' ? '/orders/' : '/shop-sessions/';
+}
 async function finishDelivery(){
   openHandoverCodeModal('Confirm Delivery', async function(code){
     if(window._riderActiveSession){
-      try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }
+      try{ await api(riderBasePath()+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }
       catch(err){ showToast&&showToast(err.message||'Could not confirm delivery','warning'); return; }
     }
     toast('Delivery confirmed! Payment releases once the customer confirms.');
     window._riderActiveSession=null;
+    window._riderActiveType=null;
     riderNav('deliveries');
   });
 }
 async function riderConfirmPickup(){
+  var pickupPath = window._riderActiveType==='ORDER' ? '/picked-up' : '/out-for-delivery';
   openHandoverCodeModal('Confirm Pickup', async function(code){
     if(window._riderActiveSession){
-      try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/out-for-delivery',{method:'POST',body:JSON.stringify({code:code})}); }
+      try{ await api(riderBasePath()+window._riderActiveSession.id+pickupPath,{method:'POST',body:JSON.stringify({code:code})}); }
       catch(err){ showToast&&showToast(err.message||'Could not update delivery status','warning'); return; }
     }
     riderMapPhase2();
@@ -6602,6 +6738,7 @@ function eGo(scr){
   if(scr==='event_planner'){S.role='vendor';S.vtype='event_planner';renderEPDashboard();}
   if(scr==='rider'&&typeof renderRiderDeliveries==='function'){S.role='rider';renderRiderDeliveries();}
   if(scr==='history'&&typeof renderEHistory==='function'){renderEHistory();}
+  if(scr==='track'&&typeof renderEtrack==='function'){renderEtrack();}
   if(scr==='profile'&&typeof loadEscrowWalletCard==='function'){loadEscrowWalletCard();}
   if(scr==='profile'){var rss=document.getElementById('role-switcher-slot');if(rss)rss.innerHTML=renderRoleSwitcher();}
 }

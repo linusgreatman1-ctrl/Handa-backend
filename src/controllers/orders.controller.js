@@ -114,6 +114,12 @@ async function listOrders(req, res, next) {
     } else if (as === "rider") {
       if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
       where = { riderId: req.user.riderProfile.id };
+    } else if (as === "available") {
+      // Orders ready for pickup with no rider yet — matches the
+      // "dispatch:new-delivery" broadcast riders get when a vendor calls
+      // POST /:id/ready. Mirrors shopSessions.controller.js's as=available.
+      if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
+      where = { status: "READY_FOR_PICKUP", riderId: null };
     }
     if (status) where.status = status;
 
@@ -130,7 +136,7 @@ async function listOrders(req, res, next) {
 
     // Same rule as getOrder: a rider viewing their own delivery list must
     // never see the handover codes on their own screen.
-    if (as === "rider") {
+    if (as === "rider" || as === "available") {
       orders.forEach((o) => { o.pickupCode = undefined; o.deliveryCode = undefined; });
     }
 
