@@ -136,6 +136,38 @@ function attachLiveSocket(httpServer) {
       });
     });
 
+    // Peer discovery for the call: whoever joins the shop-session room for
+    // the call learns who's already there (in case the other side joined
+    // first), and everyone already in the room learns about the new
+    // arrival — either order works, since offer/answer roles are fixed
+    // client-side (shopper always offers) rather than decided by join order.
+    socket.on("webrtc:join-call", ({ sessionId }) => {
+      if (!sessionId) return;
+      const room = `shop-session:${sessionId}`;
+      if (!socket.rooms.has(room)) return;
+      const members = io.sockets.adapter.rooms.get(room);
+      const existing = members ? [...members].filter((id) => id !== socket.id) : [];
+      socket.emit("webrtc:existing-peers", { sessionId, socketIds: existing });
+      socket.to(room).emit("webrtc:peer-joined", { sessionId, fromSocketId: socket.id });
+    });
+
+    socket.on("webrtc:leave-call", ({ sessionId }) => {
+      if (!sessionId) return;
+      socket.to(`shop-session:${sessionId}`).emit("webrtc:peer-left", { sessionId, fromSocketId: socket.id });
+    });
+
+    // "disconnecting" (not "disconnect") fires while socket.rooms is still
+    // populated, so a dropped tab/network still tells the other side of
+    // any live call to tear down instead of hanging on a dead peer.
+    socket.on("disconnecting", () => {
+      for (const room of socket.rooms) {
+        if (room.startsWith("shop-session:")) {
+          const sessionId = room.slice("shop-session:".length);
+          socket.to(room).emit("webrtc:peer-left", { sessionId, fromSocketId: socket.id });
+        }
+      }
+    });
+
     socket.on("disconnect", () => {});
   });
 

@@ -2317,18 +2317,14 @@ function renderShopPhase(phase) {
         <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s ease-in-out infinite;flex-shrink:0;"></div>
         <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
         <span style="font-size:12px;color:#9A9390;margin-left:auto;">Aisha A. ★4.9</span>
-        <button onclick="showToast('Call ended','warning');renderShopPhase('buildList')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">End</button>
+        <button onclick="sfmEndCall();showToast('Call ended','warning');renderShopPhase('buildList')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">End</button>
       </div>
       <div class="video-frame" style="margin-bottom:14px;height:185px;">
-        <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:9px;">
-          <span style="font-size:50px;">📹</span>
-          <span style="font-size:13px;color:rgba(255,255,255,.55);">Aisha's live camera — Mile 12 Market</span>
-        </div>
+        <video id="rtc-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
         <div class="scanline"></div>
         <div class="live-badge"><div class="live-dot"></div>LIVE</div>
-        <div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border-radius:8px;padding:4px 9px;font-size:11px;color:white;font-weight:700;">02:34</div>
         <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;">
-          ${[['🎙️','Mic'],['📵','Mute'],['🔊','Speaker']].map(([ic,lb])=>`<button style="display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;border-radius:10px;padding:7px 10px;font-size:17px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+          ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker','']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;border-radius:10px;padding:7px 10px;font-size:17px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
         </div>
       </div>
 
@@ -2348,9 +2344,10 @@ function renderShopPhase(phase) {
           <button onclick="sendLiveChat()" style="background:#E8392E;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
         </div>
       </div>
-      <button class="btn btn-primary" id="checkout-btn" style="opacity:.4;pointer-events:none;" onclick="renderShopPhase('packaging')">✅ All Items Approved — Done Shopping</button>
+      <button class="btn btn-primary" id="checkout-btn" style="opacity:.4;pointer-events:none;" onclick="sfmEndCall();renderShopPhase('packaging')">✅ All Items Approved — Done Shopping</button>
     </div>`;
     renderApprovalItems();
+    if(window._sfmSession) sfmStartCall(window._sfmSession.id, 'callee', null, 'rtc-remote-video');
 
   // ── PHASE 5: Shopper Packages Items ───────────────────────────────────
   } else if (phase === 'packaging') {
@@ -2779,6 +2776,173 @@ function sfmBindChatSocketListener(msgsElId, myUserId){
   });
 }
 
+// ── Real WebRTC for the Shop-For-Me live call ───────────────────────────
+// window._rtc holds the one active call's state. The shopper is always the
+// offerer and the customer always the answerer — deterministic by role, so
+// join order (who opens the call screen first) never matters and there's
+// no glare to resolve. Signaling rides the existing shop-session socket
+// room via the webrtc:* relay in src/realtime/live.js.
+window._rtc = null;
+window._iceServersCache = null;
+
+async function sfmFetchIceServers(){
+  if(window._iceServersCache) return window._iceServersCache;
+  try{
+    var res = await api('/config/ice-servers');
+    window._iceServersCache = (res && res.iceServers) || [{urls:'stun:stun.l.google.com:19302'}];
+  }catch(e){
+    window._iceServersCache = [{urls:'stun:stun.l.google.com:19302'}];
+  }
+  return window._iceServersCache;
+}
+
+async function sfmStartCall(sessionId, role, localVideoElId, remoteVideoElId){
+  if(window._rtc && window._rtc.sessionId===sessionId && window._rtc.pc) return;
+  if(window._rtc) sfmEndCall();
+  if(typeof RTCPeerConnection==='undefined'||!navigator.mediaDevices){
+    showToast&&showToast('Video calls are not supported in this browser','warning');
+    return;
+  }
+
+  var rtc = { sessionId:sessionId, role:role, pc:null, localStream:null, remoteSocketId:null, localVideoElId:localVideoElId, remoteVideoElId:remoteVideoElId, facingMode: role==='caller'?'environment':'user' };
+  window._rtc = rtc;
+  sfmBindWebrtcListeners();
+
+  try{
+    rtc.localStream = await navigator.mediaDevices.getUserMedia({ video: role==='caller'?{facingMode:rtc.facingMode}:true, audio: true });
+  }catch(err){
+    try{
+      rtc.localStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      showToast&&showToast('Camera unavailable — continuing with audio only','warning');
+    }catch(err2){
+      showToast&&showToast('Camera/mic access was denied — the rest of the session still works','warning');
+      rtc.localStream = null;
+    }
+  }
+  if(localVideoElId && rtc.localStream){
+    var lv=document.getElementById(localVideoElId);
+    if(lv) lv.srcObject = rtc.localStream;
+  }
+
+  var iceServers = await sfmFetchIceServers();
+  var pc = new RTCPeerConnection({ iceServers: iceServers });
+  rtc.pc = pc;
+  if(rtc.localStream) rtc.localStream.getTracks().forEach(function(t){ pc.addTrack(t, rtc.localStream); });
+
+  pc.onicecandidate = function(ev){
+    if(ev.candidate && rtc.remoteSocketId && _socket){
+      _socket.emit('webrtc:ice-candidate', { toSocketId: rtc.remoteSocketId, candidate: ev.candidate, sessionId: sessionId });
+    }
+  };
+  pc.ontrack = function(ev){
+    if(!remoteVideoElId) return;
+    var rv=document.getElementById(remoteVideoElId);
+    if(rv) rv.srcObject = ev.streams[0];
+  };
+
+  if(_socket) _socket.emit('webrtc:join-call', { sessionId: sessionId });
+}
+
+function sfmBindWebrtcListeners(){
+  if(!_socket||_socket._rtcBound) return;
+  _socket._rtcBound = true;
+
+  function makeOfferTo(toSocketId){
+    var rtc=window._rtc;
+    if(!rtc||!rtc.pc||rtc.role!=='caller') return;
+    rtc.remoteSocketId = toSocketId;
+    rtc.pc.createOffer().then(function(offer){
+      return rtc.pc.setLocalDescription(offer).then(function(){
+        _socket.emit('webrtc:offer', { toSocketId:toSocketId, sdp:offer, sessionId:rtc.sessionId });
+      });
+    }).catch(function(){});
+  }
+
+  _socket.on('webrtc:existing-peers', function(p){
+    var rtc=window._rtc;
+    if(!rtc||rtc.sessionId!==p.sessionId||!p.socketIds||!p.socketIds.length) return;
+    if(rtc.role==='caller') makeOfferTo(p.socketIds[0]); else rtc.remoteSocketId=p.socketIds[0];
+  });
+  _socket.on('webrtc:peer-joined', function(p){
+    var rtc=window._rtc;
+    if(!rtc||rtc.sessionId!==p.sessionId) return;
+    if(rtc.role==='caller') makeOfferTo(p.fromSocketId); else rtc.remoteSocketId=p.fromSocketId;
+  });
+  _socket.on('webrtc:offer', function(p){
+    var rtc=window._rtc;
+    if(!rtc||!rtc.pc||rtc.role!=='callee'||p.sessionId!==rtc.sessionId) return;
+    rtc.remoteSocketId = p.fromSocketId;
+    rtc.pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).then(function(){
+      return rtc.pc.createAnswer();
+    }).then(function(answer){
+      return rtc.pc.setLocalDescription(answer).then(function(){
+        _socket.emit('webrtc:answer', { toSocketId:p.fromSocketId, sdp:answer, sessionId:rtc.sessionId });
+      });
+    }).catch(function(){});
+  });
+  _socket.on('webrtc:answer', function(p){
+    var rtc=window._rtc;
+    if(!rtc||!rtc.pc||rtc.role!=='caller'||p.sessionId!==rtc.sessionId) return;
+    rtc.pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).catch(function(){});
+  });
+  _socket.on('webrtc:ice-candidate', function(p){
+    var rtc=window._rtc;
+    if(!rtc||!rtc.pc||p.sessionId!==rtc.sessionId||!p.candidate) return;
+    rtc.pc.addIceCandidate(new RTCIceCandidate(p.candidate)).catch(function(){});
+  });
+  _socket.on('webrtc:peer-left', function(p){
+    var rtc=window._rtc;
+    if(!rtc||rtc.sessionId!==p.sessionId) return;
+    showToast&&showToast('The other side left the call','warning');
+    sfmEndCall();
+  });
+}
+
+function sfmEndCall(){
+  var rtc=window._rtc;
+  if(!rtc) return;
+  if(_socket && rtc.sessionId) _socket.emit('webrtc:leave-call', { sessionId: rtc.sessionId });
+  if(rtc.pc){ try{ rtc.pc.close(); }catch(e){} }
+  if(rtc.localStream){ rtc.localStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} }); }
+  window._rtc = null;
+}
+
+function toggleRtcMic(){
+  var rtc=window._rtc;
+  if(!rtc||!rtc.localStream) return;
+  var track=rtc.localStream.getAudioTracks()[0];
+  if(!track) return;
+  track.enabled = !track.enabled;
+  showToast&&showToast(track.enabled?'Mic on':'Mic muted','info');
+}
+
+function toggleRtcSpeaker(){
+  var rtc=window._rtc;
+  if(!rtc||!rtc.remoteVideoElId) return;
+  var rv=document.getElementById(rtc.remoteVideoElId);
+  if(!rv) return;
+  rv.muted = !rv.muted;
+  showToast&&showToast(rv.muted?'Speaker muted':'Speaker on','info');
+}
+
+async function flipRtcCamera(){
+  var rtc=window._rtc;
+  if(!rtc||!rtc.pc||!rtc.localStream) return;
+  rtc.facingMode = rtc.facingMode==='environment'?'user':'environment';
+  try{
+    var newStream = await navigator.mediaDevices.getUserMedia({ video:{facingMode:rtc.facingMode}, audio:false });
+    var newTrack = newStream.getVideoTracks()[0];
+    var sender = rtc.pc.getSenders().find(function(s){ return s.track && s.track.kind==='video'; });
+    if(sender) await sender.replaceTrack(newTrack);
+    var oldTrack = rtc.localStream.getVideoTracks()[0];
+    if(oldTrack){ rtc.localStream.removeTrack(oldTrack); try{ oldTrack.stop(); }catch(e){} }
+    rtc.localStream.addTrack(newTrack);
+    if(rtc.localVideoElId){ var lv=document.getElementById(rtc.localVideoElId); if(lv) lv.srcObject=rtc.localStream; }
+  }catch(err){
+    showToast&&showToast('Could not switch camera','warning');
+  }
+}
+
 async function sendLiveChat() {
   const inp=document.getElementById('live-chat-inp'); if(!inp||!inp.value.trim()) return;
   const msgs=document.getElementById('live-chat-msgs'); if(!msgs) return;
@@ -2905,17 +3069,14 @@ function renderShopperPhase(phase) {
       <!-- User's camera (small PiP) + shopper's main camera -->
       <div style="position:relative;margin-bottom:14px;">
         <div class="video-frame" style="height:180px;">
-          <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;">
-            <span style="font-size:46px;">📹</span>
-            <span style="font-size:12px;color:rgba(255,255,255,.5);">Your camera — showing items to user</span>
-          </div>
+          <video id="rtc-local-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
           <div class="scanline"></div>
           <div class="live-badge"><div class="live-dot"></div>LIVE</div>
           <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:9px;">
-            ${[['🎙️','Mic'],['📵','Mute'],['🔊','Speaker'],['🔄','Flip']].map(([ic,lb])=>`<button style="display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,.15);border:none;border-radius:9px;padding:6px 9px;font-size:16px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+            ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['🔄','Flip','flipRtcCamera()']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,.15);border:none;border-radius:9px;padding:6px 9px;font-size:16px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
           </div>
           <!-- User's PiP -->
-          <div style="position:absolute;top:10px;right:10px;width:70px;height:55px;background:rgba(0,0,0,.6);border-radius:10px;border:1.5px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;">👤</div>
+          <video id="rtc-remote-video" autoplay playsinline style="position:absolute;top:10px;right:10px;width:70px;height:55px;object-fit:cover;background:rgba(0,0,0,.6);border-radius:10px;border:1.5px solid rgba(255,255,255,.2);"></video>
         </div>
       </div>
 
@@ -2943,6 +3104,7 @@ function renderShopperPhase(phase) {
     </div>`;
     shopperBindItemSocketListeners();
     renderShopperItemStatus();
+    if(window._shopperSession) sfmStartCall(window._shopperSession.id, 'caller', 'rtc-local-video', 'rtc-remote-video');
 
   // PHASE C: Package the items
   } else if (phase === 'packaging') {
@@ -3277,6 +3439,7 @@ function shopperBindItemSocketListeners(){
 }
 
 async function shopperEndCallAndPackage(){
+  sfmEndCall();
   if(window._shopperSession){
     try{ await api('/shop-sessions/'+window._shopperSession.id+'/packaging',{method:'POST'}); }
     catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
