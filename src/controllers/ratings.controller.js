@@ -1,24 +1,10 @@
 const prisma = require("../config/db");
 
-// The customer rates rider and vendor independently per order (matches
-// the frontend's separate rider/vendor star widgets), or the shopper/rider
-// per Shop-For-Me session, or the vendor per booking. Ratee is resolved
-// server-side from the context, never trusted from the client, so a
-// customer can't rate an arbitrary user.
+// The customer rates the vendor per booking, or the shopper/rider per
+// Shop-For-Me session. Ratee is resolved server-side from the context,
+// never trusted from the client, so a customer can't rate an arbitrary
+// user.
 async function resolveContextAndRatee(contextType, contextId, rateeRole, raterId) {
-  if (contextType === "ORDER") {
-    const order = await prisma.order.findUnique({ where: { id: contextId }, include: { vendor: true, rider: true } });
-    if (!order) throw Object.assign(new Error("Order not found."), { status: 404 });
-    if (order.customerId !== raterId) throw Object.assign(new Error("Only the customer on this order can rate it."), { status: 403 });
-    if (!["DELIVERED", "CONFIRMED"].includes(order.status)) throw Object.assign(new Error("Order has not been delivered yet."), { status: 409 });
-    if (rateeRole === "VENDOR") return { rateeId: order.vendor.userId, field: { orderId: order.id } };
-    if (rateeRole === "RIDER") {
-      if (!order.rider) throw Object.assign(new Error("This order had no rider."), { status: 400 });
-      return { rateeId: order.rider.userId, field: { orderId: order.id } };
-    }
-    throw Object.assign(new Error("Invalid rateeRole for an order."), { status: 400 });
-  }
-
   if (contextType === "BOOKING") {
     const booking = await prisma.booking.findUnique({ where: { id: contextId }, include: { vendor: true } });
     if (!booking) throw Object.assign(new Error("Booking not found."), { status: 404 });

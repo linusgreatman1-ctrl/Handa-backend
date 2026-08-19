@@ -1,8 +1,7 @@
 // Minimal demo dataset so the API has something to browse immediately
-// after `npm run seed` — one vendor per catalog tab the frontend has
-// (restaurant, grocery, caterer, home cook, event planner, cake
-// designer), plus a rider, a shopper, and a customer. Not meant as
-// exhaustive fixture data — just enough to click through every screen.
+// after `npm run seed` — a home cook and an event planner vendor, plus a
+// rider, a shopper, and a customer. Not meant as exhaustive fixture data
+// — just enough to click through every screen.
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 
@@ -37,57 +36,6 @@ async function main() {
   console.log("Seeding Handa demo data...");
 
   const customer = await makeUser({ name: "Ada Customer", email: "ada@example.com", phone: "+2348010000001", role: "CUSTOMER" });
-
-  const groceryOwner = await makeUser({
-    name: "Amina Grocery",
-    email: "grocery@example.com",
-    phone: "+2348010000003",
-    role: "VENDOR",
-    extra: {
-      vendorProfile: {
-        create: {
-          vtype: "GROCERY",
-          bizName: "Mile 12 Fresh Market",
-          emoji: "🥬",
-          tags: ["Tubers", "Grains", "Vegetables"],
-          isOnline: true, isVerified: true,
-          baseDeliveryFeeKobo: 50000,
-          menuItems: {
-            create: [
-              { name: "Tomatoes", priceKobo: 150000, unit: "basket", category: "Vegetables", emoji: "🍅" },
-              { name: "Rice", priceKobo: 6500000, unit: "50kg bag", category: "Grains", emoji: "🌾" },
-              { name: "Yam Tubers", priceKobo: 200000, unit: "tuber", category: "Tubers", emoji: "🍠" },
-            ],
-          },
-        },
-      },
-    },
-  });
-
-  const catererOwner = await makeUser({
-    name: "Funke Caterer",
-    email: "caterer@example.com",
-    phone: "+2348010000004",
-    role: "VENDOR",
-    extra: {
-      vendorProfile: {
-        create: {
-          vtype: "CATERER",
-          bizName: "Funke's Delicious Catering",
-          emoji: "🍽️",
-          tags: ["Weddings", "Corporate"],
-          isOnline: true, isVerified: true,
-          servicePackages: {
-            create: [
-              { key: "BASIC", label: "Basic (50 guests)", priceKobo: 15000000, includes: ["Jollof rice", "Chicken", "Salad", "Drinks"] },
-              { key: "STANDARD", label: "Standard (100 guests)", priceKobo: 28000000, includes: ["3 rice options", "2 proteins", "Salad", "Small chops", "Drinks"] },
-              { key: "PREMIUM", label: "Premium (200 guests)", priceKobo: 55000000, includes: ["Full menu", "Live cooking station", "Dessert bar", "Drinks", "Waitstaff"] },
-            ],
-          },
-        },
-      },
-    },
-  });
 
   const cookOwner = await makeUser({
     name: "Ngozi Cook",
@@ -137,29 +85,6 @@ async function main() {
               { key: "BIRTHDAY", label: "Birthday Package", priceKobo: 20000000, includes: ["Decor", "MC", "Photography"] },
               { key: "BURIAL", label: "Funeral / Memorial", priceKobo: 18000000, includes: ["Funeral coordination", "Venue arrangement", "Floral arrangements"] },
               { key: "NAMING", label: "Naming Ceremony", priceKobo: 12000000, includes: ["Ceremony coordination", "Decor setup", "Catering liaison"] },
-            ],
-          },
-        },
-      },
-    },
-  });
-
-  const cakeOwner = await makeUser({
-    name: "Bisi Cakes",
-    email: "cakes@example.com",
-    phone: "+2348010000007",
-    role: "VENDOR",
-    extra: {
-      vendorProfile: {
-        create: {
-          vtype: "CAKE_DESIGNER",
-          bizName: "Bisi's Custom Cakes",
-          emoji: "🎂",
-          isOnline: true, isVerified: true,
-          menuItems: {
-            create: [
-              { name: "2-Tier Wedding Cake", priceKobo: 4500000, deliveryDays: 3, emoji: "🎂", category: "Wedding" },
-              { name: "Birthday Cake (Small)", priceKobo: 1200000, deliveryDays: 1, emoji: "🎂", category: "Birthday" },
             ],
           },
         },

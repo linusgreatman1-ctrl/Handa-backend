@@ -73,7 +73,6 @@ async function getEscrowSummary(req, res, next) {
       prisma.escrowHold.findMany({
         where: { payerId: req.user.id, status: "HELD" },
         include: {
-          order: { include: { vendor: { select: { bizName: true } } } },
           booking: { include: { vendor: { select: { bizName: true } } } },
           shopSession: true,
         },
@@ -82,9 +81,8 @@ async function getEscrowSummary(req, res, next) {
     ]);
 
     const items = activeHolds.map((h) => {
-      let label = "Order";
-      if (h.contextType === "ORDER" && h.order) label = `${h.order.vendor.bizName} — Order`;
-      else if (h.contextType === "BOOKING" && h.booking) label = `${h.booking.vendor.bizName} — ${h.booking.type.replace("_", " ")}`;
+      let label = "Escrow";
+      if (h.contextType === "BOOKING" && h.booking) label = `${h.booking.vendor.bizName} — ${h.booking.type.replace("_", " ")}`;
       else if (h.contextType === "SHOP_SESSION") {
         label = "Shop-For-Me Session";
         if (h.shopSession && ["RIDER_ASSIGNED", "OUT_FOR_DELIVERY"].includes(h.shopSession.status) && h.shopSession.deliveryCode) {

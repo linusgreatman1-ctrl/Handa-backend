@@ -1,9 +1,8 @@
 const prisma = require("../config/db");
 const commissionSvc = require("../services/commission.service");
 
-// One listing endpoint backs every catalog tab in the frontend
-// (Restaurants, Raw Food stores, Caterers, Home Cooks, Event Planners,
-// Cake designers) — they're all VendorProfile rows, filtered by vtype.
+// One listing endpoint backs the Home Cooks and Event Planners catalog
+// tabs in the frontend — they're all VendorProfile rows, filtered by vtype.
 async function listVendors(req, res, next) {
   try {
     const { vtype, state, tag, q, online } = req.query;
@@ -64,7 +63,7 @@ async function getMyVendor(req, res, next) {
   }
 }
 
-// ── Menu items (dishes / raw-food items / cook specials / cakes) ──
+// ── Menu items (home cook specials) ──
 
 async function listMenuItems(req, res, next) {
   try {
@@ -143,7 +142,7 @@ async function deleteMenuItem(req, res, next) {
   }
 }
 
-// ── Service packages (caterers & event planners: basic/standard/premium/…) ──
+// ── Service packages (event planners: basic/standard/premium/…) ──
 
 async function createServicePackage(req, res, next) {
   try {

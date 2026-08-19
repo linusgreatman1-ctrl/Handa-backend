@@ -3,18 +3,17 @@ const wallet = require("./wallet.service");
 
 const AUTO_RELEASE_HOURS = Number(process.env.ESCROW_AUTO_RELEASE_HOURS || 24);
 
-// Every order/booking/session is paid into escrow up front (real money
-// already collected from the customer via Paystack — see payments.service)
-// and only credited to the vendor/rider/shopper's withdrawable Wallet once
+// Every booking/session is paid into escrow up front (real money already
+// collected from the customer via Paystack — see payments.service) and
+// only credited to the vendor/rider/shopper's withdrawable Wallet once
 // released. One hold per beneficiary so a Shop-For-Me session can release
 // the shopper's session fee, the rider's delivery fee, and each market
 // seller's payout independently instead of all-or-nothing.
-async function createHold({ contextType, orderId, bookingId, shopSessionId, payerId, payeeId, payeeRole, amountKobo, autoRelease = true }, tx = prisma) {
+async function createHold({ contextType, bookingId, shopSessionId, payerId, payeeId, payeeRole, amountKobo, autoRelease = true }, tx = prisma) {
   if (amountKobo <= 0) throw Object.assign(new Error("Escrow amount must be positive."), { status: 400 });
   return tx.escrowHold.create({
     data: {
       contextType,
-      orderId,
       bookingId,
       shopSessionId,
       payerId,
@@ -40,7 +39,7 @@ async function releaseHold(holdId, { reference, description } = {}) {
         hold.payeeId,
         hold.amountKobo,
         "PAYOUT",
-        { contextType: hold.contextType, contextId: hold.orderId || hold.bookingId || hold.shopSessionId, reference, description },
+        { contextType: hold.contextType, contextId: hold.bookingId || hold.shopSessionId, reference, description },
         tx
       );
     }
@@ -49,9 +48,9 @@ async function releaseHold(holdId, { reference, description } = {}) {
   });
 }
 
-async function releaseAllHoldsForContext({ contextType, orderId, bookingId, shopSessionId }, opts = {}) {
+async function releaseAllHoldsForContext({ contextType, bookingId, shopSessionId }, opts = {}) {
   const holds = await prisma.escrowHold.findMany({
-    where: { contextType, orderId, bookingId, shopSessionId, status: "HELD" },
+    where: { contextType, bookingId, shopSessionId, status: "HELD" },
   });
   const released = [];
   for (const hold of holds) {
@@ -81,9 +80,9 @@ async function refundHold(holdId, { reference, description } = {}) {
   });
 }
 
-async function refundAllHoldsForContext({ contextType, orderId, bookingId, shopSessionId }, opts = {}) {
+async function refundAllHoldsForContext({ contextType, bookingId, shopSessionId }, opts = {}) {
   const holds = await prisma.escrowHold.findMany({
-    where: { contextType, orderId, bookingId, shopSessionId, status: "HELD" },
+    where: { contextType, bookingId, shopSessionId, status: "HELD" },
   });
   const refunded = [];
   for (const hold of holds) {

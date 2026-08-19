@@ -663,74 +663,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 </div>
 
 
-<!-- ═══════════ STORE LIVE SHOPPER OVERLAY ═══════════ -->
-<div class="ov" id="store-live-ov" style="align-items:flex-end">
-  <div class="sheet" style="max-height:92vh;overflow-y:auto;padding-bottom:24px">
-
-    <!-- Header -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-      <div>
-        <p style="color:#2ECC71;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 2px">&#x1F4F9; Live Shopping</p>
-        <h3 style="font-size:17px;font-weight:800;margin:0" id="slive-store-name">Store</h3>
-      </div>
-      <button onclick="closeStoreLive()" style="background:#2D2D2D;border:2px solid #444;border-radius:50%;width:32px;height:32px;color:#aaa;cursor:pointer;font-size:16px;flex-shrink:0">&#x2715;</button>
-    </div>
-    <p style="color:#9A9390;font-size:12px;margin:0 0 14px">Your store assistant shows you items live on video. Tap what you want &#x2192; Add to cart &#x2192; Pay.</p>
-
-    <!-- Video feed simulation -->
-    <div style="background:#0a0a0a;border-radius:14px;overflow:hidden;margin-bottom:14px;border:2px solid rgba(46,204,113,.3)">
-      <div style="height:150px;background:linear-gradient(135deg,#0a1a0a,#0d200d);display:flex;align-items:center;justify-content:center;position:relative">
-        <div style="text-align:center">
-          <div id="slive-store-em" style="font-size:40px;margin-bottom:8px">&#x1F6D2;</div>
-          <p style="color:#2ECC71;font-weight:700;font-size:13px;margin:0" id="slive-store-name2">Live from store</p>
-          <p style="color:#555;font-size:11px;margin:4px 0 0">Assistant is ready for you</p>
-        </div>
-        <div style="position:absolute;top:10px;left:12px;background:#E8392E;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:800;color:#fff;letter-spacing:1px">&#x25CF; LIVE</div>
-        <div style="position:absolute;top:10px;right:12px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.65);border-radius:20px;padding:4px 10px 4px 6px">
-          <div id="slive-assistant-av" style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#2ECC71,#3B9FE8);display:flex;align-items:center;justify-content:center;font-size:12px">&#x1F469;</div>
-          <span id="slive-assistant-name" style="color:#fff;font-size:11px;font-weight:700">Assistant</span>
-        </div>
-        <div style="position:absolute;bottom:8px;right:10px;display:flex;gap:6px">
-          <button onclick="toast('Mic toggled')" style="background:rgba(0,0,0,.5);border:none;border-radius:50%;width:28px;height:28px;color:#fff;cursor:pointer;font-size:13px">&#x1F50A;</button>
-          <button onclick="toast('Camera toggled')" style="background:rgba(0,0,0,.5);border:none;border-radius:50%;width:28px;height:28px;color:#fff;cursor:pointer;font-size:13px">&#x1F4F7;</button>
-        </div>
-      </div>
-      <!-- Assistant greeting bubble -->
-      <div style="padding:10px 14px;border-top:1px solid #1a2a1a;display:flex;gap:8px;align-items:flex-start">
-        <div id="slive-ast-bubble-av" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#2ECC71,#3B9FE8);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">&#x1F469;</div>
-        <div style="background:#1C2E1C;border-radius:10px;padding:8px 12px;flex:1">
-          <p style="font-size:12px;color:#ccc;margin:0;line-height:1.5">Hi! I&#x2019;m <b id="slive-greeting-name" style="color:#2ECC71">your assistant</b>. I&#x2019;ll walk you through our fresh stock today. Tap the items you want and I&#x2019;ll confirm them for your cart!</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Items to browse (store's raw food inventory) -->
-    <p style="font-weight:800;font-size:14px;margin:0 0 10px">&#x1F6D2; Available Items &#x2014; Tap to select</p>
-    <div id="slive-items-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px"></div>
-
-    <!-- Selected summary -->
-    <div id="slive-selected-box" style="display:none;background:#1C2E1C;border:2px solid rgba(46,204,113,.3);border-radius:14px;padding:14px 16px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <p style="font-weight:800;font-size:14px;margin:0">Selected Items</p>
-        <span id="slive-count" style="color:#2ECC71;font-weight:700;font-size:13px">0 items</span>
-      </div>
-      <div id="slive-selected-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid rgba(46,204,113,.2)">
-        <span style="font-weight:800;font-size:15px">Total</span>
-        <span id="slive-total" style="color:#2ECC71;font-weight:900;font-size:19px">&#x20A6;0</span>
-      </div>
-    </div>
-
-    <!-- Add to cart button -->
-    <button id="slive-cart-btn" onclick="addLiveItemsToCart()" style="width:100%;padding:14px;border-radius:13px;border:none;background:#2ECC71;color:#111;font-family:'DM Sans',sans-serif;font-weight:800;font-size:15px;cursor:pointer;display:none">
-      &#x1F6D2; Add Selected Items to Cart
-    </button>
-    <button onclick="closeStoreLive()" style="width:100%;padding:12px;border-radius:13px;border:2px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px">
-      Cancel
-    </button>
-  </div>
-</div>
-
 
 
 
@@ -1017,7 +949,6 @@ function connectSocket(){
   if (_socket || !_accessToken || typeof io === 'undefined') return;
   _socket = io({ auth: { token: _accessToken } });
   _socket.on('notification:new', function(n){ if(typeof toast==='function') toast(n.title + ': ' + n.body); });
-  _socket.on('order:status', function(p){ window._lastOrderStatusEvent = p; if (typeof onOrderStatusPush === 'function') onOrderStatusPush(p); });
 }
 
 // Maps the backend's User (+ optional profiles) shape onto the exact
@@ -1486,42 +1417,27 @@ async function submitProposalForRequest(requestId){
 }
 
 // Fetches real vendors + their menu items and reshapes them into the exact
-// D.rests/D.dishes/D.raw/D.rawStores/D.caterers/D.ep/D.cooks/D.cakes/
-// D.shoppers structure the prototype's existing render functions already
-// expect (same short field names: nm/pr/em/rt/...). This overwrites the
-// literal demo arrays below with real seeded data from the database —
-// the render functions themselves are untouched.
+// D.ep/D.cooks/D.shoppers structure the prototype's existing render
+// functions already expect (same short field names: nm/pr/em/rt/...).
+// This overwrites the literal demo arrays below with real seeded data
+// from the database — the render functions themselves are untouched.
 async function loadRealCatalog(){
   try {
-    var GRADIENTS = { GROCERY:'linear-gradient(135deg,#0d2d0d,#1a3a1a)', CATERER:'linear-gradient(135deg,#2a1a3a,#1a1a1a)', HOME_COOK:'linear-gradient(135deg,#2d0d2d,#111)', EVENT_PLANNER:'linear-gradient(135deg,#0d2d1a,#111)', CAKE_DESIGNER:'linear-gradient(135deg,#3a0d1a,#111)' };
     var byType = {};
-    // No RESTAURANT vtype — restaurant ordering was removed from the
-    // product (no screen in this app ever displayed it; see D.rests below).
-    await Promise.all(['GROCERY','CATERER','HOME_COOK','EVENT_PLANNER','CAKE_DESIGNER'].map(async function(vtype){
+    // Only HOME_COOK and EVENT_PLANNER vendor types exist in this app —
+    // GROCERY/CATERER/CAKE_DESIGNER (and RESTAURANT before them) were
+    // removed from the product entirely.
+    await Promise.all(['HOME_COOK','EVENT_PLANNER'].map(async function(vtype){
       var list = await api('/vendors?vtype=' + vtype + '&pageSize=50');
       var full = await Promise.all(list.vendors.map(function(v){ return api('/vendors/' + v.id).then(function(r){ return r.vendor; }); }));
       byType[vtype] = full;
     }));
-
-    // Restaurants removed — D.rests/D.dishes stay empty (see their
-    // declaration in the D object below for why they still exist at all).
-    var newRests = [];
-    var newDishes = {};
-
-    var newRaw = [], newRawStores = [];
-    byType.GROCERY.forEach(function(v){
-      newRawStores.push({ id:v.id, nm:v.bizName, em:v.emoji||'🥬', bg:v.bannerColor||GRADIENTS.GROCERY, dist:'1.0 km', rt:v.ratingAvg||4.5, rv:v.ratingCount||0, assistant:{nm:(v.user&&v.user.name)||'Assistant', em:'🧑'}, items:v.menuItems.map(function(m){return m.id;}) });
-      v.menuItems.forEach(function(m){ newRaw.push({ id:m.id, nm:m.name, vn:v.bizName, pr:Math.round(m.priceKobo/100), un:m.unit||'unit', em:m.emoji||'🛒', ca:(m.category||'other').toLowerCase(), rt:v.ratingAvg||4.5, st:m.inStock }); });
-    });
 
     function pkgObj(v){
       var o = {};
       (v.servicePackages||[]).forEach(function(p){ o[p.key.toLowerCase()] = { id:p.id, label:p.label, price:Math.round(p.priceKobo/100), inc:p.includes||[] }; });
       return o;
     }
-    var newCaterers = byType.CATERER.map(function(v){
-      return { id:v.id, nm:v.bizName, rt:v.ratingAvg||4.5, em:v.emoji||'🍽️', sp:(v.tags||[]).join(', '), dist:'1.0 km', loc:(v.user&&v.user.address)||'', ph:(v.user&&v.user.phone)||'', promo:false, foods:(v.tags||[]), pkgs:pkgObj(v) };
-    });
     var newEp = byType.EVENT_PLANNER.map(function(v){
       return { id:v.id, nm:v.bizName, em:v.emoji||'🎊', rt:v.ratingAvg||4.5, tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', promo:false, bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
@@ -1533,17 +1449,13 @@ async function loadRealCatalog(){
         // POST /api/bookings can look them up.
         menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', pr:Math.round(m.priceKobo/100), desc:m.description||'' }; }) };
     });
-    var newCakes = [];
-    byType.CAKE_DESIGNER.forEach(function(v){ v.menuItems.forEach(function(m){ newCakes.push({ id:m.id, nm:m.name, designer:v.bizName, pr:Math.round(m.priceKobo/100), em:m.emoji||'🎂', cat:(m.category||'custom').toLowerCase(), desc:m.description||'', delivTime:(m.deliveryDays||2)+' days notice', rating:v.ratingAvg||4.5, promo:false }); });
-    });
 
     var shopperRes = await api('/shoppers?pageSize=50').catch(function(){ return {shoppers:[]}; });
     var newShoppers = (shopperRes.shoppers||[]).map(function(s){
       return { id:s.id, nm:(s.user&&s.user.name)||'Shopper', em:'👤', market:s.market||'', dist:'1.0 km', rt:s.ratingAvg||4.5, rv:s.ratingCount||0, available:s.isOnline, ph:(s.user&&s.user.phone)||'', specialties:s.specialties||[] };
     });
 
-    D.rests = newRests; D.dishes = newDishes; D.raw = newRaw; D.rawStores = newRawStores;
-    D.caterers = newCaterers; D.ep = newEp; D.cooks = newCooks; D.cakes = newCakes; D.shoppers = newShoppers;
+    D.ep = newEp; D.cooks = newCooks; D.shoppers = newShoppers;
     window._catalogLoaded = true;
     if (typeof onCatalogLoaded === 'function') onCatalogLoaded();
   } catch (err) {
@@ -1578,55 +1490,6 @@ var D={
 // safe — they just never have anything to show.
 rests:[],
 dishes:{},
-raw:[
-  {id:"r1",nm:"Fresh Tomatoes (5 kg)",vn:"Green Valley Farm",pr:2800,un:"5 kg bag",em:"&#x1F345;",ca:"vegetables",rt:4.7,st:true},
-  {id:"r2",nm:"Chicken Breast (2 kg)",vn:"Prime Poultry Co.",pr:6500,un:"2 kg pack",em:"&#x1F357;",ca:"meat",rt:4.8,st:true},
-  {id:"r3",nm:"Basmati Rice (10 kg)",vn:"Golden Grains Ltd",pr:15000,un:"10 kg bag",em:"&#x1F33E;",ca:"grains",rt:4.9,st:true},
-  {id:"r4",nm:"Assorted Peppers (2 kg)",vn:"Spice World",pr:3200,un:"2 kg bag",em:"&#x1F336;&#xFE0F;",ca:"vegetables",rt:4.6,st:true},
-  {id:"r5",nm:"Fresh Fish (3 kg)",vn:"Ocean Fresh",pr:8500,un:"3 kg pack",em:"&#x1F41F;",ca:"seafood",rt:4.8,st:false},
-  {id:"r6",nm:"Organic Eggs (30 pcs)",vn:"Happy Hens Farm",pr:4200,un:"crate of 30",em:"&#x1F95A;",ca:"dairy",rt:4.9,st:true},
-  {id:"r7",nm:"Yam (Medium Tuber)",vn:"Root & Earth Farm",pr:3500,un:"1 tuber",em:"&#x1F7E4;",ca:"tubers",rt:4.5,st:true},
-  {id:"r8",nm:"Palm Oil (1 litre)",vn:"Ondo Palm Co.",pr:2200,un:"1 litre",em:"&#x1FAD9;",ca:"vegetables",rt:4.7,st:true},
-  {id:"r9",nm:"Goat Meat (2 kg)",vn:"Alhaji Butchery",pr:9000,un:"2 kg pack",em:"&#x1F410;",ca:"meat",rt:4.6,st:true},
-  {id:"r10",nm:"Sweet Potatoes (3 kg)",vn:"Root & Earth Farm",pr:2600,un:"3 kg bag",em:"&#x1F360;",ca:"tubers",rt:4.5,st:true},
-  {id:"r11",nm:"Frozen Prawns (1 kg)",vn:"Ocean Fresh",pr:7200,un:"1 kg bag",em:"&#x1F990;",ca:"seafood",rt:4.7,st:true},
-  {id:"r12",nm:"Fresh Milk (2 litres)",vn:"Cowbell Dairy",pr:3100,un:"2 litre pack",em:"&#x1F95B;",ca:"dairy",rt:4.8,st:true}
-],
-rawStores:[
-  {id:"s1",nm:"Green Valley Farm",em:"&#x1F331;",bg:"linear-gradient(135deg,#0d2d0d,#1a3a1a)",dist:"0.6 km",rt:4.7,rv:214,assistant:{nm:"Amaka",em:"&#x1F469;"},items:["r1","r4","r8"]},
-  {id:"s2",nm:"Prime Poultry Co.",em:"&#x1F413;",bg:"linear-gradient(135deg,#2d1a0d,#3a2a1a)",dist:"1.2 km",rt:4.8,rv:187,assistant:{nm:"Chidi",em:"&#x1F468;"},items:["r2","r9"]},
-  {id:"s3",nm:"Golden Grains Ltd",em:"&#x1F33E;",bg:"linear-gradient(135deg,#2d2a0d,#3a361a)",dist:"0.9 km",rt:4.9,rv:302,assistant:{nm:"Fatima",em:"&#x1F9D5;"},items:["r3"]},
-  {id:"s4",nm:"Ocean Fresh",em:"&#x1F41F;",bg:"linear-gradient(135deg,#0d1e2d,#1a2d3a)",dist:"1.8 km",rt:4.8,rv:156,assistant:{nm:"Emeka",em:"&#x1F468;"},items:["r5","r11"]},
-  {id:"s5",nm:"Happy Hens Farm",em:"&#x1F423;",bg:"linear-gradient(135deg,#2a2d0d,#35381a)",dist:"2.1 km",rt:4.9,rv:98,assistant:{nm:"Ngozi",em:"&#x1F469;"},items:["r6"]},
-  {id:"s6",nm:"Root & Earth Farm",em:"&#x1F7E4;",bg:"linear-gradient(135deg,#1a0d00,#2a1a0d)",dist:"1.4 km",rt:4.5,rv:143,assistant:{nm:"Bola",em:"&#x1F469;"},items:["r7","r10"]},
-  {id:"s7",nm:"Cowbell Dairy",em:"&#x1F404;",bg:"linear-gradient(135deg,#0d1a2a,#1a263a)",dist:"0.8 km",rt:4.8,rv:89,assistant:{nm:"Tunde",em:"&#x1F468;"},items:["r12"]}
-],
-caterers:[
-  {id:"c1",nm:"Grand Feast Events",rt:4.9,em:"🎪",sp:"Weddings & Corporate",dist:"0.8 km",loc:"Victoria Island",ph:"+234 801 234 5678",promo:true,
-   foods:["Jollof Rice","Fried Rice","Egusi Soup","Peppered Chicken","Assorted Proteins","Moin Moin","Small Chops","Drinks"],
-   pkgs:{basic:{label:"Basic",price:3500,inc:["Jollof & Fried Rice","1 protein","Moin Moin","Soft drinks","Disposable plates"]},
-         standard:{label:"Standard",price:6500,inc:["Jollof & Fried Rice","Egusi Soup","2 proteins","Moin Moin","Small chops","Drinks","Service staff"]},
-         premium:{label:"Premium",price:12000,inc:["Full party spread","Peppersoup","3 proteins","Small chops","Premium desserts","Open bar","Full staff","Decor"]}
-   }},
-  {id:"c2",nm:"Mama Sewa Catering",rt:4.8,em:"👩‍🍳",sp:"Nigerian & Continental",dist:"1.4 km",loc:"Surulere",ph:"+234 802 345 6789",promo:false,
-   foods:["Pounded Yam","Ofada Rice","Afang Soup","Ofe Onugbu","Roasted Corn","Zobo"],
-   pkgs:{basic:{label:"Basic",price:2800,inc:["Pounded Yam & Ofada Rice","1 soup","1 protein","Local drinks"]},
-         standard:{label:"Standard",price:5000,inc:["Pounded Yam & Ofada Rice","2 soups","2 proteins","Moin Moin","Zobo & Kunu"]},
-         premium:{label:"Premium",price:9000,inc:["Full owambe spread","Amala + Rice","3 soups","3 proteins","Asun & small chops","All drinks","Full team"]}
-   }},
-  {id:"c3",nm:"Elite Gourmet",rt:4.9,em:"👨‍🍳",sp:"Luxury & International",dist:"2.2 km",loc:"Ikoyi",ph:"+234 803 456 7890",promo:true,
-   foods:["Continental Buffet","Pasta Station","Seafood Bar","Dessert Table","Open Bar"],
-   pkgs:{basic:{label:"Basic",price:8000,inc:["Continental buffet (3 mains)","Starter salads","Dessert table","Juice & drinks","Premium disposable crockery"]},
-         standard:{label:"Standard",price:15000,inc:["Continental buffet (5 mains)","Soup station","Premium dessert","Wine & drinks","Elegant crockery","Service staff"]},
-         premium:{label:"Premium",price:25000,inc:["Full 7-course gourmet","Live cooking stations","Seafood bar","Open bar","Fine dining crockery","Butler service","Full decor"]}
-   }},
-  {id:"c4",nm:"Quick & Tasty",rt:4.6,em:"🍽️",sp:"Fast & Casual",dist:"0.5 km",loc:"Yaba",ph:"+234 804 567 8901",promo:false,
-   foods:["Party Jollof","Fried Chicken","Peppered Fish","Chin-Chin","Puff-Puff"],
-   pkgs:{basic:{label:"Basic",price:1800,inc:["Jollof Rice","Fried Chicken","Soft drinks","Packs"]},
-         standard:{label:"Standard",price:3200,inc:["Jollof + Fried Rice","Chicken + Fish","Small chops","Drinks","Plates"]},
-         premium:{label:"Premium",price:5500,inc:["Full rice buffet","3 proteins","Small chops platter","Puff-puff","Drinks","Setup & staff"]}
-   }}
-],
 ep:[
   {id:"ep1",nm:"Celebrate Lagos",em:"🎊",rt:4.9,tags:["wedding","corporate","birthday"],loc:"Victoria Island",dist:"1.1 km",ph:"+234 811 000 1111",wa:"+234 811 000 1111",addr:"15 Adeola Odeku St, V/I, Lagos",promo:true,
    bio:"Lagos' most celebrated event company. We transform venues and dreams into unforgettable experiences.",
@@ -1662,16 +1525,6 @@ cooks:[
    specials:["Suya","Barbecue Chicken","Asun","Grilled Fish","Peppered Snails","Smoky Ribs"],
    rate:20000,period:"per event",avail:"Fri–Sun, All day",langs:["Igbo","English"],tags:["grills","nigerian"]}
 ],
-cakes:[
-  {id:"cake1",nm:"Rainbow Delight",designer:"Sweet Creations by Temi",pr:25000,em:"🎂",cat:"birthday",desc:"6-layer rainbow sponge cake with buttercream frosting and edible glitter. Serves 20–25.",delivTime:"24–48 hrs notice",rating:4.9,promo:true},
-  {id:"cake2",nm:"Elegant White Wedding",designer:"Lagos Cake Atelier",pr:85000,em:"💒",cat:"wedding",desc:"3-tier white fondant wedding cake with sugar flowers and gold leaf details. Serves 80–100.",delivTime:"5–7 days notice",rating:5.0,promo:true},
-  {id:"cake3",nm:"Chocolate Overload",designer:"Choco Dreams NG",pr:18000,em:"🍫",cat:"birthday",desc:"Double-layer rich chocolate cake with ganache drip, chocolate shards and truffles. Serves 15.",delivTime:"24 hrs notice",rating:4.8,promo:false},
-  {id:"cake4",nm:"Princess Castle Cake",designer:"Fantasy Cakes Lagos",pr:32000,em:"🏰",cat:"custom",desc:"3D castle-shaped cake for kids' parties. Customisable colours and characters. Serves 20.",delivTime:"3–5 days notice",rating:4.7,promo:false},
-  {id:"cake5",nm:"Assorted Cupcakes (24)",designer:"Cupcake Corner",pr:12000,em:"🧁",cat:"cupcake",desc:"24 assorted flavoured cupcakes: red velvet, vanilla, chocolate, lemon. Customisable toppers.",delivTime:"12 hrs notice",rating:4.9,promo:false},
-  {id:"cake6",nm:"Tropical Fruit Cake",designer:"Fresh Bakes NG",pr:22000,em:"🍍",cat:"custom",desc:"Moist fruit cake with passion fruit glaze, mango slices and tropical flowers. Serves 18.",delivTime:"48 hrs notice",rating:4.8,promo:false},
-  {id:"cake7",nm:"Nigerian Chin-Chin Cake",designer:"Sweet Creations by Temi",pr:15000,em:"⚙️",cat:"custom",desc:"Unique cake covered in crispy chin-chin, caramel drizzle and peanut crunch. Serves 12.",delivTime:"24 hrs notice",rating:4.6,promo:false},
-  {id:"cake8",nm:"Corporate Logo Cake",designer:"Lagos Cake Atelier",pr:45000,em:"🏢",cat:"custom",desc:"Fondant cake printed with your company logo. Perfect for product launches and milestones.",delivTime:"3–5 days notice",rating:4.9,promo:false}
-],
 shoppers:[
   {id:"sh1",nm:"Blessing Ade",em:"👩",market:"Mile 12 Market, Lagos",dist:"2.1 km",rt:4.9,rv:312,available:true,ph:"+234 811 900 1111",specialties:["Vegetables","Fruits","Grains"]},
   {id:"sh2",nm:"Tunde Fashola",em:"👨",market:"Daleko Market, Surulere",dist:"1.6 km",rt:4.8,rv:187,available:true,ph:"+234 812 900 2222",specialties:["Meat","Fish","Poultry"]},
@@ -1698,62 +1551,6 @@ function St(r){return '<span class="stars">'+'★'.repeat(Math.floor(r))+'☆'.r
 function toast(m){var o=document.querySelector('.toast');if(o)o.remove();var t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},2800);}
 
 // ═══════════════════ NAVIGATION ═════════════════════════════════════════════
-function switchTab(tab){
-  if(tab==='aiplanner'){go('aiplanner');return;}
-  if(tab==='liveshop'){goShopForMe();return;}
-  var tabs=['all','restaurants','catering','raw','homecook','cakes'];
-  tabs.forEach(function(t){
-    var el=document.getElementById('tab-'+t);if(el)el.style.display='none';
-    var b=document.getElementById('htab-'+t);
-    if(b){b.classList.remove('on');b.style.color='#666';b.style.background='transparent';b.style.borderBottom=b.style.borderBottom.replace('2px solid #E8392E','2px solid transparent');}
-  });
-  ['aiplanner','liveshop'].forEach(function(t){
-    var b=document.getElementById('htab-'+t);
-    if(b){b.classList.remove('on');b.style.color='#666';b.style.background='transparent';}
-  });
-  var el=document.getElementById('tab-'+tab);if(el)el.style.display='block';
-  var ab=document.getElementById('htab-'+tab);
-  if(ab){ab.classList.add('on');ab.style.color='#E8392E';ab.style.background='rgba(232,57,46,.08)';ab.style.borderBottom='2px solid #E8392E';}
-  if(tab==='catering')renderCatList();
-  if(tab==='raw'){S.rawCat='all';S.rawQ='';renderRaw();}
-  if(tab==='homecook')renderCooks(D.cooks);
-  if(tab==='cakes')renderCakes(D.cakes);
-  if(tab==='restaurants')renderRestsEl(D.rests,'rest-list-tab');
-}
-
-
-
-function pickVType(id){
-  S.vtype=id;
-  document.querySelectorAll('.vtype-card').forEach(function(c){c.classList.remove('sel');});
-  var el=document.getElementById('vt-'+id);if(el)el.classList.add('sel');
-
-  // Restaurant extras
-  var rSec=document.getElementById('restaurant-extra-fields');
-  if(rSec)rSec.style.display=(id==='restaurant')?'block':'none';
-
-  // Grocery extras — create inline if missing, always show/hide cleanly
-  var gSec=document.getElementById('grocery-extra-fields');
-  if(!gSec){
-    gSec=document.createElement('div');
-    gSec.id='grocery-extra-fields';
-    gSec.style.cssText='margin-top:14px;background:rgba(46,204,113,.06);border:1.5px solid rgba(46,204,113,.25);border-radius:14px;padding:16px;';
-    gSec.innerHTML=''
-      +'<div style="font-size:11px;color:#2ECC71;font-weight:800;letter-spacing:.8px;text-transform:uppercase;margin-bottom:14px;">&#x1F6D2; Free Live Shopper (Included Free)</div>'
-      +'<div style="background:rgba(46,204,113,.08);border-radius:10px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">'
-        +'<span style="font-size:20px;flex-shrink:0;">&#x1F4F9;</span>'
-        +'<div style="font-size:12px;color:#F2EDE8;">Your Live Shopper goes live so customers watch their items being selected &mdash; <strong style="color:#2ECC71;">100% free</strong></div>'
-      +'</div>'
-      +'<label class="il">Free Live Shopper Name</label>'
-      +'<div class="ir"><span class="ii">&#x1F6D2;</span><input class="if ic" id="r-shopper-name" placeholder="e.g. Amaka"></div>'
-      +'<label class="il">Shopper Phone Number</label>'
-      +'<div class="ir"><span class="ii">&#x1F4F1;</span><input class="if ic" id="r-shopper-phone" type="tel" placeholder="+234 800 000 0000"></div>';
-    var form=document.getElementById('reg-form');
-    if(form)form.appendChild(gSec);
-  }
-  gSec.style.display=(id==='grocery')?'block':'none';
-}
-
 function afterAuth(){
   renderRestsEl(D.rests,'rest-list-all');
   renderPop();
@@ -2119,228 +1916,6 @@ function openDishDirect(id){S.cRest=D.dishes[id].ri;openDish(id);}
 function dQty(n){S.dQty=Math.max(1,S.dQty+n);document.getElementById('dq').textContent=S.dQty;var t=D.dishes[S.cDish].pr*S.dQty;document.getElementById('dt').textContent=N(t);document.getElementById('dish-add').textContent='Add to Cart \u00b7 '+N(t);}
 function addDish(){clearCartForType('food');var d=D.dishes[S.cDish];addCart({id:'d'+d.id,name:d.nm,pr:d.pr,em:d.em,qty:S.dQty,type:'food',note:(document.getElementById('dnote')||{}).value||''});go('cart');}
 
-// ═══════════════════ CATERING ════════════════════════════════════════════════
-function renderCatList(){
-  var sorted=D.caterers.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0)||parseFloat(a.dist)-parseFloat(b.dist);});
-  document.getElementById('cat-list').innerHTML=sorted.map(function(c){
-    return '<div onclick="openCatDetail(\''+c.id+'\')" style="background:#242424;border-radius:16px;overflow:hidden;border:2px solid '+(c.promo?'#F5A623':'#2a2a2a')+';cursor:pointer;margin-bottom:14px;position:relative'+(c.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'+
-      (c.promo?'<div class="promo-tag">\u2b50 FEATURED</div>':'')+
-      '<div style="background:linear-gradient(135deg,#0d0d2d,#111);height:90px;display:flex;align-items:center;justify-content:center;font-size:52px">'+c.em+'</div>'+
-      '<div style="padding:14px 16px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div><h3 style="font-size:16px;font-weight:800;margin:0 0 2px">'+c.nm+'</h3><p style="color:#9A9390;font-size:13px;margin:0">'+c.sp+'</p></div>'+St(c.rt)+'</div>'+
-        '<p style="color:#9A9390;font-size:12px;margin:6px 0 10px">\ud83d\udccd '+c.dist+' · '+c.loc+'</p>'+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+(c.foods||[]).slice(0,4).map(function(f){return '<span style="background:#2D2D2D;border-radius:8px;padding:3px 8px;font-size:11px;color:#9A9390">'+f+'</span>';}).join('')+(c.foods.length>4?'<span style="background:#2D2D2D;border-radius:8px;padding:3px 8px;font-size:11px;color:#E8392E">+'+(c.foods.length-4)+' more</span>':'')+'</div>'+
-        '<div style="display:flex;gap:8px">'+['basic','standard','premium'].map(function(k){var p=c.pkgs[k];var bc={basic:'#333',standard:'#E8392E',premium:'#F5A623'}[k];var tc={basic:'#aaa',standard:'#E8392E',premium:'#F5A623'}[k];return '<div style="flex:1;background:#2D2D2D;border-radius:10px;padding:8px 4px;text-align:center;border:2px solid '+bc+'"><p style="color:'+tc+';font-size:9px;text-transform:uppercase;font-weight:700;margin:0 0 2px">'+k+'</p><p style="font-weight:800;font-size:11px;margin:0">'+N(p.price)+'/hd</p></div>';}).join('')+'</div>'+
-      '</div></div>';
-  }).join('');
-}
-function openCatDetail(id){
-  if(S.cart.length&&(S.cart[0].type||'food')!=='catering'){S.cart=[];updBadge();}
-  S.cCat=id;S.catPkg='standard';
-  var c=D.caterers.find(function(x){return x.id===id;});
-  var hel=document.getElementById('catd-hero');
-  hel.innerHTML='<button onclick="switchTab(\'catering\');go(\'home\')" class="bkbtn" style="position:absolute;top:16px;left:16px">\u2190</button><span style="font-size:60px">'+c.em+'</span>';
-  var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px"><div><h1 style="font-size:21px;font-weight:900;margin:0 0 4px">'+c.nm+'</h1><p style="color:#9A9390;font-size:13px;margin:0">'+c.sp+'</p></div>'+St(c.rt)+'</div>'+
-    '<p style="color:#9A9390;font-size:12px;margin:6px 0 14px">\ud83d\udccd '+c.dist+' · '+c.loc+'</p>'+
-    '<div style="background:#2D2D2D;border-radius:14px;padding:14px;margin-bottom:16px;border:2px solid #333">'+
-    '<p style="font-weight:800;font-size:14px;margin:0 0 8px">\ud83c\udf7d\ufe0f Choose dishes</p>'+
-    '<div>'+(c.foods||[]).map(function(f,i){return '<label style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:9px 0;border-bottom:1px solid #333"><input type="checkbox" id="fi'+i+'" style="width:18px;height:18px;accent-color:#E8392E;flex-shrink:0"><span>'+f+'</span></label>';}).join('')+'</div></div>'+
-    '<div style="background:#2D2D2D;border-radius:14px;padding:14px;margin-bottom:16px;border:2px solid #333">'+
-    '<p style="font-weight:800;font-size:14px;margin:0 0 8px">\ud83d\udc65 Guests: <span style="color:#3B9FE8" id="cgc">100</span></p>'+
-    '<input type="range" id="cgs" min="20" max="2000" step="10" value="100" oninput="updCat()" style="width:100%;margin:8px 0;accent-color:#3B9FE8">'+
-    '<div style="display:flex;justify-content:space-between;color:#555;font-size:11px"><span>20</span><span>500</span><span>1,000</span><span>2,000</span></div></div>'+
-    '<div style="background:#2D2D2D;border-radius:14px;padding:14px;margin-bottom:16px;border:2px solid #333">'+
-    '<p style="font-weight:800;font-size:14px;margin:0 0 8px">\ud83d\udcc5 Event Date</p><input type="date" class="if" id="cdt" style="background:#242424"></div>'+
-    '<p style="font-weight:800;font-size:16px;margin:0 0 12px">Choose Package</p>'+
-    '<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">'+
-    ['basic','standard','premium'].map(function(k){var pkg=c.pkgs[k];var lc={basic:'#aaa',standard:'#E8392E',premium:'#F5A623'}[k];var bc={basic:'#333',standard:'#E8392E',premium:'#F5A623'}[k];
-      return '<div class="pkg-card'+(k==='standard'?' sel':'')+'" data-pkg="'+k+'" onclick="selPkg(\''+k+'\')" style="border-color:'+(k==='standard'?'#E8392E':'#333')+'">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
-          '<div><p style="font-weight:800;font-size:15px;margin:0 0 2px;color:'+lc+'">'+pkg.label+'</p><p style="color:#9A9390;font-size:12px;margin:0">'+N(pkg.price)+'/head</p></div>'+
-          '<div style="text-align:right"><p style="color:#E8392E;font-weight:900;font-size:18px;margin:0" id="pkt-'+k+'">'+N(pkg.price*100)+'</p><p style="color:#9A9390;font-size:10px;margin:0" id="pkl-'+k+'">for 100 guests</p></div>'+
-        '</div>'+
-        '<p style="color:#9A9390;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px">Includes:</p>'+
-        '<div style="display:flex;flex-direction:column;gap:5px">'+pkg.inc.map(function(item){return '<div style="display:flex;gap:8px;align-items:flex-start"><span style="color:#2ECC71;font-size:13px;flex-shrink:0">\u2713</span><span style="font-size:13px;color:#ccc">'+item+'</span></div>';}).join('')+'</div></div>';
-    }).join('')+'</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn blu sm" style="flex:1" onclick="openChat({name:\''+c.nm.replace(/'/g,"\\'")+'\',phone:\''+c.ph+'\',em:\''+c.em+'\'})">💬 Chat</button><button class="btn sm" style="flex:1;background:transparent;border:2px solid #2ECC71;color:#2ECC71" onclick="callPhone(\''+c.ph+'\')">📞 Call</button></div>';
-  document.getElementById('catd-body').innerHTML=h;
-  document.getElementById('catd-btn').onclick=function(){bookCat(id);};
-  go('catdetail');
-}
-function selPkg(k){S.catPkg=k;document.querySelectorAll('.pkg-card').forEach(function(c){c.classList.remove('sel');c.style.borderColor='#333';});var card=document.querySelector('.pkg-card[data-pkg="'+k+'"]');if(card){card.classList.add('sel');card.style.borderColor=k==='premium'?'#F5A623':'#E8392E';}}
-function updCat(){var g=parseInt(document.getElementById('cgs').value)||100;document.getElementById('cgc').textContent=g;var c=D.caterers.find(function(x){return x.id===S.cCat;});if(!c)return;['basic','standard','premium'].forEach(function(k){var te=document.getElementById('pkt-'+k);var le=document.getElementById('pkl-'+k);if(te)te.textContent=N(c.pkgs[k].price*g);if(le)le.textContent='for '+g+' guests';});}
-function bookCat(id){
-  var c=D.caterers.find(function(x){return x.id===id;});
-  var g=parseInt((document.getElementById('cgs')||{}).value||100);
-  var dt=(document.getElementById('cdt')||{}).value||'TBD';
-  var pkg=c.pkgs[S.catPkg];
-  var sel=[];c.foods.forEach(function(f,i){var cb=document.getElementById('fi'+i);if(cb&&cb.checked)sel.push(f);});
-  var note=sel.length?' ('+sel.join(', ')+')':'';
-  var total=pkg.price*g;
-  openEscrowModal(total, function(){
-    clearCartForType('catering');addCart({id:id+'_'+S.catPkg,name:c.nm+' - '+pkg.label+', '+g+' guests, '+dt+note,pr:total,em:c.em,qty:1,type:'catering'});
-    S.placed=true; toast('🔒 Catering booked & secured in escrow!'); go('cart');
-  });
-}
-
-// ═══════════════════ RAW FOOD ════════════════════════════════════════════════
-function renderRaw(){
-  var q=(S.rawQ||'').toLowerCase();
-  var cat=S.rawCat||'all';
-  var el=document.getElementById('raw-stores-list');if(!el)return;
-  var stores=D.rawStores||[];
-  var html='';
-  stores.forEach(function(store){
-    var items=store.items.map(function(rid){
-      return D.raw.find(function(r){return r.id===rid;});
-    }).filter(function(it){
-      return it&&(cat==='all'||it.ca===cat)&&(!q||it.nm.toLowerCase().indexOf(q)>-1);
-    });
-    if(items.length===0&&q)return;
-    var selCount=items.filter(function(it){return !!S.rawSel[it.id];}).length;
-    // Store header
-    var storeHtml='<div style="background:#242424;border-radius:18px;overflow:hidden;border:2px solid '+(selCount>0?'rgba(46,204,113,.4)':'#2a2a2a')+';margin-bottom:18px">';
-    storeHtml+='<div style="'+store.bg+';padding:14px 16px;display:flex;gap:12px;align-items:center">';
-    storeHtml+='<div style="width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">'+store.em+'</div>';
-    storeHtml+='<div style="flex:1">';
-    storeHtml+='<p style="font-weight:900;font-size:15px;margin:0 0 2px">'+store.nm+'</p>';
-    storeHtml+='<div style="display:flex;gap:8px;align-items:center">';
-    storeHtml+='<span style="color:#9A9390;font-size:11px">'+store.dist+' away</span>';
-    storeHtml+='<span style="color:#F5A623;font-size:11px">&#x2605; '+store.rt+'</span>';
-    storeHtml+='<span style="color:#9A9390;font-size:11px">('+store.rv+' reviews)</span>';
-    storeHtml+='</div></div>';
-    if(selCount>0)storeHtml+='<div style="background:#2ECC71;border-radius:10px;padding:3px 10px;font-size:12px;font-weight:800;color:#111">'+selCount+' selected</div>';
-    storeHtml+='</div>';
-    // Products
-    storeHtml+='<div style="padding:12px 12px 0;display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-    items.forEach(function(it){
-      var sel=!!S.rawSel[it.id];
-      storeHtml+='<div class="raw-card'+(sel?' sel':'')+'" data-id="'+it.id+'" data-store="'+store.id+'" onclick="toggleRaw(this.dataset.id,this.dataset.store)" style="border-radius:12px;overflow:hidden">';
-      if(sel)storeHtml+='<div class="sel-tick">&#x2713;</div>';
-      storeHtml+='<div style="height:76px;background:linear-gradient(135deg,#0d200d,#1a2a1a);display:flex;align-items:center;justify-content:center;font-size:40px;position:relative">'+it.em;
-      if(!it.st)storeHtml+='<div style="position:absolute;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center"><span style="color:rgba(255,255,255,.8);font-size:9px;font-weight:800">OUT OF STOCK</span></div>';
-      storeHtml+='</div>';
-      storeHtml+='<div style="padding:8px 10px">';
-      storeHtml+='<p style="font-weight:700;font-size:12px;margin:0 0 1px;line-height:1.3">'+it.nm+'</p>';
-      storeHtml+='<p style="color:#555;font-size:10px;margin:0 0 6px">'+it.un+'</p>';
-      storeHtml+='<div style="display:flex;justify-content:space-between;align-items:center">';
-      storeHtml+='<span style="color:#2ECC71;font-weight:800;font-size:13px">'+N(it.pr)+'</span>';
-      if(it.st){
-        storeHtml+='<div style="background:'+(sel?'#2ECC71':'#2D2D2D')+';border:2px solid '+(sel?'#2ECC71':'#444')+';border-radius:7px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:'+(sel?'#111':'#9A9390')+';font-size:'+(sel?'13':'17')+'px;font-weight:800">'+(sel?'&#x2713;':'+')+'</div>';
-      }else{
-        storeHtml+='<span style="color:#555;font-size:9px">Sold out</span>';
-      }
-      storeHtml+='</div></div></div>';
-    });
-    storeHtml+='</div>';
-    // Live shopper strip
-    storeHtml+='<div data-store="'+store.id+'" onclick="openStoreLiveShopper(this.dataset.store)" style="margin:12px;background:linear-gradient(120deg,rgba(46,204,113,.1),rgba(59,159,232,.08));border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px">';
-    storeHtml+='<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#2ECC71,#3B9FE8);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#x1F4F9;</div>';
-    storeHtml+='<div style="flex:1">';
-    storeHtml+='<p style="font-weight:800;font-size:12px;margin:0 0 1px;color:#F2EDE8">Shop Live with '+store.assistant.nm+'</p>';
-    storeHtml+='<p style="color:#9A9390;font-size:10px;margin:0">Browse all items on video &#x2022; Select &amp; add to cart &#x2022; <b style="color:#2ECC71">Free</b></p>';
-    storeHtml+='</div>';
-    storeHtml+='<div style="background:#2ECC71;border-radius:7px;padding:5px 9px;font-size:10px;font-weight:800;color:#111;flex-shrink:0;white-space:nowrap">Go Live &#x25B6;</div>';
-    storeHtml+='</div></div>';
-    html+=storeHtml;
-  });
-  if(!html)html='<div style="text-align:center;padding:40px 20px;color:#555"><p style="font-size:32px;margin:0 0 12px">&#x1F6D2;</p><p style="font-size:14px;font-weight:700">No items match your filter</p><p style="font-size:12px">Try selecting All or clearing your search</p></div>';
-  el.innerHTML=html;
-}
-
-function toggleRaw(id,storeId){var it=D.raw.find(function(x){return x.id===id;});if(!it.st){toast('Out of stock');return;}if(S.rawSel[id])delete S.rawSel[id];else S.rawSel[id]=1;updRawFloat();renderRaw();renderRaw();}
-function updRawFloat(){var n=Object.keys(S.rawSel).length;var f=document.getElementById('raw-float');var c=document.getElementById('raw-cnt');if(c)c.textContent=n;if(f)f.className='cart-float'+(n>0?' show':'');}
-function clearRaw(){S.rawSel={};updRawFloat();renderRaw();}
-function frawcat(cat,btn){S.rawCat=cat;document.querySelectorAll('#raw-pills .pill').forEach(function(p){p.classList.remove('gon');});btn.classList.add('gon');renderRaw();}
-function srchRaw(q){S.rawQ=q.toLowerCase();renderRaw();}
-function rawToCart(){S.cart=S.cart.filter(function(i){return i.type==='raw';});updBadge();var keys=Object.keys(S.rawSel);if(!keys.length){toast('Select at least one item');return;}keys.forEach(function(id){var it=D.raw.find(function(x){return x.id===id;});if(it)addCart({id:it.id,name:it.nm,pr:it.pr,em:it.em,qty:1,type:'raw'});});S.rawSel={};updRawFloat();go('cart');toast(keys.length+' item'+(keys.length>1?'s':'')+' added!');}
-
-// ═══════════════════ HOME COOKS ══════════════════════════════════════════════
-function waChat(ph){window.open('https://wa.me/'+ph.replace(/[^0-9]/g,''),'_blank');}
-
-// ═══════════════════ CAKES ══════════════════════════════════════════════════
-function renderCakes(list){
-  var el=document.getElementById('cake-list');if(!el)return;
-  el.innerHTML=list.map(function(c){
-    return '<div onclick="openCake(\''+c.id+'\')" style="background:#1C1C1C;border-radius:18px;overflow:hidden;border:1.5px solid #2a2a2a;margin-bottom:14px;cursor:pointer;transition:all .2s">'+
-      (c.promo?'<div style="position:absolute;top:10px;left:10px;background:#E91E8C;color:#fff;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;z-index:2">⭐ TOP PICK</div>':'')+
-      '<div style="height:160px;background:linear-gradient(135deg,#2d0d18,#111);display:flex;align-items:center;justify-content:center;font-size:80px;position:relative">'+c.em+
-        (c.promo?'<div style="position:absolute;top:10px;left:10px;background:#E91E8C;color:#fff;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;">⭐ TOP PICK</div>':'')+
-      '</div>'+
-      '<div style="padding:14px 16px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'+
-          '<div style="flex:1">'+
-            '<p style="font-weight:900;font-size:15px;margin:0 0 2px;color:#F2EDE8">'+c.nm+'</p>'+
-            '<p style="color:#E91E8C;font-weight:800;font-size:13px;margin:0">'+c.designer+'</p>'+
-          '</div>'+
-          '<span style="color:#E91E8C;font-weight:900;font-size:17px;margin-left:8px">'+N(c.pr)+'</span>'+
-        '</div>'+
-        '<p style="color:#9A9390;font-size:12px;margin:0 0 10px;line-height:1.5">'+c.desc+'</p>'+
-        '<div style="display:flex;justify-content:space-between;align-items:center">'+
-          '<div style="display:flex;gap:10px;align-items:center">'+
-            St(c.rating)+
-            '<span style="color:#9A9390;font-size:11px">⏱ '+c.delivTime+'</span>'+
-          '</div>'+
-          '<div style="background:#E91E8C;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:800;color:#fff">Order →</div>'+
-        '</div>'+
-      '</div></div>';
-  }).join('');
-}
-
-
-function filterCakes(cat,btn){document.querySelectorAll('#cake-pills .pill').forEach(function(p){p.classList.remove('pkon');});btn.classList.add('pkon');var filtered=cat==='all'?D.cakes:D.cakes.filter(function(c){return c.cat===cat;});renderCakes(filtered);}
-function openCake(id){
-  var c=D.cakes.find(function(x){return x.id===id;});
-  if(!c)return;
-  S.cCake=c;
-  // Hero
-  var hero=document.getElementById('caked-hero');
-  hero.innerHTML='<button onclick="switchTab(\'cakes\')" class="bkbtn" style="position:absolute;top:16px;left:16px">←</button><span style="font-size:100px">'+c.em+'</span>';
-  // Body
-  document.getElementById('caked-body').innerHTML=
-    '<h2 style="font-size:22px;font-weight:900;margin:0 0 4px;color:#F2EDE8">'+c.nm+'</h2>'+
-    '<p style="color:#E91E8C;font-weight:900;font-size:20px;margin:0 0 10px">'+N(c.pr)+'</p>'+
-    St(c.rating)+
-    '<p style="color:#9A9390;font-size:14px;margin:14px 0 16px;line-height:1.6">'+c.desc+'</p>'+
-    '<div style="background:#1C1C1C;border:1.5px solid #2a2a2a;border-radius:16px;padding:16px;margin-bottom:14px">'+
-      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'+
-        '<div style="width:46px;height:46px;border-radius:13px;background:rgba(233,30,140,.12);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">🎂</div>'+
-        '<div>'+
-          '<p style="font-weight:800;font-size:15px;margin:0 0 2px;color:#F2EDE8">'+c.designer+'</p>'+
-          '<p style="font-size:12px;color:#9A9390;margin:0">Cake Designer · Lagos, NG</p>'+
-        '</div>'+
-      '</div>'+
-      '<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #2a2a2a">'+
-        '<div style="text-align:center"><p style="font-size:18px;font-weight:900;margin:0;color:#F2EDE8">'+c.rating+'</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Rating</p></div>'+
-        '<div style="text-align:center"><p style="font-size:13px;font-weight:800;margin:0;color:#F5A623">⏱ '+c.delivTime+'</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Lead Time</p></div>'+
-        '<div style="text-align:center"><p style="font-size:13px;font-weight:800;margin:0;color:#2ECC71">✓ Verified</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Baker</p></div>'+
-      '</div>'+
-    '</div>'+
-    '<div style="background:#1C1C1C;border:1.5px solid #2a2a2a;border-radius:16px;padding:16px;margin-bottom:14px">'+
-      '<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#9A9390;margin:0 0 10px">Delivery Info</p>'+
-      '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px"><span style="font-size:16px">📍</span><div><p style="font-weight:700;font-size:13px;margin:0;color:#F2EDE8">Lagos-wide delivery</p><p style="font-size:12px;color:#9A9390;margin:2px 0 0">Rider picks up from baker · You track live</p></div></div>'+
-      '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px"><span style="font-size:16px">🛡️</span><div><p style="font-weight:700;font-size:13px;margin:0;color:#F2EDE8">Escrow protected</p><p style="font-size:12px;color:#9A9390;margin:2px 0 0">Payment released only when you confirm delivery</p></div></div>'+
-      '<div style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:16px">🏍️</span><div><p style="font-weight:700;font-size:13px;margin:0;color:#F2EDE8">Rider delivery · ₦700</p><p style="font-size:12px;color:#9A9390;margin:2px 0 0">Real-time GPS tracking from baker to your door</p></div></div>'+
-    '</div>'+
-    '<label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#9A9390;display:block;margin-bottom:6px">Personalisation Note</label>'+
-    '<textarea id="cake-note" rows="3" placeholder="e.g. Write \'Happy Birthday Ada\' in pink, add photo of Lagos skyline..." style="width:100%;background:#1C1C1C;border:1.5px solid #2a2a2a;border-radius:13px;padding:12px 14px;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:13px;resize:none;outline:none;margin-bottom:4px;box-sizing:border-box"></textarea>';
-  // Update order button
-  var btn=document.getElementById('cake-order-btn');
-  if(btn){btn.textContent='Order Cake · '+N(c.pr);btn.onclick=function(){addCakeToCart(c.id);};}
-  go('cakedetail');
-}
-
-function addCakeToCart(id){
-  var c=D.cakes.find(function(x){return x.id===id;});
-  var note=document.getElementById('cake-note');
-  addCart({id:'cake-'+c.id,name:c.nm+' ('+c.designer+')',pr:c.pr,em:c.em,qty:1,type:'cake',note:note?note.value:''});
-  updBadge();
-  toast('🎂 '+c.nm+' added to cart!');
-  go('cart');
-}
-
-
-
 function filterEP(cat,btn){document.querySelectorAll('#ep-pills .pill').forEach(function(p){p.classList.remove('pon');});btn.classList.add('pon');var filtered=cat==='all'?D.ep:D.ep.filter(function(ep){return ep.tags.indexOf(cat)>-1;});renderEP(filtered);}
 
 // ═══════════════════ AI PLANNER ══════════════════════════════════════════════
@@ -2411,7 +1986,7 @@ function clearCartForType(newType){
   if(S.cart.length===0)return;
   var existingType=S.cart[0].type||'food';
   var sameGroup=false;
-  var foodTypes=['food','raw','catering','cake','homecook','aiplanner'];
+  var foodTypes=['food','homecook','aiplanner'];
   // Each type is its own group - food/restaurant CAN mix with nothing
   if(existingType===newType)sameGroup=true;
   if(!sameGroup){
@@ -2421,7 +1996,7 @@ function clearCartForType(newType){
 }
 function addCart(item){
   var ex=S.cart.find(function(i){return i.id===item.id;});
-  if(ex&&item.type!=='catering'&&item.type!=='homecook'&&item.type!=='cake')ex.qty+=(item.qty||1);
+  if(ex&&item.type!=='homecook')ex.qty+=(item.qty||1);
   else S.cart.push({id:item.id,name:item.name,pr:item.pr,em:item.em||'\ud83c\udf7d\ufe0f',qty:item.qty||1,type:item.type||'food',note:item.note||''});
   updBadge();
 }
@@ -2461,9 +2036,6 @@ function renderCart(){
     var ft=S.cart[0].type||'food';
     var vName='',vIcon='';
     if(ft==='food'&&S.cRest&&D.rests){var rv=D.rests.find(function(x){return x.id===S.cRest;});if(rv){vName=rv.nm;vIcon=rv.em||'&#x1F37D;&#xFE0F;';}}
-    else if(ft==='raw'){vName='Raw Food Market';vIcon='&#x1F96C;';}
-    else if(ft==='catering'&&S.cCat&&D.caterers){var cv=D.caterers.find(function(x){return x.id===S.cCat;});if(cv){vName=cv.nm;vIcon=cv.em||'&#x1F37C;';}}
-    else if(ft==='cake'){vName='Cake Order';vIcon='&#x1F382;';}
     else if(ft==='homecook'){vName='Home Cook Session';vIcon='&#x1F9D1;&#x200D;&#x1F373;';}
     else if(ft==='aiplanner'){vName='AI Meal Planner';vIcon='&#x1F916;';}
     if(vName)vendorCtxHtml='<div style="display:flex;align-items:center;gap:10px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:11px 14px;margin-bottom:14px;">'
@@ -2476,11 +2048,11 @@ var h='<div style="background:rgba(59,159,232,.08);border:2px solid rgba(59,159,
     '<p style="font-size:14px;font-weight:600;margin:0;line-height:1.4">'+activeAddr()+'</p>'+
     (S.useOther?'<p style="color:#F5A623;font-size:11px;margin:4px 0 0">\ud83c\udf81 For someone else</p>':'')+'</div>'+
     '<button onclick="openAddrModal()" style="background:none;border:none;color:#3B9FE8;font-size:13px;font-weight:700;cursor:pointer;padding-left:10px;flex-shrink:0">Change</button></div>';
-  var typeColors={food:'#E8392E',raw:'#2ECC71',catering:'#3B9FE8',homecook:'#9B59B6',cake:'#E91E8C'};
-  var typeBdg={food:'br',raw:'bg',catering:'bb',homecook:'bp',cake:'bpnk'};
+  var typeColors={food:'#E8392E',homecook:'#9B59B6'};
+  var typeBdg={food:'br',homecook:'bp'};
   S.cart.forEach(function(it){
     var col=typeColors[it.type]||'#E8392E';var bc=typeBdg[it.type]||'br';
-    var lockQty=it.type==='catering'||it.type==='homecook'||it.type==='cake';
+    var lockQty=it.type==='homecook';
     h+='<div style="background:#242424;border-radius:16px;padding:14px 16px;border:2px solid #2a2a2a;display:flex;gap:12px;align-items:center;margin-bottom:12px">'+
       '<div style="width:52px;height:52px;background:#2D2D2D;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">'+it.em+'</div>'+
       '<div style="flex:1;min-width:0"><p style="font-weight:700;font-size:13px;margin:0 0 2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+it.name+'</p>'+
@@ -2517,10 +2089,10 @@ var h='<div style="background:rgba(59,159,232,.08);border:2px solid rgba(59,159,
   // COD only for pure restaurant/food orders
   // Check cart item types - if any non-restaurant item type exists, no COD
   var cartTypes=S.cart.map(function(i){return i.type||'food';});
-  var hasNonRestaurant=cartTypes.some(function(t){return t==='raw'||t==='catering'||t==='cake'||t==='aiplanner'||t==='homecook';});
+  var hasNonRestaurant=cartTypes.some(function(t){return t==='aiplanner'||t==='homecook';});
   var isRestaurantOnly=S.cart.length>0 && !hasNonRestaurant;
   // Also check if currently browsing non-restaurant (even empty cart)
-  var browsingOther=!!(S.cCat||S.cCake||(S.rawSel&&Object.keys(S.rawSel).length>0));
+  var browsingOther=false;
   var showCOD=isRestaurantOnly && !browsingOther;
   var opts=[['escrow','&#x1F512; Escrow (Recommended)','Funds held until you confirm delivery']];
   if(showCOD)opts.push(['cod','&#x1F4B5; Cash on Delivery','Pay rider on arrival']);
@@ -3201,76 +2773,10 @@ function onSfmStatus(status){
   });
 }
 
-// ── Customer Track screen (regular Order deliveries) ────────────────────
-// Backend already pushes a real order:status event for every transition
-// (see orders.controller.js) and the central socket handler (see
-// window._socket.on('order:status',...) near the top of this file) already
-// calls onOrderStatusPush(p) — this was previously a dead hook with no
-// implementation, so the screen never updated. Shop-For-Me sessions have
-// their own dedicated tracking flow (renderShopPhase) and aren't shown here.
-var ORDER_TRACK_STATUSES = ['ACCEPTED','PREPARING','READY_FOR_PICKUP','RIDER_ASSIGNED','PICKED_UP'];
-var ORDER_STATUS_LABEL = {
-  ACCEPTED:'Vendor accepted your order', PREPARING:'Being prepared',
-  READY_FOR_PICKUP:'Ready — waiting for a rider', RIDER_ASSIGNED:'Rider assigned, heading to vendor',
-  PICKED_UP:'Rider picked up — on the way to you',
-};
-window._trackOrder = null;
-async function renderEtrack(){
+function renderEtrack(){
   var body = document.getElementById('etrack-body');
   if (!body) return;
-  body.innerHTML = '<div style="text-align:center;padding:40px 0;color:#9A9390;font-size:13px;">Loading…</div>';
-  try{
-    var res = await api('/orders');
-    var active = (res.orders||[]).filter(function(o){ return ORDER_TRACK_STATUSES.indexOf(o.status)>=0; })
-      .sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); })[0];
-    window._trackOrder = active || null;
-    if (!active) {
-      body.innerHTML = '<div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div>';
-      return;
-    }
-    if (_socket) _socket.emit('order:join', { orderId: active.id });
-    renderEtrackBody();
-  }catch(err){
-    body.innerHTML = '<div style="text-align:center;padding:40px 16px;color:#E8392E;font-size:13px;">'+(err.message||'Could not load your order')+'</div>';
-  }
-}
-function renderEtrackBody(){
-  var body = document.getElementById('etrack-body');
-  var o = window._trackOrder;
-  if (!body || !o) return;
-  var vendorNm = (o.vendor&&o.vendor.bizName)||'Vendor';
-  var riderNm = (o.rider&&o.rider.user&&o.rider.user.name)||null;
-  var riderVehicle = o.rider ? [o.rider.vehicleType,o.rider.plateNumber].filter(Boolean).join(' • ') : '';
-  var hasRider = ['RIDER_ASSIGNED','PICKED_UP'].indexOf(o.status)>=0;
-  body.innerHTML = '<div class="card" style="margin-bottom:14px;">'
-    + '<div style="font-weight:800;font-size:15px;margin-bottom:4px;">'+vendorNm+'</div>'
-    + '<div style="font-size:12px;color:#9A9390;">'+(o.items||[]).map(function(i){return i.qty+'x '+i.name;}).join(', ')+'</div>'
-    + '<div style="margin-top:10px;padding:8px 12px;background:rgba(245,166,35,.12);border-radius:10px;font-size:13px;font-weight:700;color:#F5A623;">'+(ORDER_STATUS_LABEL[o.status]||o.status)+'</div>'
-    + '</div>'
-    + (hasRider ? (
-      '<div class="card" style="margin-bottom:14px;">'
-      + '<div style="display:flex;gap:12px;align-items:center;">'
-      + '<div style="width:48px;height:48px;background:rgba(100,48,200,0.10);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;">🏍️</div>'
-      + '<div style="flex:1;"><div style="font-weight:800;font-size:14px;">'+(riderNm||'Rider assigned')+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+(riderVehicle||'')+'</div></div>'
-      + '</div></div>'
-      + (o.deliveryCode ? (
-        '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:14px;text-align:center;">'
-        + '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Delivery Code</div>'
-        + '<div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">'+o.deliveryCode+'</div>'
-        + '<div style="font-size:11px;color:#9A9390;margin-top:6px;">Give this to '+(riderNm||'the rider')+' when they arrive</div>'
-        + '</div>'
-      ) : '')
-    ) : '<div style="font-size:12px;color:#9A9390;text-align:center;padding:8px 0 14px;">A rider will be assigned once your order is ready.</div>');
-}
-// Wired to the central _socket.on('order:status',...) handler near the
-// top of this file, which already calls this if it's defined.
-function onOrderStatusPush(p){
-  if (S.curScreen!=='track' || !window._trackOrder || p.orderId!==window._trackOrder.id) return;
-  api('/orders/'+p.orderId).then(function(res){
-    if (['DELIVERED','CONFIRMED','CANCELLED'].indexOf(res.order.status)>=0) { renderEtrack(); return; }
-    window._trackOrder = res.order;
-    renderEtrackBody();
-  });
+  body.innerHTML = '<div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div>';
 }
 
 async function depositAndFindShopper() {
@@ -4185,36 +3691,6 @@ function openEscrowWallet(){
 }
 
 
-// ══ Live Shopper Registration (Grocery vendors) ══
-function toggleLSDay(btn) {
-  var active = btn.style.background === '#2ECC71';
-  btn.style.background = active ? '#1C1C1C' : '#2ECC71';
-  btn.style.color = active ? '#9A9390' : '#111';
-  btn.style.borderColor = active ? '#2A2850' : '#2ECC71';
-}
-
-function submitLiveShopper() {
-  var name = document.getElementById('ls-name');
-  var phone = document.getElementById('ls-phone');
-  if(!name||!name.value.trim()){toast('Enter shopper name');return;}
-  if(!phone||!phone.value.trim()){toast('Enter shopper phone');return;}
-  document.getElementById('live-shopper-reg-form').style.display='none';
-  document.getElementById('ls-reg-btn').style.display='none';
-  var reg = document.getElementById('live-shopper-registered');
-  if(reg){
-    reg.style.display='block';
-    var nm = document.getElementById('ls-registered-name');
-    if(nm) nm.textContent = name.value.trim()+' is now live on CityChef — customers can shop your store on video.';
-  }
-  toast('✓ '+name.value.trim()+' registered as your live shopper!');
-}
-
-function showVendorLiveShopper() {
-  var sec = document.getElementById('vendor-live-shopper-section');
-  if(sec) sec.style.display = (S.vtype==='grocery') ? 'block' : 'none';
-}
-
-
 function toggleServiceType(btn) {
   var active = btn.style.background === 'rgb(232, 57, 46)' || btn.style.background === '#E8392E';
   btn.style.background = active ? '#1C1C1C' : '#E8392E';
@@ -4239,110 +3715,6 @@ document.addEventListener('click', function(e){
   if(pm && e.target===pm){ pm.style.display='none'; }
   if(rm && e.target===rm){ rm.style.display='none'; }
 });
-
-
-// ═══ STORE LIVE SHOPPER ═══
-var SL={sel:{}};
-function openStoreLiveShopper(storeId){
-  SL.sel={};
-  SL.storeId=storeId;
-  var store=(D.rawStores||[]).find(function(s){return s.id===storeId;})||{nm:'Store',assistant:{nm:'Assistant',em:'&#x1F469;'},em:'&#x1F6D2;',items:[]};
-  SL.store=store;
-  renderSLiveItems();
-  updateSLiveSummary();
-  // Update overlay header with store name and assistant
-  var hdr=document.getElementById('slive-store-name');if(hdr)hdr.textContent=store.nm;
-  var hdr2=document.getElementById('slive-store-name2');if(hdr2)hdr2.textContent='Live from '+store.nm;
-  var grn=document.getElementById('slive-greeting-name');if(grn)grn.textContent=store.assistant.nm;
-  var bav=document.getElementById('slive-ast-bubble-av');if(bav)bav.innerHTML=store.assistant.em;
-  var ast=document.getElementById('slive-assistant-name');if(ast)ast.textContent=store.assistant.nm;
-  var astav=document.getElementById('slive-assistant-av');if(astav)astav.innerHTML=store.assistant.em;
-  var storeav=document.getElementById('slive-store-em');if(storeav)storeav.innerHTML=store.em;
-  document.getElementById('store-live-ov').classList.add('on');
-}
-
-function closeStoreLive(){
-  document.getElementById('store-live-ov').classList.remove('on');
-}
-
-function renderSLiveItems(){
-  var grid=document.getElementById('slive-items-grid');
-  if(!grid)return;
-  var store=SL.store||{};
-  var storeItemIds=store.items||[];
-  var items=storeItemIds.length>0
-    ?storeItemIds.map(function(rid){return D.raw.find(function(r){return r.id===rid;});}).filter(Boolean)
-    :D.raw.filter(function(it){return it.st;});
-  grid.innerHTML=items.map(function(it){
-    var sel=!!SL.sel[it.id];
-    return '<div onclick="toggleSLive(\''+it.id+'\')" style="background:'+(sel?'rgba(46,204,113,.12)':'#242424')+';border-radius:12px;border:2px solid '+(sel?'#2ECC71':'#2a2a2a')+';overflow:hidden;cursor:pointer;position:relative;transition:border-color .2s">'+
-      (sel?'<div style="position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;background:#2ECC71;display:flex;align-items:center;justify-content:center;font-size:11px;color:#111;font-weight:900;z-index:2">&#x2713;</div>':'')+
-      '<div style="height:72px;background:linear-gradient(135deg,#0d200d,#1a2a1a);display:flex;align-items:center;justify-content:center;font-size:36px">'+it.em+'</div>'+
-      '<div style="padding:8px 10px">'+
-        '<p style="font-weight:700;font-size:12px;margin:0 0 1px;line-height:1.3">'+it.nm+'</p>'+
-        '<p style="color:#555;font-size:10px;margin:0 0 4px">'+it.un+'</p>'+
-        '<p style="color:#2ECC71;font-weight:800;font-size:13px;margin:0">'+N(it.pr)+'</p>'+
-      '</div></div>';
-  }).join('');
-}
-
-function toggleSLive(id){
-  var it=D.raw.find(function(x){return x.id===id;});
-  if(!it)return;
-  if(SL.sel[id]){delete SL.sel[id];}
-  else{SL.sel[id]=it;}
-  renderSLiveItems();
-  updateSLiveSummary();
-  if(Object.keys(SL.sel).length>0){
-    toast((SL.sel[id]?'Added':'Removed')+': '+it.nm);
-  }
-}
-
-function updateSLiveSummary(){
-  var keys=Object.keys(SL.sel);
-  var box=document.getElementById('slive-selected-box');
-  var btn=document.getElementById('slive-cart-btn');
-  var cnt=document.getElementById('slive-count');
-  var list=document.getElementById('slive-selected-list');
-  var tot=document.getElementById('slive-total');
-  if(!box)return;
-  if(keys.length===0){
-    box.style.display='none';
-    if(btn)btn.style.display='none';
-    return;
-  }
-  box.style.display='block';
-  if(btn)btn.style.display='block';
-  if(cnt)cnt.textContent=keys.length+' item'+(keys.length!==1?'s':'');
-  var total=0;
-  if(list){
-    list.innerHTML=keys.map(function(id){
-      var it=SL.sel[id];total+=it.pr;
-      return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:4px 0;border-bottom:1px solid rgba(46,204,113,.15)">'+
-        '<span>'+it.em+' '+it.nm+'</span>'+
-        '<span style="color:#2ECC71;font-weight:700">'+N(it.pr)+'</span></div>';
-    }).join('');
-  }
-  if(tot)tot.textContent=N(total);
-}
-
-function addLiveItemsToCart(){
-  var keys=Object.keys(SL.sel);
-  if(keys.length===0){toast('Select at least one item first');return;}
-  var added=0;
-  keys.forEach(function(id){
-    var it=SL.sel[id];
-    addCart({id:'raw-'+it.id,name:it.nm,pr:it.pr,em:it.em,qty:1,type:'raw',note:'Live selected from '+(SL.store?SL.store.nm:'store')});
-    added++;
-  });
-  closeStoreLive();
-  SL.sel={};
-  updBadge();
-  toast('\u2713 '+added+' item'+(added!==1?'s':'')+' added! Tap the cart to pay.');
-  // Show cart after short delay so user sees the toast
-  setTimeout(function(){go('cart');},900);
-}
-
 
 
 function renderSellerRegistryList() {
@@ -4567,7 +3939,6 @@ function openDeliveryConfirm(vendorAmt){
   // Vendor info: get from current context
   var vendorName='Vendor';
   if(S.cRest&&D.rests){var r=D.rests.find(function(x){return x.id===S.cRest;});if(r)vendorName=r.nm;}
-  else if(S.cCat&&D.caterers){var c=D.caterers.find(function(x){return x.id===S.cCat;});if(c)vendorName=c.nm;}
   else if(S.cCook&&D.cooks){var ck=D.cooks.find(function(x){return x.id===S.cCook;});if(ck)vendorName=ck.nm;}
   else if(S.cart_snapshot&&S.cart_snapshot[0]){vendorName=S.cart_snapshot[0].name.split(' — ')[0]||vendorName;}
 
@@ -4672,132 +4043,6 @@ function vendorNav(tab){
   else renderVendorProfile();
 }
 
-// Real Order-based dashboard for GROCERY/CATERER/CAKE_DESIGNER vendors —
-// these sell via checkout (real Order rows), not Booking, so they need
-// their own real accept/decline/mark-ready flow rather than
-// renderVendorDashboard('cook')'s /bookings?as=vendor query.
-function renderVendorOrdersReal(){
-  var body=document.getElementById('vendor-body');if(!body)return;
-  var nm=S.user?S.user.name:'Vendor';
-  var isGrocery=(S.vtype==='grocery');
-  var groceryBanner=isGrocery?
-    '<div style="background:linear-gradient(135deg,rgba(46,204,113,.15),rgba(59,159,232,.08));border:1.5px solid rgba(46,204,113,.35);border-radius:16px;padding:14px;margin-bottom:16px;display:flex;align-items:center;gap:12px;" onclick="vendorNav(\'menu\')">'
-    +'<div style="width:44px;height:44px;border-radius:13px;background:rgba(46,204,113,.15);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">&#x1F4F9;</div>'
-    +'<div style="flex:1;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">Your Free Live Shopper</div>'
-    +'<div style="font-size:11px;color:#9A9390;margin-top:2px;">Customers shop your store on live video</div></div>'
-    +'<div style="background:#2ECC71;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;color:#111;">Active &#x2713;</div></div>':'';
-  body.innerHTML=''
-    +'<div style="background:linear-gradient(180deg,rgba(46,204,113,.1) 0%,transparent 50%);padding:52px 22px 0;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'
-    +'<div><p style="color:#9A9390;font-size:13px;">Welcome back,</p>'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:#F2EDE8;margin-top:2px;">'+nm+' &#x1F37D;</div></div>'
-    +'<button class="online-pill" id="vendor-pill" onclick="toggleVendorOnline()" style="border-color:'+(_vendorOnline?'#2ECC71':'#2A2850')+';background:'+(_vendorOnline?'rgba(46,204,113,0.10)':'#242424')+';">'
-    +'<div class="status-dot '+(_vendorOnline?'online':'offline')+'" id="vendor-status-dot"></div>'
-    +'<span style="font-size:14px;font-weight:700;color:'+(_vendorOnline?'#2ECC71':'#9A9390')+';" id="vendor-status-lbl">'+(_vendorOnline?'Online':'Go Online')+'</span>'
-    +'</button></div>'
-
-    // Real revenue card — computed from today's DELIVERED/CONFIRMED orders
-    +'<div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:22px;padding:22px;margin-bottom:16px;">'
-    +'<div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;letter-spacing:.8px;text-transform:uppercase;">TODAY\'S REVENUE</div>'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:38px;font-weight:800;color:#FFFFFF;margin-top:6px;letter-spacing:-1px;" id="vendor-today-revenue">&#x20a6;…</div>'
-    +'<div style="display:flex;gap:16px;margin-top:12px;">'
-    +'<div><div style="font-size:11px;color:rgba(255,255,255,.4);">Orders Today</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;" id="vendor-today-count">…</div></div>'
-    +'</div></div>'
-
-    +groceryBanner
-
-    // Real orders, bucketed by status
-    +'<div id="vendor-orders-incoming" style="margin-bottom:16px;"></div>'
-    +'<div id="vendor-orders-preparing" style="margin-bottom:16px;"></div>'
-    +'<div id="vendor-orders-ready" style="margin-bottom:16px;"></div>'
-
-    +'<div style="background:rgba(46,204,113,.06);border:1.5px solid rgba(46,204,113,.2);border-radius:14px;padding:14px;margin-bottom:14px;">'
-    +'<div style="font-size:13px;font-weight:700;color:#2ECC71;margin-bottom:6px;">&#x1F4A1; Tap Go Online to start receiving orders</div>'
-    +'<div style="font-size:12px;color:#9A9390;">Orders appear here the moment a customer checks out. Accept, mark ready, then a rider picks up automatically.</div>'
-    +'</div>'
-    +'</div>';
-  vendorBindOrderListener();
-  loadVendorOrders();
-}
-
-async function loadVendorOrders(){
-  try{
-    var res=await api('/orders?as=vendor');
-    var orders=res.orders||[];
-    var incoming=orders.filter(function(o){return o.status==='PENDING';});
-    var preparing=orders.filter(function(o){return ['ACCEPTED','PREPARING'].indexOf(o.status)>=0;});
-    var ready=orders.filter(function(o){return ['READY_FOR_PICKUP','RIDER_ASSIGNED','PICKED_UP'].indexOf(o.status)>=0;});
-
-    var todayStr=new Date().toDateString();
-    var completedToday=orders.filter(function(o){return ['DELIVERED','CONFIRMED'].indexOf(o.status)>=0 && new Date(o.createdAt).toDateString()===todayStr;});
-    var revenueKobo=completedToday.reduce(function(s,o){return s+o.subtotalKobo;},0);
-    var revEl=document.getElementById('vendor-today-revenue'); if(revEl) revEl.textContent='₦'+Number(Math.round(revenueKobo/100)).toLocaleString();
-    var cntEl=document.getElementById('vendor-today-count'); if(cntEl) cntEl.textContent=String(completedToday.length);
-
-    function itemsSummary(o){ return (o.items||[]).map(function(i){return i.qty+'x '+i.name;}).join(', '); }
-
-    var incEl=document.getElementById('vendor-orders-incoming');
-    if(incEl){
-      incEl.innerHTML = incoming.length
-        ? '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🔔 Incoming ('+incoming.length+')</p>'
-          + incoming.map(function(o){
-            return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:16px;margin-bottom:12px;">'
-              + '<div style="font-weight:700;font-size:14px;color:#F2EDE8;margin-bottom:2px;">'+(o.customer?o.customer.name:'Customer')+' &bull; ₦'+Number(Math.round(o.totalKobo/100)).toLocaleString()+'</div>'
-              + '<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">'+itemsSummary(o)+'</div>'
-              + '<div style="display:flex;gap:8px;">'
-              + '<button onclick="acceptVendorOrderReal(\''+o.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept</button>'
-              + '<button onclick="declineVendorOrderReal(\''+o.id+'\')" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">✕ Decline</button>'
-              + '</div></div>';
-          }).join('')
-        : '';
-    }
-    var prepEl=document.getElementById('vendor-orders-preparing');
-    if(prepEl){
-      prepEl.innerHTML = preparing.length
-        ? '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">👨‍🍳 Preparing ('+preparing.length+')</p>'
-          + preparing.map(function(o){
-            return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px;margin-bottom:10px;">'
-              + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div><div style="font-weight:700;color:#F2EDE8;">'+(o.customer?o.customer.name:'Customer')+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+itemsSummary(o)+'</div></div><span style="background:rgba(245,166,35,.15);color:#F5A623;font-size:10px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap;">'+o.status+'</span></div>'
-              + '<button onclick="vendorMarkOrderReady(\''+o.id+'\')" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid rgba(46,204,113,.4);background:transparent;color:#2ECC71;font-weight:700;font-size:13px;cursor:pointer;">✓ Mark Ready for Pickup</button>'
-              + '</div>';
-          }).join('')
-        : '';
-    }
-    var readyEl=document.getElementById('vendor-orders-ready');
-    if(readyEl){
-      readyEl.innerHTML = ready.length
-        ? '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🏍️ Awaiting Rider ('+ready.length+')</p>'
-          + ready.map(function(o){
-            var statusLabel={READY_FOR_PICKUP:'Waiting for a rider to accept',RIDER_ASSIGNED:'Rider assigned',PICKED_UP:'Picked up — out for delivery'}[o.status]||o.status;
-            return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px;margin-bottom:10px;"><div style="font-weight:700;color:#F2EDE8;">'+(o.customer?o.customer.name:'Customer')+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+itemsSummary(o)+'</div><div style="font-size:12px;color:#3B9FE8;margin-top:6px;font-weight:700;">'+statusLabel+'</div></div>';
-          }).join('')
-        : '';
-    }
-  }catch(err){
-    var incEl2=document.getElementById('vendor-orders-incoming');
-    if(incEl2) incEl2.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px;">'+(err.message||'Could not load orders')+'</div>';
-  }
-}
-async function acceptVendorOrderReal(id){
-  try{ await api('/orders/'+id+'/accept',{method:'POST'}); showToast&&showToast('Order accepted ✓','success'); loadVendorOrders(); }
-  catch(err){ showToast&&showToast(err.message||'Could not accept order','warning'); }
-}
-async function declineVendorOrderReal(id){
-  try{ await api('/orders/'+id+'/decline',{method:'POST'}); showToast&&showToast('Order declined','warning'); loadVendorOrders(); }
-  catch(err){ showToast&&showToast(err.message||'Could not decline order','warning'); }
-}
-async function vendorMarkOrderReady(id){
-  try{ await api('/orders/'+id+'/ready',{method:'POST'}); showToast&&showToast('Marked ready — riders notified 🏍️','success'); loadVendorOrders(); }
-  catch(err){ showToast&&showToast(err.message||'Could not mark ready','warning'); }
-}
-// Vendor auto-joins its own room on socket connect (see src/realtime/live.js)
-// — just listen for the new-order push and refresh the real list live.
-function vendorBindOrderListener(){
-  if(!_socket||_socket._vendorOrdersBound)return;
-  _socket._vendorOrdersBound=true;
-  _socket.on('order:new',function(){ if(_vendorOnline) loadVendorOrders(); });
-}
-
 async function loadOpenEventRequests(){
   var el=document.getElementById('event-requests-section');
   if(!el) return;
@@ -4822,25 +4067,10 @@ function vendorTrackRider(orderId){toast('Tracking rider for '+orderId);showVend
 
 function renderVendorMenu(){
   var body=document.getElementById('vendor-body');if(!body)return;
-  var isGrocery=(S.vtype==='grocery');
-  var lsCard=isGrocery?
-    '<div style="background:linear-gradient(135deg,rgba(46,204,113,.12),rgba(59,159,232,.08));border:1.5px solid rgba(46,204,113,.35);border-radius:16px;padding:16px;margin-bottom:16px;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
-    +'<div><div style="font-weight:800;font-size:14px;color:#F2EDE8;">&#x1F4F9; Your Free Live Shopper</div>'
-    +'<div style="font-size:11px;color:#9A9390;margin-top:3px;">Customers shop via live video</div></div>'
-    +'<span style="background:#2ECC71;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;color:#111;">Active</span></div>'
-    +'<div style="background:rgba(0,0,0,.2);border-radius:10px;padding:10px;margin-bottom:10px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;">'
-    +'<div style="width:36px;height:36px;border-radius:10px;background:rgba(46,204,113,.15);display:flex;align-items:center;justify-content:center;font-size:18px;">&#x1F469;&#x1F3FE;</div>'
-    +'<div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Chioma Okafor</div>'
-    +'<div style="font-size:11px;color:#9A9390;">Mon-Sat &bull; 08012345678</div></div></div></div>'
-    +'<button onclick="toast(\'Register Another Shopper\')" style="width:100%;padding:10px;border-radius:10px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:13px;cursor:pointer;">+ Register Another Shopper</button>'
-    +'</div>':'';
   body.innerHTML='<div style="padding:52px 16px 16px;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
-    +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0;color:#F2EDE8;">'+(isGrocery?'My Store Items':'My Menu')+'</h2>'
+    +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0;color:#F2EDE8;">My Menu</h2>'
     +'<button onclick="openAddMenu()" style="background:#E8392E;border:none;border-radius:10px;color:#fff;padding:8px 14px;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">+ Add Item</button></div>'
-    +lsCard
     +[['&#x1F35B;','Jollof Rice','2500'],['&#x1F357;','Grilled Chicken','3500'],['&#x1F34C;','Fried Plantain','800']].map(function(item){
       return '<div style="background:#242424;border-radius:13px;padding:13px 14px;border:1px solid #2A2850;display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;">'
         +'<div style="display:flex;gap:10px;align-items:center;"><span style="font-size:24px;">'+item[0]+'</span>'
@@ -4974,41 +4204,27 @@ async function loadRiderAvailableDeliveries(){
   if(!list)return;
   list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">Looking for deliveries…</div>';
   try{
-    var results=await Promise.all([
-      api('/shop-sessions?as=available').catch(function(){return {sessions:[]};}),
-      api('/orders?as=available').catch(function(){return {orders:[]};}),
-    ]);
-    var sessions=results[0].sessions||[];
-    var orders=results[1].orders||[];
-    if(!sessions.length&&!orders.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
-    var sessionCards=sessions.map(function(s){
+    var res=await api('/shop-sessions?as=available');
+    var sessions=res.sessions||[];
+    if(!sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
+    list.innerHTML=sessions.map(function(s){
       return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
         +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 Shop-For-Me Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div><span style="background:#F5A623;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
         +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(s.customer?s.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.deliveryAddress||'Address on acceptance')+'</div></div>'
         +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderDelivery(\''+s.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button></div>'
         +'</div>';
-    });
-    var orderCards=orders.map(function(o){
-      var vendorName=(o.vendor&&o.vendor.bizName)||'Vendor';
-      return '<div style="background:linear-gradient(135deg,#1a1e2a,#1C1C1C);border:2px solid #3B9FE8;border-radius:18px;padding:18px;margin-bottom:12px;">'
-        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🍽️</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#3B9FE8;">🔔 Order Delivery — '+vendorName+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(o.deliveryFeeKobo/100)).toLocaleString()+' fee • '+o.items.length+' items</div></div><span style="background:#3B9FE8;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
-        +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(o.customer?o.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(o.deliveryAddress||'Address on acceptance')+'</div></div>'
-        +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderOrderDelivery(\''+o.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#3B9FE8,#1A6FBF);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button></div>'
-        +'</div>';
-    });
-    list.innerHTML=sessionCards.concat(orderCards).join('');
+    }).join('');
   }catch(err){
     list.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px">'+(err.message||'Could not load deliveries')+'</div>';
   }
 }
 
 // Live refresh — a rider who's already online should see new deliveries
-// appear without reloading, for both delivery types.
+// appear without reloading.
 function riderBindDispatchListeners(){
   if(!_socket||_socket._riderDispatchBound)return;
   _socket._riderDispatchBound=true;
   _socket.on('dispatch:new-shop-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
-  _socket.on('dispatch:new-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
 }
 
 function renderRiderMap(){
@@ -5251,22 +4467,10 @@ function uploadVendorPic(){var inp=document.getElementById('vendor-pp-inp');if(!
 function uploadShopperPic(){var inp=document.getElementById('shopper-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='shopper-pp-inp';inp.style.display='none';inp.onchange=function(){handleProfilePicUpload(inp,'shopper-pic-img','shopper-pic-icon');};document.body.appendChild(inp);}inp.click();}
 
 var _orderData=[
-  {type:'rawfood',title:"Mile 12 Fresh Market",icon:'&#x1F96C;',date:'Today 2:30PM',
-   items:[{n:'Tomatoes (basket)',p:1500},{n:'Yam Tubers x2',p:2000}],total:3500,
-   vendor:{name:"Mile 12 Fresh Market",address:'12 Adeola Odeku, VI',phone:'08023456789',rating:'4.8'},
-   rider:{name:'Emeka O.',vehicle:'Honda CB125',phone:'08034567890',rating:'4.9'}},
   {type:'shopping',title:'Live Shopping',icon:'&#x1F6D2;',date:'Yesterday 10AM',
    items:[{n:'Tomatoes 2kg',p:1200},{n:'Large Onions x5',p:800},{n:'Fresh Pepper',p:500}],total:7500,
    shopper:{name:'Aisha Abdullahi',phone:'08045678901',rating:'4.9'},
    rider:{name:'Chidi O.',vehicle:'TVS Apache',phone:'08056789012',rating:'4.8'}},
-  {type:'cake',title:'Sweet Creations',icon:'&#x1F382;',date:'3 days ago',
-   items:[{n:'Birthday Cake 2-tier',p:22000}],total:22000,
-   vendor:{name:'Sweet Creations',address:'45 Bode Thomas St',phone:'08067890123',rating:'4.7'},
-   rider:{name:'Tunde A.',vehicle:'Bajaj Boxer',phone:'08078901234',rating:'4.8'}},
-  {type:'catering',title:'Bisi Catering',icon:'&#x1F37C;',date:'1 week ago',
-   items:[{n:'Wedding catering 200 guests',p:350000}],total:350000,
-   vendor:{name:'Bisi Catering Services',address:'22 Allen Avenue, Ikeja',phone:'08089012345',rating:'4.9'},
-   rider:{name:'N/A',vehicle:'',phone:'08089012345',rating:'N/A'}},
   {type:'homecook',title:'Chef Ngozi',icon:'&#x1F9D1;&#x200D;&#x1F373;',date:'2 weeks ago',
    items:[{n:'Dinner for 6 - Egusi and Eba',p:45000}],total:45000,
    vendor:{name:'Chef Ngozi Okafor',address:'8 Oduduwa Crescent',phone:'08090123456',rating:'4.8'},
@@ -5274,11 +4478,7 @@ var _orderData=[
   {type:'aiplanner',title:'AI Meal Planner',icon:'&#x1F916;',date:'3 weeks ago',
    items:[{n:'Family 7-day meal plan',p:8000}],total:8000,
    vendor:{name:'CityChef AI Planner',address:'Automated service',phone:'N/A',rating:'Automated'},
-   rider:{name:'Ade B.',vehicle:'Bajaj Boxer',phone:'08092345678',rating:'4.8'}},
-  {type:'rawfood',title:'Mama Titi - Raw Market',icon:'&#x1F96C;',date:'Last week',
-   items:[{n:'Tomatoes 2kg',p:1500},{n:'Fresh Pepper',p:800},{n:'Onions x5',p:1200},{n:'Crayfish 500g',p:3000},{n:'Stockfish',p:2000}],total:8500,
-   vendor:{name:'Mama Titi Raw Market',address:'Mile 12 Market, Lagos',phone:'08034567891',rating:'4.8'},
-   rider:{name:'Emeka O.',vehicle:'Honda CB125',phone:'08034567890',rating:'4.9'}}
+   rider:{name:'Ade B.',vehicle:'Bajaj Boxer',phone:'08092345678',rating:'4.8'}}
 ];
 
 
@@ -5402,20 +4602,16 @@ function goHistory(){
   renderHistoryList();
 }
 var _allOrders=[
-  {idx:0,type:'rawfood',icon:'&#x1F96C;',title:"Mile 12 Fresh Market",sub:'Tomatoes, Yam Tubers',amount:3500,date:'Today 2:30PM',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:1,type:'shopping',icon:'&#x1F6D2;',title:'Live Shopping',sub:'Tomatoes, Onions, Pepper',amount:7500,date:'Yesterday 10AM',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:2,type:'cake',icon:'&#x1F382;',title:'Sweet Creations',sub:'Birthday Cake (2-tier)',amount:22000,date:'3 days ago',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:3,type:'catering',icon:'&#x1F37C;',title:'Bisi Catering',sub:'Wedding catering',amount:350000,date:'1 week ago',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:4,type:'homecook',icon:'&#x1F9D1;&#x200D;&#x1F373;',title:'Chef Ngozi',sub:'Home cook dinner for 6',amount:45000,date:'2 weeks ago',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:5,type:'aiplanner',icon:'&#x1F916;',title:'AI Meal Planner',sub:'Family 7-day plan',amount:8000,date:'3 weeks ago',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:6,type:'rawfood',icon:'&#x1F96C;',title:'Mama Titi Raw Market',sub:'Tomatoes, Peppers, Onions, Crayfish',amount:8500,date:'Last week',status:'Delivered',statusColor:'#2ECC71'}
+  {idx:0,type:'shopping',icon:'&#x1F6D2;',title:'Live Shopping',sub:'Tomatoes, Onions, Pepper',amount:7500,date:'Yesterday 10AM',status:'Delivered',statusColor:'#2ECC71'},
+  {idx:1,type:'homecook',icon:'&#x1F9D1;&#x200D;&#x1F373;',title:'Chef Ngozi',sub:'Home cook dinner for 6',amount:45000,date:'2 weeks ago',status:'Delivered',statusColor:'#2ECC71'},
+  {idx:2,type:'aiplanner',icon:'&#x1F916;',title:'AI Meal Planner',sub:'Family 7-day plan',amount:8000,date:'3 weeks ago',status:'Delivered',statusColor:'#2ECC71'}
 ];
 
 
 function renderHistoryList(){
   var el=document.getElementById('history-list');
   if(!el)return;
-  var tabs=['All','Food','Shopping','Cakes','Catering','Home Cook','Raw Food','AI Plan'];
+  var tabs=['All','Shopping','Home Cook','AI Plan'];
   var tabHtml='<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:14px;">';
   for(var ti=0;ti<tabs.length;ti++){
     var active=(ti===0);
@@ -5457,12 +4653,8 @@ function filterHistory(btn,filter){
   cards.forEach(function(c){
     var t=c.dataset.type;
     var show=(filter==='All')
-      ||(filter==='Food'&&t==='homecook')
       ||(filter==='Shopping'&&t==='shopping')
-      ||(filter==='Cakes'&&t==='cake')
-      ||(filter==='Catering'&&t==='catering')
       ||(filter==='Home Cook'&&t==='homecook')
-      ||(filter==='Raw Food'&&t==='rawfood')
       ||(filter==='AI Plan'&&t==='aiplanner');
     c.style.display=show?'flex':'none';
   });
@@ -6035,7 +5227,6 @@ async function toggleVendorOnline(){
     if(pill){pill.style.borderColor='#2A2850';pill.style.background='#242424';}
     toast('Gone offline');
   }
-  if(['grocery','caterer','cake_designer'].indexOf(S.vtype)>=0 && typeof loadVendorOrders==='function') loadVendorOrders();
 }
 
 function renderShopperHistory() {
@@ -6412,27 +5603,6 @@ function callOrderContact(idx){
 
 
 
-function doSearch(){
-  var inp=document.getElementById('main-search-inp');
-  var q=inp?inp.value.trim():'';
-  if(!q){toast('Please type something to search');return;}
-  var ql=q.toLowerCase();
-  var rests=D.rests.filter(function(r){
-    return r.nm.toLowerCase().indexOf(ql)>-1||r.cu.toLowerCase().indexOf(ql)>-1;
-  });
-  // Clear input
-  if(inp)inp.value='';
-  // Show results in home screen
-  renderRestsEl(rests,'rest-list-all');
-  // Navigate to home if not there
-  go('home');
-  // Make sure 'all' tab is active
-  setTimeout(function(){
-    switchTab('all');
-    var count=rests.length;
-    toast(count>0?('Found '+count+' result'+(count!==1?'s':'')+' for "'+q+'"'):'No results for "'+q+'". Try another keyword.');
-  },100);
-}
 
 
 
@@ -6446,26 +5616,11 @@ function doSearch(){
 
 
 window._riderActiveSession=null;
-window._riderActiveType=null; // 'SHOP_SESSION' | 'ORDER'
 async function acceptRiderDelivery(sessionId){
   try{
     var res=await api('/shop-sessions/'+sessionId+'/accept-delivery',{method:'POST'});
     window._riderActiveSession=res.session;
-    window._riderActiveType='SHOP_SESSION';
     if(_socket)_socket.emit('shop-session:join',{sessionId:sessionId});
-    riderNav('map');
-    setTimeout(function(){riderMapPhase1();},350);
-  }catch(err){
-    showToast&&showToast(err.message||'Could not accept this delivery','warning');
-    loadRiderAvailableDeliveries();
-  }
-}
-async function acceptRiderOrderDelivery(orderId){
-  try{
-    var res=await api('/orders/'+orderId+'/accept-delivery',{method:'POST'});
-    window._riderActiveSession=res.order;
-    window._riderActiveType='ORDER';
-    if(_socket)_socket.emit('order:join',{orderId:orderId});
     riderNav('map');
     setTimeout(function(){riderMapPhase1();},350);
   }catch(err){
@@ -6478,10 +5633,9 @@ function riderMapPhase1(){
   var body=document.getElementById('rider-body');
   if(!body)return;
   var s=window._riderActiveSession;
-  var isOrder=window._riderActiveType==='ORDER';
   var customerName=(s&&s.customer&&s.customer.name)||'the customer';
-  var pickupLabel=isOrder?((s&&s.vendor&&s.vendor.bizName)||'Vendor'):'Shopper';
-  var pickupHeading=isOrder?'Picking Up From '+pickupLabel:'Picking Up From Shopper';
+  var pickupLabel='Shopper';
+  var pickupHeading='Picking Up From Shopper';
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
@@ -6490,7 +5644,7 @@ function riderMapPhase1(){
     +'</div></div>'
     +'<div class="mapbox" style="margin:0 16px 14px;border-radius:18px;height:220px;">'
     +'<div class="mgrid"></div><div class="mroad"></div>'
-    +'<div class="mpin" style="left:10%"><div class="mpc" style="width:40px;height:40px;background:#E8392E;">'+(isOrder?'&#x1F3EA;':'&#x1F6D2;')+'</div><div class="mpl">'+pickupLabel+'</div></div>'
+    +'<div class="mpin" style="left:10%"><div class="mpc" style="width:40px;height:40px;background:#E8392E;">&#x1F6D2;</div><div class="mpl">'+pickupLabel+'</div></div>'
     +'<div class="mpin mrider" style="left:42%"><div class="mpc" style="width:48px;height:48px;background:#F5A623;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#F5A623;font-weight:800;">You</div></div>'
     +'<div class="mpin" style="right:8%"><div class="mpc" style="width:40px;height:40px;background:#2ECC71;">&#x1F3E0;</div><div class="mpl">'+customerName.split(' ')[0]+'</div></div>'
     +'<div class="mlive">&#x25CF; LIVE</div>'
@@ -6563,26 +5717,21 @@ function submitHandoverCode(){
   if(cb) cb(code.trim());
 }
 
-function riderBasePath(){
-  return window._riderActiveType==='ORDER' ? '/orders/' : '/shop-sessions/';
-}
 async function finishDelivery(){
   openHandoverCodeModal('Confirm Delivery', async function(code){
     if(window._riderActiveSession){
-      try{ await api(riderBasePath()+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }
+      try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }
       catch(err){ showToast&&showToast(err.message||'Could not confirm delivery','warning'); return; }
     }
     toast('Delivery confirmed! Payment releases once the customer confirms.');
     window._riderActiveSession=null;
-    window._riderActiveType=null;
     riderNav('deliveries');
   });
 }
 async function riderConfirmPickup(){
-  var pickupPath = window._riderActiveType==='ORDER' ? '/picked-up' : '/out-for-delivery';
   openHandoverCodeModal('Confirm Pickup', async function(code){
     if(window._riderActiveSession){
-      try{ await api(riderBasePath()+window._riderActiveSession.id+pickupPath,{method:'POST',body:JSON.stringify({code:code})}); }
+      try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/out-for-delivery',{method:'POST',body:JSON.stringify({code:code})}); }
       catch(err){ showToast&&showToast(err.message||'Could not update delivery status','warning'); return; }
     }
     riderMapPhase2();
@@ -6938,12 +6087,6 @@ async function renderVendorDashboard(kind){
   }
 }
 function renderCookDashboard(){
-  // GROCERY/CATERER/CAKE_DESIGNER vendors sell via checkout (real Order
-  // rows), not Booking — renderVendorDashboard('cook') only ever queries
-  // /bookings?as=vendor, which is always empty for these three types even
-  // when they have real paid orders sitting in PENDING.
-  var orderBased=['grocery','caterer','cake_designer'].indexOf(S.vtype)>=0;
-  if(orderBased){renderVendorOrdersReal();return;}
   renderVendorDashboard('cook');
 }
 function renderEPDashboard(){renderVendorDashboard('ep');}

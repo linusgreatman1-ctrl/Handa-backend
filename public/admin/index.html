@@ -78,6 +78,7 @@
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
     <button class="nav-item" data-tab="shopsessions" data-super="1" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
+    <button class="nav-item" data-tab="activecodes" data-super="1" onclick="switchTab('activecodes')">Active Codes</button>
     <button class="nav-item" data-tab="kyc" onclick="switchTab('kyc')">KYC Documents</button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
     <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
@@ -145,7 +146,7 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, kyc: renderKycDocuments, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, kyc: renderKycDocuments, admins: renderAdmins, auditlog: renderAuditLog };
   renderers[tab]();
 }
 
@@ -158,13 +159,13 @@ async function renderDashboard() {
   try {
     const s = await api('/admin/dashboard');
     const roleRows = Object.entries(s.usersByRole).map(([k, v]) => k + ': ' + v).join('<br>');
-    const orderRows = Object.entries(s.ordersByStatus).map(([k, v]) => k + ': ' + v).join('<br>') || 'No orders yet';
+    const bookingRows = Object.entries(s.bookingsByStatus).map(([k, v]) => k + ': ' + v).join('<br>') || 'No bookings yet';
     main.innerHTML =
       '<h2>Dashboard</h2>' +
       '<div class="grid">' +
         card('Users', Object.values(s.usersByRole).reduce((a, b) => a + b, 0), roleRows) +
-        card('Orders', Object.values(s.ordersByStatus).reduce((a, b) => a + b, 0), orderRows) +
-        card('Gross Merchandise Value', money(s.grossMerchandiseValueKobo), 'Delivered + confirmed orders') +
+        card('Bookings', Object.values(s.bookingsByStatus).reduce((a, b) => a + b, 0), bookingRows) +
+        card('Gross Merchandise Value', money(s.grossMerchandiseValueKobo), 'Completed bookings + Shop-For-Me sessions') +
         card('Held in Escrow', money(s.heldEscrowKobo), 'Awaiting release') +
         card('Open Support Tickets', s.openTickets, '') +
         card('Pending Withdrawals', s.pendingWithdrawals, '') +
@@ -406,6 +407,23 @@ async function renderShopSessions() {
       : '<div class="empty">No Shop-For-Me sessions yet.</div>';
   } catch (e) {
     document.getElementById('shopsessions-table').textContent = e.message;
+  }
+}
+
+async function renderActiveCodes() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Active Codes</h2><p style="color:#9A9390;margin:-8px 0 16px">Handover codes for sessions with a rider assigned — for support-desk lookup only.</p><div id="activecodes-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/active-codes');
+    const rows = data.sessions.map(s =>
+      '<tr><td>' + s.id.slice(0, 8) + '</td><td>' + s.customerName + '</td><td>' + s.shopperName + '</td><td>' + s.riderName + '</td>' +
+      '<td>' + pill(s.status) + '</td><td>' + (s.pickupCode || '—') + '</td><td>' + (s.deliveryCode || '—') + '</td></tr>'
+    ).join('');
+    document.getElementById('activecodes-table').outerHTML = data.sessions.length
+      ? '<table><thead><tr><th>ID</th><th>Customer</th><th>Shopper</th><th>Rider</th><th>Status</th><th>Pickup Code</th><th>Delivery Code</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No sessions with a rider assigned right now.</div>';
+  } catch (e) {
+    document.getElementById('activecodes-table').textContent = e.message;
   }
 }
 

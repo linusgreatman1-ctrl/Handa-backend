@@ -65,12 +65,10 @@ closes the tab before the frontend's own verify-poll runs.
 
 See `prisma/schema.prisma`. Five roles (`CUSTOMER`, `VENDOR`, `RIDER`,
 `SHOPPER`, `ADMIN`); a `VENDOR` account carries a `VendorProfile` with a
-`vtype` (`GROCERY` / `CATERER` / `HOME_COOK` / `EVENT_PLANNER` /
-`CAKE_DESIGNER`) — one model backs every catalog tab instead of five
-separate tables. Money is stored as `Int` kobo throughout (Paystack's own
-unit), never float.
+`vtype` (`HOME_COOK` / `EVENT_PLANNER`). Money is stored as `Int` kobo
+throughout (Paystack's own unit), never float.
 
-Every order/booking/live-shopping session is paid into `EscrowHold` rows
+Every booking/live-shopping session is paid into `EscrowHold` rows
 (one per beneficiary: vendor, rider, shopper) before any vendor/rider/
 shopper wallet is credited — see `src/services/escrow.service.js`. A
 background sweep (`realtime/live.js`) auto-releases holds past their
@@ -88,12 +86,11 @@ httpOnly refresh cookie (30d, rotated on use).
 | Users | `PATCH /users/me`, `/me/vendor-profile`, `/me/rider-profile`, `/me/shopper-profile`, `/me/availability` (go online/offline), `POST /me/avatar`, bank linking, addresses, notification prefs |
 | Catalog | `GET /vendors` (filter by `vtype`), `GET /vendors/:id`, vendor-owned `POST/PUT/DELETE /vendors/me/menu`, `.../me/packages`, `GET /shoppers`, shopper's `.../me/sellers` |
 | Search | `GET /search?q=` |
-| Orders | `POST /orders`, full accept → prepare → ready → rider-assign → pick-up → deliver → confirm lifecycle |
-| Bookings | `POST /bookings` (catering/home-cook/event-planning), accept/decline/pay/complete/cancel |
+| Bookings | `POST /bookings` (home-cook/event-planning), accept/decline/pay/complete/cancel |
 | Shop-For-Me | `POST /shop-sessions` through match → live call → packaging → find-rider → delivery → confirm, plus item pricing/approval and market-seller payouts |
 | Wallet | `GET /wallet`, `/wallet/transactions`, `POST /wallet/withdraw` |
 | Payments | Paystack initialize/verify/webhook, commission & feature-boost payments |
-| Ratings | `POST /ratings` (vendor/rider/shopper, per order/booking/session) |
+| Ratings | `POST /ratings` (vendor/rider/shopper, per booking/session) |
 | Support | `POST /support/tickets`, admin triage |
 | Notifications | `GET /notifications`, mark read |
 | Chat | `POST /chat/threads`, `GET/POST .../messages` |

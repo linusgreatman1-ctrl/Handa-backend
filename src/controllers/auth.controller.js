@@ -95,7 +95,7 @@ async function register(req, res, next) {
       return res.status(400).json({ error: "Invalid role." });
     }
     if (role === "VENDOR") {
-      if (!vtype || !["GROCERY", "CATERER", "HOME_COOK", "EVENT_PLANNER", "CAKE_DESIGNER"].includes(vtype)) {
+      if (!vtype || !["HOME_COOK", "EVENT_PLANNER"].includes(vtype)) {
         return res.status(400).json({ error: "A valid vendor type (vtype) is required." });
       }
       if (!bizName || !bizName.trim()) {

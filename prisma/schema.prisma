@@ -1,8 +1,7 @@
 // Handa Backend — Database Schema
-// Covers the Handa super-app: restaurant food delivery, raw food (grocery)
-// market with live "Shop For Me" video shopping, catering, home cooks,
-// event planners, custom cakes, an AI meal planner, and the riders /
-// independent shoppers who fulfill deliveries and shopping sessions.
+// Covers the Handa app: live "Shop For Me" video shopping, home cooks,
+// event planners, an AI meal planner, and the riders / independent
+// shoppers who fulfill deliveries and shopping sessions.
 //
 // Money is stored as Int in kobo (1 NGN = 100 kobo) throughout, matching
 // Paystack's own API units and avoiding float rounding — same convention
@@ -23,7 +22,7 @@ datasource db {
 
 enum Role {
   CUSTOMER
-  VENDOR // restaurant / grocery / caterer / home cook / event planner / cake designer
+  VENDOR // home cook / event planner
   RIDER
   SHOPPER // independent live shopper for "Shop For Me" sessions
   ADMIN
@@ -76,7 +75,6 @@ model User {
   shopperProfile         ShopperProfile?
   wallet                 Wallet?
   savedPaymentMethods    SavedPaymentMethod[]
-  ordersAsCustomer       Order[]                 @relation("OrderCustomer")
   bookingsAsCustomer     Booking[]               @relation("BookingCustomer")
   shopSessionsAsCustomer ShopSession[]           @relation("ShopSessionCustomer")
   registeredSellers      RegisteredSeller[]
@@ -130,11 +128,8 @@ model Address {
 // ─────────────────────────────────────────────────────────────────────────
 
 enum VendorType {
-  GROCERY // raw food market store
-  CATERER
   HOME_COOK
   EVENT_PLANNER
-  CAKE_DESIGNER
 }
 
 model VendorProfile {
@@ -168,7 +163,6 @@ model VendorProfile {
 
   menuItems         MenuItem[]
   servicePackages   ServicePackage[]
-  ordersReceived    Order[]            @relation("OrderVendor")
   bookingsReceived  Booking[]          @relation("BookingVendor")
   shopSessionStore  ShopSession[]      @relation("ShopSessionStore")
   featureBoosts     FeatureBoost[]
@@ -201,7 +195,6 @@ model RiderProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  ordersAsRider       Order[]       @relation("OrderRider")
   shopSessionsAsRider ShopSession[] @relation("ShopSessionRider")
 
   @@index([isOnline])
@@ -286,9 +279,8 @@ model RegisteredSeller {
 // CATALOG
 // ─────────────────────────────────────────────────────────────────────────
 
-// One model backs dishes (RESTAURANT), raw items (GROCERY), cook specials
-// (HOME_COOK), and cakes (CAKE_DESIGNER) — they're all "a thing this vendor
-// sells", differing only in which fields they use.
+// Cook specials sold by HOME_COOK vendors — real menu items the customer
+// picks from during a booking.
 model MenuItem {
   id       String        @id @default(uuid())
   vendorId String
@@ -298,18 +290,14 @@ model MenuItem {
   description     String?
   emoji           String?
   imageUrl        String?
-  category        String? // e.g. "Swallow", "Drinks" (restaurant) / "Tubers", "Grains" (grocery)
-  unit            String? // grocery items: "kg", "paint bucket", "derica"...
+  category        String?
   priceKobo       Int
   prepTimeMinutes Int?
   popular         Boolean @default(false)
   inStock         Boolean @default(true)
-  deliveryDays    Int? // cakes: lead time in days
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  orderItems OrderItem[]
 
   @@index([vendorId])
   @@index([vendorId, category])
@@ -326,7 +314,7 @@ enum PackageKey {
   NAMING
 }
 
-// Fixed-tier service packages sold by caterers and event planners.
+// Fixed-tier service packages sold by event planners.
 model ServicePackage {
   id        String        @id @default(uuid())
   vendorId  String
@@ -342,28 +330,6 @@ model ServicePackage {
   @@index([vendorId])
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// ORDERS (restaurant / raw food / cake)
-// ─────────────────────────────────────────────────────────────────────────
-
-enum OrderType {
-  RAW_FOOD
-  CAKE
-}
-
-enum OrderStatus {
-  PENDING // awaiting vendor accept
-  ACCEPTED
-  PREPARING
-  READY_FOR_PICKUP
-  RIDER_ASSIGNED
-  PICKED_UP
-  DELIVERED
-  CONFIRMED // customer confirmed receipt — triggers final escrow release
-  CANCELLED
-  DISPUTED
-}
-
 enum PaymentMethod {
   CARD
   BANK_TRANSFER
@@ -373,78 +339,11 @@ enum PaymentMethod {
   POS
 }
 
-model Order {
-  id            String        @id @default(uuid())
-  orderNumber   String        @unique
-  type          OrderType
-  status        OrderStatus   @default(PENDING)
-  paymentMethod PaymentMethod
-
-  customerId String
-  customer   User          @relation("OrderCustomer", fields: [customerId], references: [id])
-  vendorId   String
-  vendor     VendorProfile @relation("OrderVendor", fields: [vendorId], references: [id])
-  riderId    String?
-  rider      RiderProfile? @relation("OrderRider", fields: [riderId], references: [id])
-
-  items OrderItem[]
-
-  subtotalKobo    Int
-  deliveryFeeKobo Int @default(0)
-  platformFeeKobo Int @default(0)
-  totalKobo       Int
-
-  deliveryAddress String
-  deliveryLat     Float?
-  deliveryLng     Float?
-  note            String?
-
-  cancelReason String?
-
-  // Handover confirmation — rider must be told these verbally/in-app by
-  // the vendor (pickup) and customer (delivery); never shown on the
-  // rider's own screen. See src/utils/otp.js.
-  pickupCode   String?
-  deliveryCode String?
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  acceptedAt  DateTime?
-  readyAt     DateTime?
-  pickedUpAt  DateTime?
-  deliveredAt DateTime?
-  confirmedAt DateTime?
-  cancelledAt DateTime?
-
-  escrowHolds EscrowHold[]
-  ratings     Rating[]
-
-  @@index([customerId])
-  @@index([vendorId])
-  @@index([riderId])
-  @@index([status])
-}
-
-model OrderItem {
-  id         String    @id @default(uuid())
-  orderId    String
-  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId String?
-  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
-  name       String // snapshot, survives menu item edits/deletes
-  priceKobo  Int // snapshot
-  qty        Int
-  note       String?
-
-  @@index([orderId])
-}
-
 // ─────────────────────────────────────────────────────────────────────────
-// BOOKINGS (catering / home cook / event planning)
+// BOOKINGS (home cook / event planning)
 // ─────────────────────────────────────────────────────────────────────────
 
 enum BookingType {
-  CATERING
   HOME_COOK
   EVENT_PLANNING
 }
@@ -507,7 +406,7 @@ model Booking {
 // by proposing, so acceptance is the mutual-agreement point; the customer
 // then just pays the deposit like any other booking) and auto-declines
 // the rest. Direct single-vendor booking (createBooking above) is
-// unchanged and still how caterers/home cooks are normally booked.
+// unchanged and still how home cooks are normally booked.
 enum EventRequestStatus {
   OPEN
   PROPOSAL_ACCEPTED
@@ -591,7 +490,7 @@ model ShopSession {
   customer   User            @relation("ShopSessionCustomer", fields: [customerId], references: [id])
   shopperId  String?
   shopper    ShopperProfile? @relation("ShopSessionShopper", fields: [shopperId], references: [id])
-  storeId    String? // optional: a specific GROCERY vendor this session targets
+  storeId    String? // optional: a specific vendor this session targets (unused today, kept for future use)
   store      VendorProfile?  @relation("ShopSessionStore", fields: [storeId], references: [id])
   riderId    String?
   rider      RiderProfile?   @relation("ShopSessionRider", fields: [riderId], references: [id])
@@ -698,7 +597,10 @@ enum TransactionType {
 }
 
 // Generic reference to whatever this transaction/hold is about, since it
-// can be an Order, a Booking, or a ShopSession.
+// can be a Booking or a ShopSession. ORDER is kept for backward
+// compatibility with historical rows but nothing produces it anymore —
+// the catalog-checkout Order model was removed along with the GROCERY/
+// CATERER/CAKE_DESIGNER vendor types that were its only users.
 enum ContextType {
   ORDER
   BOOKING
@@ -737,15 +639,12 @@ enum PayeeRole {
   PLATFORM
 }
 
-// One hold per beneficiary so payouts can be released itemized — an Order
-// has one (to the vendor, plus one to the rider once delivered); a
+// One hold per beneficiary so payouts can be released itemized — a
 // ShopSession has up to three (session fee to the shopper, delivery fee to
 // the rider, item costs to market sellers via SellerPayout).
 model EscrowHold {
   id            String       @id @default(uuid())
   contextType   ContextType
-  orderId       String?
-  order         Order?       @relation(fields: [orderId], references: [id])
   bookingId     String?
   booking       Booking?     @relation(fields: [bookingId], references: [id])
   shopSessionId String?
@@ -764,7 +663,6 @@ model EscrowHold {
 
   createdAt DateTime @default(now())
 
-  @@index([contextType, orderId])
   @@index([contextType, bookingId])
   @@index([contextType, shopSessionId])
   @@index([payerId])
@@ -873,8 +771,6 @@ enum RateeRole {
 model Rating {
   id            String       @id @default(uuid())
   contextType   ContextType
-  orderId       String?
-  order         Order?       @relation(fields: [orderId], references: [id])
   bookingId     String?
   booking       Booking?     @relation(fields: [bookingId], references: [id])
   shopSessionId String?
@@ -891,7 +787,6 @@ model Rating {
 
   createdAt DateTime @default(now())
 
-  @@unique([orderId, rateeRole])
   @@unique([bookingId, rateeRole])
   @@unique([shopSessionId, rateeRole])
   @@index([rateeId])

@@ -15,7 +15,7 @@ async function createBooking(req, res, next) {
   try {
     const { vendorId, type, servicePackageId, items, eventDate, eventTime, venue, guestCount, phone, notes, paymentMethod } = req.body;
     if (!vendorId || !type) return res.status(400).json({ error: "vendorId and type are required." });
-    if (!["CATERING", "HOME_COOK", "EVENT_PLANNING"].includes(type)) return res.status(400).json({ error: "Invalid booking type." });
+    if (!["HOME_COOK", "EVENT_PLANNING"].includes(type)) return res.status(400).json({ error: "Invalid booking type." });
 
     const vendor = await prisma.vendorProfile.findUnique({ where: { id: vendorId } });
     if (!vendor) return res.status(404).json({ error: "Vendor not found." });

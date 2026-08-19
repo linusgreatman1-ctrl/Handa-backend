@@ -15,8 +15,7 @@ const commissionSvc = require("../services/commission.service");
 //   user:{userId}          — personal channel (notifications)
 //   dispatch:riders        — every ONLINE rider, for new-delivery broadcasts
 //   dispatch:shoppers      — every ONLINE shopper, for new-session broadcasts
-//   vendor:{vendorProfileId} — a vendor's own dashboard (new order/booking alerts)
-//   order:{orderId}        — customer + assigned vendor/rider watching one order
+//   vendor:{vendorProfileId} — a vendor's own dashboard (new booking alerts)
 //   booking:{bookingId}
 //   shop-session:{sessionId}
 //   chat:{threadId}
@@ -64,19 +63,8 @@ function attachLiveSocket(httpServer) {
     if (user.shopperProfile) socket.join(`dispatch:shoppers`);
 
     // ── Explicit room joins, each gated by an actual access check so a
-    // socket can't eavesdrop on someone else's order/session/chat by
+    // socket can't eavesdrop on someone else's booking/session/chat by
     // guessing an id. ──
-
-    socket.on("order:join", async ({ orderId }) => {
-      if (!orderId) return;
-      const order = await prisma.order.findUnique({ where: { id: orderId }, include: { vendor: true } });
-      if (!order) return;
-      const allowed =
-        order.customerId === user.id ||
-        (user.vendorProfile && order.vendorId === user.vendorProfile.id) ||
-        (user.riderProfile && order.riderId === user.riderProfile.id);
-      if (allowed) socket.join(`order:${orderId}`);
-    });
 
     socket.on("booking:join", async ({ bookingId }) => {
       if (!bookingId) return;
@@ -122,12 +110,11 @@ function attachLiveSocket(httpServer) {
         where: { id: user.riderProfile.id },
         data: { currentLat: lat, currentLng: lng, locationUpdatedAt: new Date() },
       });
-      const [activeOrders, activeSessions] = await Promise.all([
-        prisma.order.findMany({ where: { riderId: user.riderProfile.id, status: { in: ["RIDER_ASSIGNED", "PICKED_UP"] } }, select: { id: true } }),
-        prisma.shopSession.findMany({ where: { riderId: user.riderProfile.id, status: { in: ["RIDER_ASSIGNED", "OUT_FOR_DELIVERY"] } }, select: { id: true } }),
-      ]);
+      const activeSessions = await prisma.shopSession.findMany({
+        where: { riderId: user.riderProfile.id, status: { in: ["RIDER_ASSIGNED", "OUT_FOR_DELIVERY"] } },
+        select: { id: true },
+      });
       const payload = { riderId: user.riderProfile.id, lat, lng, at: new Date().toISOString() };
-      activeOrders.forEach((o) => io.to(`order:${o.id}`).emit("rider:location", payload));
       activeSessions.forEach((s) => io.to(`shop-session:${s.id}`).emit("rider:location", payload));
     });
 

@@ -28,8 +28,8 @@ async function initializeWalletDeposit(req, res, next) {
 // Called by the frontend after Paystack's inline checkout closes, and
 // independently by the webhook — both paths are idempotent (a Paystack
 // reference can only fund one wallet credit / unlock one escrow hold
-// because each verify call is gated by the transaction/order/booking/
-// session's own current state, not by "has this reference been seen").
+// because each verify call is gated by the transaction/booking/session's
+// own current state, not by "has this reference been seen").
 async function verifyPayment(req, res, next) {
   try {
     const { reference } = req.params;
@@ -51,10 +51,6 @@ async function applyVerifiedPayment(data) {
   if (purpose === "WALLET_DEPOSIT") {
     await wallet.creditWallet(data.metadata.userId, data.amount, "DEPOSIT", { reference: data.reference, description: "Wallet top-up via Paystack" });
     return { purpose };
-  }
-  if (purpose === "ORDER_PAYMENT") {
-    await orderFlow.confirmOrderPayment(data.metadata.orderId, data.reference);
-    return { purpose, orderId: data.metadata.orderId };
   }
   if (purpose === "BOOKING_PAYMENT") {
     await orderFlow.confirmBookingPayment(data.metadata.bookingId, data.reference);

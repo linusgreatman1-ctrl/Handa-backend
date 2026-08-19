@@ -5,26 +5,26 @@ const { logAdminAction } = require("../services/auditLog.service");
 // aggregate counts, not full row dumps.
 async function dashboardStats(req, res, next) {
   try {
-    const [usersByRole, ordersByStatus, bookingsByStatus, sessionsByStatus, openTickets, pendingWithdrawals, heldEscrow, gmv] = await Promise.all([
+    const [usersByRole, bookingsByStatus, sessionsByStatus, openTickets, pendingWithdrawals, heldEscrow, bookingGmv, sessionGmv] = await Promise.all([
       prisma.user.groupBy({ by: ["role"], _count: true }),
-      prisma.order.groupBy({ by: ["status"], _count: true }),
       prisma.booking.groupBy({ by: ["status"], _count: true }),
       prisma.shopSession.groupBy({ by: ["status"], _count: true }),
       prisma.supportTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }),
       prisma.withdrawal.count({ where: { status: { in: ["PENDING", "PROCESSING"] } } }),
       prisma.escrowHold.aggregate({ where: { status: "HELD" }, _sum: { amountKobo: true } }),
-      prisma.order.aggregate({ where: { status: { in: ["DELIVERED", "CONFIRMED"] } }, _sum: { totalKobo: true } }),
+      prisma.booking.aggregate({ where: { status: "COMPLETED" }, _sum: { totalKobo: true } }),
+      prisma.shopSession.aggregate({ where: { status: "COMPLETED" }, _sum: { itemsTotalKobo: true, sessionFeeKobo: true } }),
     ]);
 
     res.json({
       usersByRole: Object.fromEntries(usersByRole.map((r) => [r.role, r._count])),
-      ordersByStatus: Object.fromEntries(ordersByStatus.map((r) => [r.status, r._count])),
       bookingsByStatus: Object.fromEntries(bookingsByStatus.map((r) => [r.status, r._count])),
       shopSessionsByStatus: Object.fromEntries(sessionsByStatus.map((r) => [r.status, r._count])),
       openTickets,
       pendingWithdrawals,
       heldEscrowKobo: heldEscrow._sum.amountKobo || 0,
-      grossMerchandiseValueKobo: gmv._sum.totalKobo || 0,
+      grossMerchandiseValueKobo:
+        (bookingGmv._sum.totalKobo || 0) + (sessionGmv._sum.itemsTotalKobo || 0) + (sessionGmv._sum.sessionFeeKobo || 0),
     });
   } catch (err) {
     next(err);
@@ -40,19 +40,14 @@ async function getReports(req, res, next) {
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const [platformHolds, deliveredOrders, bookingRevenue, sessionRevenue, commissionByStatus, orderRevenueByVendor, bookingRevenueByVendor] = await Promise.all([
+    const [platformHolds, bookingRevenue, sessionRevenue, commissionByStatus, bookingRevenueByVendor] = await Promise.all([
       prisma.escrowHold.findMany({
         where: { payeeRole: "PLATFORM", status: "RELEASED", createdAt: { gte: thirtyDaysAgo } },
         select: { amountKobo: true, createdAt: true },
       }),
-      prisma.order.findMany({
-        where: { status: { in: ["DELIVERED", "CONFIRMED"] } },
-        select: { totalKobo: true, vendor: { select: { vtype: true } } },
-      }),
       prisma.booking.groupBy({ by: ["type"], _sum: { totalKobo: true }, where: { status: "COMPLETED" } }),
       prisma.shopSession.findMany({ where: { status: "COMPLETED" }, select: { itemsTotalKobo: true, sessionFeeKobo: true } }),
       prisma.commissionPeriod.groupBy({ by: ["status"], _sum: { amountDueKobo: true, amountPaidKobo: true } }),
-      prisma.order.groupBy({ by: ["vendorId"], _sum: { totalKobo: true }, where: { status: { in: ["DELIVERED", "CONFIRMED"] } } }),
       prisma.booking.groupBy({ by: ["vendorId"], _sum: { totalKobo: true }, where: { status: "COMPLETED" } }),
     ]);
 
@@ -70,14 +65,8 @@ async function getReports(req, res, next) {
     }
 
     // ── GMV by category ──
-    const gmvByVtype = {};
-    deliveredOrders.forEach((o) => {
-      const cat = o.vendor?.vtype || "OTHER";
-      gmvByVtype[cat] = (gmvByVtype[cat] || 0) + o.totalKobo;
-    });
     const sessionGmv = sessionRevenue.reduce((sum, s) => sum + s.itemsTotalKobo + s.sessionFeeKobo, 0);
     const gmvByCategory = [
-      ...Object.entries(gmvByVtype).map(([category, gmvKobo]) => ({ category, gmvKobo })),
       ...bookingRevenue.map((b) => ({ category: b.type, gmvKobo: b._sum.totalKobo || 0 })),
       { category: "SHOP_FOR_ME", gmvKobo: sessionGmv },
     ].sort((a, b) => b.gmvKobo - a.gmvKobo);
@@ -87,9 +76,8 @@ async function getReports(req, res, next) {
       commissionByStatus.map((c) => [c.status, { dueKobo: c._sum.amountDueKobo || 0, paidKobo: c._sum.amountPaidKobo || 0 }])
     );
 
-    // ── Top vendors by revenue (orders + bookings combined) ──
+    // ── Top vendors by revenue ──
     const vendorTotals = {};
-    orderRevenueByVendor.forEach((r) => { vendorTotals[r.vendorId] = (vendorTotals[r.vendorId] || 0) + (r._sum.totalKobo || 0); });
     bookingRevenueByVendor.forEach((r) => { vendorTotals[r.vendorId] = (vendorTotals[r.vendorId] || 0) + (r._sum.totalKobo || 0); });
     const topVendorIds = Object.entries(vendorTotals).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id]) => id);
     const vendorNames = await prisma.vendorProfile.findMany({ where: { id: { in: topVendorIds } }, select: { id: true, bizName: true, vtype: true } });
@@ -329,6 +317,37 @@ async function getShopSessionTimeline(req, res, next) {
   }
 }
 
+// Support-desk lookup for the handover codes a rider must be told
+// verbally/in-app by the shopper (pickup) or customer (delivery) — see
+// ShopSession.pickupCode/.deliveryCode. Only meaningful once a rider is
+// assigned, so scoped to those two statuses.
+async function lookupActiveCodes(req, res, next) {
+  try {
+    const sessions = await prisma.shopSession.findMany({
+      where: { status: { in: ["RIDER_ASSIGNED", "OUT_FOR_DELIVERY"] } },
+      include: {
+        customer: { select: { name: true, phone: true } },
+        shopper: { include: { user: { select: { name: true, phone: true } } } },
+        rider: { include: { user: { select: { name: true, phone: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        status: s.status,
+        customerName: s.customer?.name || "—",
+        shopperName: s.shopper?.user?.name || "—",
+        riderName: s.rider?.user?.name || "—",
+        pickupCode: s.pickupCode,
+        deliveryCode: s.deliveryCode,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   dashboardStats,
   getReports,
@@ -343,4 +362,5 @@ module.exports = {
   listWithdrawalsForAdmin,
   listShopSessionsForAdmin,
   getShopSessionTimeline,
+  lookupActiveCodes,
 };

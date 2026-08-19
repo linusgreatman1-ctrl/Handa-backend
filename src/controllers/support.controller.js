@@ -82,7 +82,6 @@ async function listAllTickets(req, res, next) {
 }
 
 function escrowHoldWhereForTicket(ticket) {
-  if (ticket.context === "ORDER" && ticket.contextId) return { status: "HELD", orderId: ticket.contextId };
   if (ticket.context === "BOOKING" && ticket.contextId) return { status: "HELD", bookingId: ticket.contextId };
   if (ticket.context === "SHOP_SESSION" && ticket.contextId) return { status: "HELD", shopSessionId: ticket.contextId };
   return null;

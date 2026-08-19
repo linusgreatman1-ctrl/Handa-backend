@@ -27,6 +27,9 @@ router.get("/withdrawals", ctrl.listWithdrawalsForAdmin);
 router.get("/shop-sessions", requireSuperAdmin, ctrl.listShopSessionsForAdmin);
 router.get("/shop-sessions/:id", requireSuperAdmin, ctrl.getShopSessionTimeline);
 
+// Handover code lookup (support-desk use) — super-admin only.
+router.get("/active-codes", requireSuperAdmin, ctrl.lookupActiveCodes);
+
 // Admin management + audit trail — super-admin only.
 router.get("/admins", requireSuperAdmin, adminMgmt.listAdmins);
 router.post("/admins", requireSuperAdmin, adminMgmt.createAdmin);

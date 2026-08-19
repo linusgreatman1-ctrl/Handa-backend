@@ -103,7 +103,7 @@ async function createVendorProfile(req, res, next) {
   try {
     if (req.user.vendorProfile) return res.status(409).json({ error: "This account already has a vendor profile." });
     const { vtype, bizName, description, tags } = req.body;
-    if (!vtype || !["GROCERY", "CATERER", "HOME_COOK", "EVENT_PLANNER", "CAKE_DESIGNER"].includes(vtype)) {
+    if (!vtype || !["HOME_COOK", "EVENT_PLANNER"].includes(vtype)) {
       return res.status(400).json({ error: "A valid vendor type (vtype) is required." });
     }
     if (!bizName || !bizName.trim()) return res.status(400).json({ error: "Business name is required." });

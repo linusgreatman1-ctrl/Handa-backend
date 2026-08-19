@@ -1,35 +1,13 @@
 // Centralizes what happens the moment a Paystack payment is confirmed
 // (via verify-poll or webhook — both call these same functions, so
 // whichever arrives first wins and the other is a safe no-op) for each of
-// the three payable flows: Order, Booking, ShopSession. Kept separate from
-// payments.controller so orders/bookings/shopSessions controllers can also
+// the payable flows: Booking, ShopSession. Kept separate from
+// payments.controller so bookings/shopSessions controllers can also
 // call these directly for the WALLET payment method, which never touches
 // Paystack at all.
 const prisma = require("../config/db");
 const escrow = require("./escrow.service");
 const wallet = require("./wallet.service");
-
-async function confirmOrderPayment(orderId, reference) {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { vendor: true } });
-  if (!order) throw Object.assign(new Error("Order not found."), { status: 404 });
-
-  const existingHold = await prisma.escrowHold.findFirst({ where: { orderId, payeeRole: "VENDOR" } });
-  if (existingHold) return order; // already funded — idempotent
-
-  await escrow.createHold({
-    contextType: "ORDER",
-    orderId,
-    payerId: order.customerId,
-    payeeId: order.vendor.userId,
-    payeeRole: "VENDOR",
-    amountKobo: order.subtotalKobo,
-  });
-
-  // Order stays PENDING (awaiting vendor accept/decline) — funding it
-  // doesn't change its status, only unlocks it as visible/acceptable
-  // (see orders.controller.acceptOrder's payment-completeness check).
-  return order;
-}
 
 async function confirmBookingPayment(bookingId, reference) {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: true } });
@@ -132,7 +110,6 @@ async function applyTransferWebhook(event) {
 }
 
 module.exports = {
-  confirmOrderPayment,
   confirmBookingPayment,
   confirmShopSessionPayment,
   ensureShopperFeeHold,
