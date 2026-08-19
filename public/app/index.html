@@ -41,7 +41,13 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
      breathing room against the viewport edge; --cap is how wide the
      actual reading column is allowed to get before more space just
      becomes extra side padding instead of a stretched-out layout. */
-  .screen.active,.escreen.active{
+  /* Cook/Event-Planner booking flows are full-page takeovers built as
+     plain document.createElement('div') overlays (#__cook_bk_ov,
+     #__ep_bk_ov), not .screen/.escreen elements — so the rule below
+     never reached them, and they rendered edge-to-edge on desktop
+     ("home is centered, everything after it isn't"). Same treatment,
+     targeted by id since they don't carry the .screen/.escreen class. */
+  .screen.active,.escreen.active,#__cook_bk_ov,#__ep_bk_ov{
     --gutter:40px; --cap:820px;
     box-sizing:border-box;
     padding-left:calc(260px + max(var(--gutter),calc((100% - 260px - var(--cap))/2))) !important;
