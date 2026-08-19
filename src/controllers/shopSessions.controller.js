@@ -4,6 +4,7 @@ const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
 const orderFlow = require("../services/orderFlow.service");
 const { generateReference } = require("../utils/reference");
+const { generateOtpCode } = require("../utils/otp");
 
 const DEFAULT_RIDER_FEE_KOBO = 40000; // ₦400, matches the order flow's base delivery fee
 
@@ -29,6 +30,8 @@ async function createSession(req, res, next) {
         deliveryLng,
         sessionFeeKobo: sessionFeeForItemCount(items.length),
         riderFeeKobo: DEFAULT_RIDER_FEE_KOBO,
+        pickupCode: generateOtpCode(),
+        deliveryCode: generateOtpCode(),
         items: { create: items.map((i) => ({ text: i.text, addedBy: "CUSTOMER" })) },
       },
       include: { items: true },
@@ -70,6 +73,9 @@ async function listSessions(req, res, next) {
       include: { items: true, customer: { select: { name: true, phone: true } } },
       orderBy: { createdAt: "desc" },
     });
+    if (as === "rider" || as === "available") {
+      sessions.forEach((s) => { s.pickupCode = undefined; s.deliveryCode = undefined; });
+    }
     res.json({ sessions });
   } catch (err) {
     next(err);
@@ -87,6 +93,16 @@ function assertSessionAccess(req, session) {
   }
 }
 
+// The rider must be told the handover codes verbally/in-app by the
+// shopper (pickup) and customer (delivery) — never read them off their
+// own screen.
+function isRiderOnlyView(req, session) {
+  const isCustomer = session.customerId === req.user.id;
+  const isShopper = req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id;
+  const isRider = req.user.riderProfile && session.riderId === req.user.riderProfile.id;
+  return isRider && !isCustomer && !isShopper;
+}
+
 async function getSession(req, res, next) {
   try {
     const session = await prisma.shopSession.findUnique({
@@ -101,6 +117,10 @@ async function getSession(req, res, next) {
     });
     if (!session) return res.status(404).json({ error: "Shop session not found." });
     assertSessionAccess(req, session);
+    if (isRiderOnlyView(req, session)) {
+      session.pickupCode = undefined;
+      session.deliveryCode = undefined;
+    }
     res.json({ session });
   } catch (err) {
     next(err);
@@ -233,7 +253,7 @@ async function matchSession(req, res, next) {
   }
 }
 
-function transitionHandler(fromStatuses, toStatus, { requireShopper } = {}) {
+function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage } = {}) {
   return async (req, res, next) => {
     try {
       const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -241,8 +261,14 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper } = {}) {
       if (requireShopper && (!req.user.shopperProfile || session.shopperId !== req.user.shopperProfile.id)) {
         return res.status(403).json({ error: "You are not the shopper on this session." });
       }
+      if (requireRider && (!req.user.riderProfile || session.riderId !== req.user.riderProfile.id)) {
+        return res.status(403).json({ error: "You are not the rider on this session." });
+      }
       if (!fromStatuses.includes(session.status)) {
         return res.status(409).json({ error: `Session must be in one of [${fromStatuses.join(", ")}] (currently ${session.status}).` });
+      }
+      if (codeField && session[codeField] && req.body.code !== session[codeField]) {
+        return res.status(400).json({ error: codeErrorMessage });
       }
 
       const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: toStatus } });
@@ -289,8 +315,16 @@ async function acceptDelivery(req, res, next) {
   }
 }
 
-const markOutForDelivery = transitionHandler(["RIDER_ASSIGNED"], "OUT_FOR_DELIVERY");
-const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED");
+const markOutForDelivery = transitionHandler(["RIDER_ASSIGNED"], "OUT_FOR_DELIVERY", {
+  requireRider: true,
+  codeField: "pickupCode",
+  codeErrorMessage: "Incorrect pickup code. Ask the shopper for the code on their screen.",
+});
+const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
+  requireRider: true,
+  codeField: "deliveryCode",
+  codeErrorMessage: "Incorrect delivery code. Ask the customer for their code.",
+});
 
 async function confirmSession(req, res, next) {
   try {

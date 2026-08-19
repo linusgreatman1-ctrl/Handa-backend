@@ -85,7 +85,12 @@ async function getEscrowSummary(req, res, next) {
       let label = "Order";
       if (h.contextType === "ORDER" && h.order) label = `${h.order.vendor.bizName} — Order`;
       else if (h.contextType === "BOOKING" && h.booking) label = `${h.booking.vendor.bizName} — ${h.booking.type.replace("_", " ")}`;
-      else if (h.contextType === "SHOP_SESSION") label = "Shop-For-Me Session";
+      else if (h.contextType === "SHOP_SESSION") {
+        label = "Shop-For-Me Session";
+        if (h.shopSession && ["RIDER_ASSIGNED", "OUT_FOR_DELIVERY"].includes(h.shopSession.status) && h.shopSession.deliveryCode) {
+          label += ` · Delivery code: ${h.shopSession.deliveryCode}`;
+        }
+      }
       return {
         id: h.id,
         label,

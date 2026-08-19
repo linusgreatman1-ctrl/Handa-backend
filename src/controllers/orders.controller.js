@@ -5,6 +5,7 @@ const escrow = require("../services/escrow.service");
 const orderFlow = require("../services/orderFlow.service");
 const { notify } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
+const { generateOtpCode } = require("../utils/otp");
 
 const PLATFORM_FEE_PERCENT = Number(process.env.PLATFORM_ORDER_FEE_PERCENT || 5);
 
@@ -63,6 +64,8 @@ async function createOrder(req, res, next) {
         deliveryLat,
         deliveryLng,
         note,
+        pickupCode: generateOtpCode(),
+        deliveryCode: generateOtpCode(),
         items: { create: orderItemsData },
       },
       include: { items: true },
@@ -125,6 +128,12 @@ async function listOrders(req, res, next) {
       prisma.order.count({ where }),
     ]);
 
+    // Same rule as getOrder: a rider viewing their own delivery list must
+    // never see the handover codes on their own screen.
+    if (as === "rider") {
+      orders.forEach((o) => { o.pickupCode = undefined; o.deliveryCode = undefined; });
+    }
+
     res.json({ orders, total, page, pageSize });
   } catch (err) {
     next(err);
@@ -149,6 +158,12 @@ async function getOrder(req, res, next) {
     const isRider = req.user.riderProfile && order.riderId === req.user.riderProfile.id;
     if (!isCustomer && !isVendor && !isRider && req.user.role !== "ADMIN") {
       return res.status(403).json({ error: "You do not have access to this order." });
+    }
+    // The rider must be told these codes verbally/in-app by the vendor
+    // and customer — never read them off their own screen.
+    if (isRider && !isCustomer && !isVendor) {
+      order.pickupCode = undefined;
+      order.deliveryCode = undefined;
     }
 
     res.json({ order });
@@ -264,6 +279,9 @@ async function markPickedUp(req, res, next) {
     const order = await prisma.order.findUnique({ where: { id: req.params.id } });
     if (!order || !req.user.riderProfile || order.riderId !== req.user.riderProfile.id) return res.status(404).json({ error: "Order not found." });
     if (order.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: "Order has not been assigned to you yet." });
+    if (order.pickupCode && req.body.code !== order.pickupCode) {
+      return res.status(400).json({ error: "Incorrect pickup code. Ask the vendor for the code on their screen." });
+    }
 
     const updated = await prisma.order.update({ where: { id: order.id }, data: { status: "PICKED_UP", pickedUpAt: new Date() } });
     req.app.get("io")?.to(`order:${order.id}`).emit("order:status", { orderId: order.id, status: "PICKED_UP" });
@@ -278,6 +296,9 @@ async function markDelivered(req, res, next) {
     const order = await prisma.order.findUnique({ where: { id: req.params.id } });
     if (!order || !req.user.riderProfile || order.riderId !== req.user.riderProfile.id) return res.status(404).json({ error: "Order not found." });
     if (order.status !== "PICKED_UP") return res.status(409).json({ error: "Order has not been picked up yet." });
+    if (order.deliveryCode && req.body.code !== order.deliveryCode) {
+      return res.status(400).json({ error: "Incorrect delivery code. Ask the customer for their code." });
+    }
 
     const updated = await prisma.order.update({ where: { id: order.id }, data: { status: "DELIVERED", deliveredAt: new Date() } });
 

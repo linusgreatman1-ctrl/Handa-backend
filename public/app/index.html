@@ -3518,7 +3518,12 @@ function renderShopperPhase(phase) {
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:12px 14px;margin-bottom:16px;">
         <div style="font-size:13px;color:#9A9390;">🔒 Rider delivery fee is deducted from the user's escrow. You do not pay the rider — the app handles it automatically.</div>
       </div>
-      <button class="btn btn-primary" onclick="renderShopperPhase('riderSearch')">🔍 Search for Nearby Riders</button>
+      ${(window._shopperSession&&window._shopperSession.pickupCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:16px;text-align:center;">
+        <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Pickup Code</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${window._shopperSession.pickupCode}</div>
+        <div style="font-size:11px;color:#9A9390;margin-top:6px;">Give this to the rider when they arrive to collect the items</div>
+      </div>`:''}
+      <button class="btn btn-primary" onclick="shopperCallFindRider()">🔍 Search for Nearby Riders</button>
       <button class="btn btn-outline" style="margin-top:9px;" onclick="renderShopperPhase('packaging')">← Back</button>
     </div>`;
 
@@ -3818,6 +3823,17 @@ async function shopperEndCallAndPackage(){
     catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
   }
   renderShopperPhase('packaging');
+}
+
+async function shopperCallFindRider(){
+  if(window._shopperSession){
+    try{
+      var res = await api('/shop-sessions/'+window._shopperSession.id+'/find-rider',{method:'POST'});
+      if(res.session) window._shopperSession = res.session;
+    }
+    catch(err){ showToast&&showToast(err.message||'Could not search for a rider','warning'); return; }
+  }
+  renderShopperPhase('riderSearch');
 }
 
 // ── Joint confirm checklist (shopper + rider tick off together) ──────────
@@ -6212,21 +6228,57 @@ function riderMapPhase2(){
     +'</div>';
 }
 
+// ── Handover code entry (rider side) ────────────────────────────────────
+// The rider is never shown these codes on their own screen (see backend
+// stripping in shopSessions.controller.js) — they have to ask the shopper
+// (pickup) or customer (delivery) for the 4-digit code in person.
+function openHandoverCodeModal(title, onSubmit){
+  var html = '<div id="handover-code-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:340px;width:100%;padding:20px;font-family:\'DM Sans\',sans-serif;text-align:center;">'
+    + '<div style="font-size:32px;margin-bottom:8px;">🔑</div>'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:6px;">'+title+'</div>'
+    + '<div style="font-size:12px;color:#9A9390;margin-bottom:14px;">Ask them for the 4-digit code on their screen.</div>'
+    + '<input id="handover-code-inp" maxlength="4" inputmode="numeric" placeholder="0000" style="width:100%;box-sizing:border-box;text-align:center;letter-spacing:8px;font-size:24px;font-weight:800;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;margin-bottom:16px;">'
+    + '<div style="display:flex;gap:10px;">'
+    + '<button onclick="closeHandoverCodeModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;">Cancel</button>'
+    + '<button onclick="submitHandoverCode()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:700;cursor:pointer;">Confirm</button>'
+    + '</div></div></div>';
+  var existing=document.getElementById('handover-code-modal'); if(existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  window._handoverCodeCallback = onSubmit;
+  setTimeout(function(){ var inp=document.getElementById('handover-code-inp'); if(inp) inp.focus(); }, 50);
+}
+function closeHandoverCodeModal(){
+  var el=document.getElementById('handover-code-modal'); if(el) el.remove();
+  window._handoverCodeCallback = null;
+}
+function submitHandoverCode(){
+  var code=(document.getElementById('handover-code-inp')||{}).value||'';
+  if(!code.trim()){showToast&&showToast('Enter the code','warning');return;}
+  var cb = window._handoverCodeCallback;
+  closeHandoverCodeModal();
+  if(cb) cb(code.trim());
+}
+
 async function finishDelivery(){
-  if(window._riderActiveSession){
-    try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST'}); }
-    catch(err){ showToast&&showToast(err.message||'Could not confirm delivery','warning'); return; }
-  }
-  toast('Delivery confirmed! Payment releases once the customer confirms.');
-  window._riderActiveSession=null;
-  riderNav('deliveries');
+  openHandoverCodeModal('Confirm Delivery', async function(code){
+    if(window._riderActiveSession){
+      try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }
+      catch(err){ showToast&&showToast(err.message||'Could not confirm delivery','warning'); return; }
+    }
+    toast('Delivery confirmed! Payment releases once the customer confirms.');
+    window._riderActiveSession=null;
+    riderNav('deliveries');
+  });
 }
 async function riderConfirmPickup(){
-  if(window._riderActiveSession){
-    try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/out-for-delivery',{method:'POST'}); }
-    catch(err){ showToast&&showToast(err.message||'Could not update delivery status','warning'); }
-  }
-  riderMapPhase2();
+  openHandoverCodeModal('Confirm Pickup', async function(code){
+    if(window._riderActiveSession){
+      try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/out-for-delivery',{method:'POST',body:JSON.stringify({code:code})}); }
+      catch(err){ showToast&&showToast(err.message||'Could not update delivery status','warning'); return; }
+    }
+    riderMapPhase2();
+  });
 }
 function declineRiderDelivery(btn){
   var inc=document.getElementById('rider-incoming-order');

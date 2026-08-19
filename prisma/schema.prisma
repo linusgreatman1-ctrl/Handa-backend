@@ -395,6 +395,12 @@ model Order {
 
   cancelReason String?
 
+  // Handover confirmation — rider must be told these verbally/in-app by
+  // the vendor (pickup) and customer (delivery); never shown on the
+  // rider's own screen. See src/utils/otp.js.
+  pickupCode   String?
+  deliveryCode String?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   acceptedAt  DateTime?
@@ -594,6 +600,12 @@ model ShopSession {
   deliveryAddress String?
   deliveryLat     Float?
   deliveryLng     Float?
+
+  // Handover confirmation — rider must be told these verbally/in-app by
+  // the shopper (pickup) and customer (delivery); never shown on the
+  // rider's own screen. See src/utils/otp.js.
+  pickupCode   String?
+  deliveryCode String?
 
   createdAt   DateTime  @default(now())
   matchedAt   DateTime?
