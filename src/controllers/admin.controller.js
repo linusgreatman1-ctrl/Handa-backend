@@ -30,6 +30,82 @@ async function dashboardStats(req, res, next) {
   }
 }
 
+// Trend/breakdown reporting, separate from dashboardStats' current-snapshot
+// counts. Day-bucketing and category-bucketing are done in JS rather than
+// with raw SQL date-truncation — data volumes here are demo-scale, and it
+// keeps every query as plain Prisma client calls like the rest of this
+// file, no string-built SQL.
+async function getReports(req, res, next) {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [platformHolds, deliveredOrders, bookingRevenue, sessionRevenue, commissionByStatus, orderRevenueByVendor, bookingRevenueByVendor] = await Promise.all([
+      prisma.escrowHold.findMany({
+        where: { payeeRole: "PLATFORM", status: "RELEASED", createdAt: { gte: thirtyDaysAgo } },
+        select: { amountKobo: true, createdAt: true },
+      }),
+      prisma.order.findMany({
+        where: { status: { in: ["DELIVERED", "CONFIRMED"] } },
+        select: { totalKobo: true, vendor: { select: { vtype: true } } },
+      }),
+      prisma.booking.groupBy({ by: ["type"], _sum: { totalKobo: true }, where: { status: "COMPLETED" } }),
+      prisma.shopSession.findMany({ where: { status: "COMPLETED" }, select: { itemsTotalKobo: true, sessionFeeKobo: true } }),
+      prisma.commissionPeriod.groupBy({ by: ["status"], _sum: { amountDueKobo: true, amountPaidKobo: true } }),
+      prisma.order.groupBy({ by: ["vendorId"], _sum: { totalKobo: true }, where: { status: { in: ["DELIVERED", "CONFIRMED"] } } }),
+      prisma.booking.groupBy({ by: ["vendorId"], _sum: { totalKobo: true }, where: { status: "COMPLETED" } }),
+    ]);
+
+    // ── Revenue by day (last 30 days, platform's own cut only) ──
+    const dayTotals = {};
+    platformHolds.forEach((h) => {
+      const key = h.createdAt.toISOString().slice(0, 10);
+      dayTotals[key] = (dayTotals[key] || 0) + h.amountKobo;
+    });
+    const revenueByDay = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      revenueByDay.push({ date: key, revenueKobo: dayTotals[key] || 0 });
+    }
+
+    // ── GMV by category ──
+    const gmvByVtype = {};
+    deliveredOrders.forEach((o) => {
+      const cat = o.vendor?.vtype || "OTHER";
+      gmvByVtype[cat] = (gmvByVtype[cat] || 0) + o.totalKobo;
+    });
+    const sessionGmv = sessionRevenue.reduce((sum, s) => sum + s.itemsTotalKobo + s.sessionFeeKobo, 0);
+    const gmvByCategory = [
+      ...Object.entries(gmvByVtype).map(([category, gmvKobo]) => ({ category, gmvKobo })),
+      ...bookingRevenue.map((b) => ({ category: b.type, gmvKobo: b._sum.totalKobo || 0 })),
+      { category: "SHOP_FOR_ME", gmvKobo: sessionGmv },
+    ].sort((a, b) => b.gmvKobo - a.gmvKobo);
+
+    // ── Commission collection status ──
+    const commissionSummary = Object.fromEntries(
+      commissionByStatus.map((c) => [c.status, { dueKobo: c._sum.amountDueKobo || 0, paidKobo: c._sum.amountPaidKobo || 0 }])
+    );
+
+    // ── Top vendors by revenue (orders + bookings combined) ──
+    const vendorTotals = {};
+    orderRevenueByVendor.forEach((r) => { vendorTotals[r.vendorId] = (vendorTotals[r.vendorId] || 0) + (r._sum.totalKobo || 0); });
+    bookingRevenueByVendor.forEach((r) => { vendorTotals[r.vendorId] = (vendorTotals[r.vendorId] || 0) + (r._sum.totalKobo || 0); });
+    const topVendorIds = Object.entries(vendorTotals).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id]) => id);
+    const vendorNames = await prisma.vendorProfile.findMany({ where: { id: { in: topVendorIds } }, select: { id: true, bizName: true, vtype: true } });
+    const vendorNameById = Object.fromEntries(vendorNames.map((v) => [v.id, v]));
+    const topVendors = topVendorIds.map((id) => ({
+      vendorId: id,
+      bizName: vendorNameById[id]?.bizName || "Unknown",
+      vtype: vendorNameById[id]?.vtype || "",
+      revenueKobo: vendorTotals[id],
+    }));
+
+    res.json({ revenueByDay, gmvByCategory, commissionSummary, topVendors });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listUsers(req, res, next) {
   try {
     const { role, status, q } = req.query;
@@ -241,6 +317,7 @@ async function getShopSessionTimeline(req, res, next) {
 
 module.exports = {
   dashboardStats,
+  getReports,
   listUsers,
   updateUserStatus,
   listVendorsForAdmin,

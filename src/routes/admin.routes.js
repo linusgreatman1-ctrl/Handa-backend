@@ -6,6 +6,7 @@ const router = express.Router();
 router.use(requireAuth, requireRole("ADMIN"));
 
 router.get("/dashboard", ctrl.dashboardStats);
+router.get("/reports", ctrl.getReports);
 
 router.get("/users", ctrl.listUsers);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
