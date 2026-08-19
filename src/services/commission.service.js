@@ -30,4 +30,19 @@ async function getOrCreateCurrentPeriod(vendorId) {
   return prisma.commissionPeriod.create({ data: { vendorId, periodStart, periodEnd, amountDueKobo } });
 }
 
-module.exports = { getOrCreateCurrentPeriod };
+// Periodic sweep (see src/realtime/live.js, same interval as the escrow
+// auto-release sweep): a PENDING period whose periodEnd has passed and
+// still isn't fully paid becomes OVERDUE. Nothing else in the app ever
+// transitions a period out of PENDING except a full payment (see
+// orderFlow.service.js's confirmCommissionPayment, which sets PAID) —
+// without this sweep, CommissionPeriod.status:OVERDUE could never occur,
+// so the admin Reports tab's "Overdue" bucket would always read zero.
+async function markOverduePeriods() {
+  const { count } = await prisma.commissionPeriod.updateMany({
+    where: { status: "PENDING", periodEnd: { lt: new Date() } },
+    data: { status: "OVERDUE" },
+  });
+  return count;
+}
+
+module.exports = { getOrCreateCurrentPeriod, markOverduePeriods };

@@ -2,6 +2,7 @@ const { Server } = require("socket.io");
 const prisma = require("../config/db");
 const { verifyAccessToken } = require("../utils/jwt");
 const escrowSvc = require("../services/escrow.service");
+const commissionSvc = require("../services/commission.service");
 
 // Replaces every client-side setTimeout/setInterval "simulation" in the
 // frontend prototype (rider map animation, live-call approval sync,
@@ -183,6 +184,13 @@ function attachLiveSocket(httpServer) {
   const sweepMs = 5 * 60 * 1000;
   setInterval(() => {
     escrowSvc.runAutoReleaseSweep().catch((err) => console.error("[escrow] auto-release sweep failed:", err));
+  }, sweepMs);
+
+  // Same off-request-path pattern as the escrow sweep above — a vendor's
+  // commission period lapsing into OVERDUE isn't something any single
+  // request naturally triggers, so it needs its own periodic check.
+  setInterval(() => {
+    commissionSvc.markOverduePeriods().catch((err) => console.error("[commission] overdue sweep failed:", err));
   }, sweepMs);
 
   return io;
