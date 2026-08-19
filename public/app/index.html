@@ -2755,20 +2755,47 @@ async function depositAndFindShopper() {
   });
 }
 
-function sendLiveChat() {
+// Real chat thread scoped to this Shop-For-Me session — one thread shared
+// by both sendLiveChat (customer) and sendShopperChat (shopper), found
+// via contextType+contextId so either side opening it first gets the
+// same thread instead of two separate ones.
+window._sfmChatThreadId = null;
+async function sfmEnsureChatThread(sessionId, otherUserId){
+  if(window._sfmChatThreadId) return window._sfmChatThreadId;
+  var res = await api('/chat/threads',{method:'POST',body:JSON.stringify({contextType:'SHOP_SESSION',contextId:sessionId,participantIds:[otherUserId]})});
+  window._sfmChatThreadId = res.thread.id;
+  if(_socket) _socket.emit('chat:join',{threadId:res.thread.id});
+  return window._sfmChatThreadId;
+}
+function sfmBindChatSocketListener(msgsElId, myUserId){
+  if(!_socket||_socket._sfmChatBound)return;
+  _socket._sfmChatBound=true;
+  _socket.on('chat:message',function(msg){
+    if(msg.threadId!==window._sfmChatThreadId||msg.senderId===myUserId)return;
+    var msgs=document.getElementById(msgsElId); if(!msgs)return;
+    var r=document.createElement('div');
+    r.style.cssText='font-size:12px;color:#9A9390;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-start;';
+    r.textContent=msg.body; msgs.appendChild(r); msgs.scrollTop=msgs.scrollHeight;
+  });
+}
+
+async function sendLiveChat() {
   const inp=document.getElementById('live-chat-inp'); if(!inp||!inp.value.trim()) return;
   const msgs=document.getElementById('live-chat-msgs'); if(!msgs) return;
+  const text=inp.value.trim();
   const div=document.createElement('div');
   div.style.cssText='font-size:12px;background:#E8392E;color:white;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-end;margin-left:auto;';
-  div.textContent=inp.value.trim(); inp.value='';
+  div.textContent=text; inp.value='';
   msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight;
-  setTimeout(()=>{
-    const replies=['Okay madam, I dey show you now!','Yes! I go check the price for you.','No problem, I dey bring better one.','Alright, I don add am to the bag.','E fresh well well, you go like am!'];
-    const r=document.createElement('div');
-    r.style.cssText='font-size:12px;color:#9A9390;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;';
-    r.textContent=replies[Math.floor(Math.random()*replies.length)];
-    msgs.appendChild(r); msgs.scrollTop=msgs.scrollHeight;
-  },1400);
+  var session=window._sfmSession;
+  if(!session||!session.shopper){showToast&&showToast('Chat needs a matched shopper first','warning');return;}
+  try{
+    var threadId=await sfmEnsureChatThread(session.id, session.shopper.userId);
+    sfmBindChatSocketListener('live-chat-msgs', S.user.id);
+    await api('/chat/threads/'+threadId+'/messages',{method:'POST',body:JSON.stringify({body:text})});
+  }catch(err){
+    showToast&&showToast(err.message||'Message not sent','warning');
+  }
 }
 
 function selectDelivery(btn,type){btn.closest('[style*="grid"]').querySelectorAll('.vtype-btn').forEach(b=>b.classList.remove('sel'));btn.classList.add('sel');}
@@ -3260,20 +3287,23 @@ async function shopperEndCallAndPackage(){
 // ── Joint confirm checklist (shopper + rider tick off together) ──────────
 let jointConfirmed = [false,false,false];
 
-function sendShopperChat() {
+async function sendShopperChat() {
   const inp=document.getElementById('shopper-chat-inp'); if(!inp||!inp.value.trim()) return;
   const msgs=document.getElementById('shopper-chat-msgs'); if(!msgs) return;
+  const text=inp.value.trim();
   const div=document.createElement('div');
   div.style.cssText='font-size:12px;background:#F5A623;color:white;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-end;margin-left:auto;';
-  div.textContent=inp.value.trim(); inp.value='';
+  div.textContent=text; inp.value='';
   msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight;
-  setTimeout(()=>{
-    const replies=['Okay, I dey show you now!','E fresh well well madam!','Noted, I go find a better one.'];
-    const r=document.createElement('div');
-    r.style.cssText='font-size:12px;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;';
-    r.textContent=replies[Math.floor(Math.random()*replies.length)];
-    msgs.appendChild(r); msgs.scrollTop=msgs.scrollHeight;
-  },1400);
+  var session=window._shopperSession;
+  if(!session){showToast&&showToast('No active session','warning');return;}
+  try{
+    var threadId=await sfmEnsureChatThread(session.id, session.customerId);
+    sfmBindChatSocketListener('shopper-chat-msgs', S.user.id);
+    await api('/chat/threads/'+threadId+'/messages',{method:'POST',body:JSON.stringify({body:text})});
+  }catch(err){
+    showToast&&showToast(err.message||'Message not sent','warning');
+  }
 }
 
 
