@@ -50,4 +50,24 @@ router.get("/", async (req, res) => {
   }
 });
 
+// One-time: clear the failed-migration record for
+// 20260819090000_remove_catalog_vendor_types. Confirmed via the GET above
+// that applied_steps_count was 0 for that row — Postgres ran the whole
+// script as one implicit transaction and rolled it back completely on
+// error, so the database is untouched and it's safe to just drop the
+// tracking row and let migrate deploy retry the (now-fixed) file fresh.
+router.post("/resolve-failed-migration", async (req, res) => {
+  if (!process.env.SEED_SECRET || req.query.key !== process.env.SEED_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const result = await prisma.$executeRawUnsafe(
+      `DELETE FROM "_prisma_migrations" WHERE migration_name = '20260819090000_remove_catalog_vendor_types' AND finished_at IS NULL`
+    );
+    res.json({ deletedRows: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

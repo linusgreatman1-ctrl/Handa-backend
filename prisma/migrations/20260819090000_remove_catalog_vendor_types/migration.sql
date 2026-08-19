@@ -20,11 +20,14 @@ DELETE FROM "Booking" WHERE "type" = 'CATERING';
 -- EventProposal, Wallet, RefreshToken, NotificationPreference, etc.
 DELETE FROM "User" WHERE "email" IN ('grocery@example.com', 'caterer@example.com', 'cakes@example.com');
 
--- Order/OrderItem are now fully unused — drop them entirely.
-DROP TABLE "OrderItem";
-DROP TABLE "Order";
+-- Order/OrderItem are now fully unused — drop them entirely. The FK-bearing
+-- columns that still reference "Order" must be dropped first (dropping a
+-- column drops its constraint too), or Postgres refuses to drop "Order"
+-- while EscrowHold_orderId_fkey/Rating_orderId_fkey still depend on it.
 ALTER TABLE "Rating" DROP COLUMN "orderId";
 ALTER TABLE "EscrowHold" DROP COLUMN "orderId";
+DROP TABLE "OrderItem";
+DROP TABLE "Order";
 DROP TYPE "OrderType";
 DROP TYPE "OrderStatus";
 
