@@ -2819,6 +2819,8 @@ function renderShopperPhase(phase) {
 
   // PHASE A: Accepted — head to market
   if (phase === 'accepted') {
+    var acc=window._shopperSession||{};
+    var accBudget=acc.depositKobo!=null?Math.round((acc.depositKobo-acc.sessionFeeKobo)/100):0;
     body.innerHTML = `<div class="fu" style="padding:52px 22px 22px;">
       <div style="text-align:center;margin-bottom:20px;">
         <div style="font-size:64px;margin-bottom:12px;">🧑‍💼</div>
@@ -2827,37 +2829,34 @@ function renderShopperPhase(phase) {
       </div>
       <div class="card" style="margin-bottom:14px;">
         <div style="font-weight:800;font-size:15px;margin-bottom:12px;">📋 User's Shopping List</div>
-        <div style="padding:9px 0;border-bottom:1px solid #2A2850;font-size:13px;">• 2kg tomatoes</div>
-        <div style="padding:9px 0;border-bottom:1px solid #2A2850;font-size:13px;">• Large onions (5 pcs)</div>
-        <div style="padding:9px 0;font-size:13px;">• Fresh pepper – ₦500 worth</div>
+        ${(acc.items||[]).map(function(i){return '<div style="padding:9px 0;border-bottom:1px solid #2A2850;font-size:13px;">• '+i.text+'</div>';}).join('')}
         <div style="margin-top:12px;border-top:1px solid #2A2850;padding-top:12px;display:flex;justify-content:space-between;">
           <span style="font-size:13px;color:#9A9390;">Total Budget</span>
-          <span style="font-weight:800;color:#2ECC71;">₦5,000</span>
+          <span style="font-weight:800;color:#2ECC71;">₦${Number(accBudget).toLocaleString()}</span>
         </div>
       </div>
       <div style="background:rgba(245,166,35,0.12);border:1.5px solid rgba(184,120,0,.25);border-radius:13px;padding:13px 15px;margin-bottom:16px;">
-        <div style="font-weight:700;font-size:13px;color:#F5A623;margin-bottom:7px;">📍 Market: Mile 12, Lagos</div>
-        <div style="font-size:12px;color:#9A9390;">Special instructions: Prefer big ripe tomatoes, no overripe onions</div>
+        <div style="font-weight:700;font-size:13px;color:#F5A623;margin-bottom:7px;">📍 Deliver to: ${acc.deliveryAddress||'Address pending'}</div>
       </div>
       <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 15px;margin-bottom:16px;">
         <div style="font-weight:700;font-size:13px;margin-bottom:8px;">⚠️ Remember</div>
         <div style="font-size:12px;color:#9A9390;">• Only buy items the user <strong>approves</strong> on the live call</div>
-        <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Stay within the ₦5,000 budget</div>
+        <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Stay within the ₦${Number(accBudget).toLocaleString()} budget</div>
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• You will allocate seller payments in the app after rider confirms pickup</div>
       </div>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#B31010,#8A0000);margin-bottom:9px;" onclick="renderShopperPhase('liveCall')">📹 I'm at the Market — Start Live Call</button>
+      <button class="btn btn-primary" style="background:linear-gradient(135deg,#B31010,#8A0000);margin-bottom:9px;" onclick="shopperStartLiveCall()">📹 I'm at the Market — Start Live Call</button>
       <button class="btn btn-outline" onclick="renderShopperHome()">← Back to Dashboard</button>
     </div>`;
 
   // PHASE B: Shopper's live call view — show items, user approves/rejects
   } else if (phase === 'liveCall') {
     const items = [{id:1,text:'2kg tomatoes',status:'pending'},{id:2,text:'Large onions (5 pcs)',status:'pending'},{id:3,text:'Fresh pepper – ₦500 worth',status:'pending'}];
-    window._shopperItems = items;
+    var live=window._shopperSession||{};
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
         <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s infinite;flex-shrink:0;"></div>
-        <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION — Mile 12 Market</span>
-        <span style="font-size:12px;color:#9A9390;margin-left:auto;">Amara O.</span>
+        <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
+        <span style="font-size:12px;color:#9A9390;margin-left:auto;">${live.customer?live.customer.name:'Customer'}</span>
       </div>
 
       <!-- User's camera (small PiP) + shopper's main camera -->
@@ -2897,14 +2896,10 @@ function renderShopperPhase(phase) {
         </div>
       </div>
 
-      <button class="btn btn-primary" id="shopper-done-btn" style="opacity:.4;pointer-events:none;" onclick="renderShopperPhase('packaging')">✅ All Items Approved — End Call &amp; Package</button>
+      <button class="btn btn-primary" id="shopper-done-btn" style="opacity:.4;pointer-events:none;" onclick="shopperEndCallAndPackage()">✅ All Items Approved — End Call &amp; Package</button>
     </div>`;
+    shopperBindItemSocketListeners();
     renderShopperItemStatus();
-
-    // Simulate user approvals one by one after short delays
-    setTimeout(()=>{ window._shopperItems[0].status='approved'; renderShopperItemStatus(); showToast('User approved: 2kg tomatoes ✓','success'); },3000);
-    setTimeout(()=>{ window._shopperItems[1].status='approved'; renderShopperItemStatus(); showToast('User approved: Onions ✓','success'); },6000);
-    setTimeout(()=>{ window._shopperItems[2].status='approved'; renderShopperItemStatus(); showToast('User approved: Pepper ✓ — all done!','success'); },9000);
 
   // PHASE C: Package the items
   } else if (phase === 'packaging') {
@@ -3172,29 +3167,78 @@ function renderShopperPhase(phase) {
 
 // ── Seller payout list renderer ───────────────────────────────────────────────
 
+// Real items live on window._shopperSession.items — {id, text, priceKobo,
+// approved}. A shopper must price an item (what they found it for in the
+// market) before the customer can approve it; approval itself only ever
+// happens on the customer's device and arrives here via the
+// 'shop-session:item-approved' socket event (see shopperBindItemSocketListeners).
 function renderShopperItemStatus() {
   const list = document.getElementById('shopper-items-status'); if(!list) return;
-  const items = window._shopperItems || [];
-  list.innerHTML = items.map(item=>`
-    <div style="margin-bottom:9px;border:1.5px solid ${item.status==='approved'?'#2ECC71':item.status==='rejected'?'#E8392E':'#2A2850'};border-radius:13px;padding:11px 14px;background:${item.status==='approved'?'rgba(46,204,113,0.10)':item.status==='rejected'?'rgba(232,57,46,0.10)':'#242424'};">
+  const items = (window._shopperSession && window._shopperSession.items) || [];
+  list.innerHTML = items.map(item=>{
+    var priced = item.priceKobo != null;
+    return `
+    <div style="margin-bottom:9px;border:1.5px solid ${item.approved?'#2ECC71':'#2A2850'};border-radius:13px;padding:11px 14px;background:${item.approved?'rgba(46,204,113,0.10)':'#242424'};">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-        <span style="font-size:13px;font-weight:600;color:#F2EDE8;flex:1;">${item.text}</span>
-        ${item.status==='approved'
+        <span style="font-size:13px;font-weight:600;color:#F2EDE8;flex:1;">${item.text}${priced?' — ₦'+Number(Math.round(item.priceKobo/100)).toLocaleString():''}</span>
+        ${item.approved
           ? `<span style="color:#2ECC71;font-weight:800;font-size:13px;flex-shrink:0;">✓ User Approved</span>`
-          : item.status==='rejected'
-          ? `<span style="color:#E8392E;font-weight:800;font-size:13px;flex-shrink:0;">✗ User Rejected</span>`
-          : `<span style="color:#9A9390;font-size:12px;flex-shrink:0;">⏳ Waiting for user...</span>`}
+          : priced
+          ? `<span style="color:#9A9390;font-size:12px;flex-shrink:0;">⏳ Waiting for user...</span>`
+          : `<div style="display:flex;gap:6px;flex-shrink:0;"><input type="number" placeholder="₦ price" id="price-inp-${item.id}" style="width:80px;padding:6px 8px;border-radius:8px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-size:12px;"><button onclick="shopperSetItemPrice('${item.id}')" style="background:#F5A623;border:none;border-radius:8px;padding:6px 10px;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Set</button></div>`}
       </div>
-      ${item.status==='pending'?`<div style="font-size:11px;color:#9A9390;margin-top:4px;">Hold this item up to the camera for user to see</div>`:''}
-    </div>`).join('');
+      ${priced||item.approved?'':`<div style="font-size:11px;color:#9A9390;margin-top:4px;">Found it? Enter the price to send it to the user for approval.</div>`}
+    </div>`;
+  }).join('');
 
-  const approved = items.filter(x=>x.status==='approved').length;
+  const approved = items.filter(x=>x.approved).length;
   const counter = document.getElementById('shopper-item-counter');
   if(counter) counter.textContent = `${approved}/${items.length} approved by user`;
   const doneBtn = document.getElementById('shopper-done-btn');
-  if(doneBtn && items.length > 0 && items.every(x=>x.status!=='pending')) {
+  if(doneBtn && items.length > 0 && items.every(x=>x.approved)) {
     doneBtn.style.opacity='1'; doneBtn.style.pointerEvents='auto';
   }
+}
+
+async function shopperStartLiveCall(){
+  if(window._shopperSession){
+    try{ await api('/shop-sessions/'+window._shopperSession.id+'/start-call',{method:'POST'}); }
+    catch(err){ showToast&&showToast(err.message||'Could not start the call','warning'); return; }
+  }
+  renderShopperPhase('liveCall');
+}
+
+async function shopperSetItemPrice(itemId){
+  var inp=document.getElementById('price-inp-'+itemId);
+  var naira=inp?parseFloat(inp.value):0;
+  if(!naira||naira<=0){showToast&&showToast('Enter a valid price','warning');return;}
+  try{
+    var res=await api('/shop-sessions/'+window._shopperSession.id+'/items/'+itemId+'/price',{method:'PATCH',body:JSON.stringify({priceKobo:Math.round(naira*100)})});
+    var item=window._shopperSession.items.find(function(i){return i.id===itemId;});
+    if(item)item.priceKobo=res.item.priceKobo;
+    renderShopperItemStatus();
+    showToast('Price sent — waiting for approval','success');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not set price','warning');
+  }
+}
+
+function shopperBindItemSocketListeners(){
+  if(!_socket||_socket._shopperItemsBound)return;
+  _socket._shopperItemsBound=true;
+  _socket.on('shop-session:item-approved',function(p){
+    if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
+    var item=window._shopperSession.items.find(function(i){return i.id===p.itemId;});
+    if(item){item.approved=true;renderShopperItemStatus();showToast('User approved: '+item.text+' ✓','success');}
+  });
+}
+
+async function shopperEndCallAndPackage(){
+  if(window._shopperSession){
+    try{ await api('/shop-sessions/'+window._shopperSession.id+'/packaging',{method:'POST'}); }
+    catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
+  }
+  renderShopperPhase('packaging');
 }
 
 // ── Joint confirm checklist (shopper + rider tick off together) ──────────
@@ -3217,12 +3261,26 @@ function sendShopperChat() {
 }
 
 
-function shopperAcceptSession() {
-  document.getElementById('incoming-session').style.display='none';
-  document.getElementById('active-session-banner') && (document.getElementById('active-session-banner').style.display='block');
-  jointConfirmed = [false,false,false];
-  renderShopperPhase('accepted');
-  showToast('Session accepted! Head to Mile 12 Market 🛒','success');
+window._shopperSession = null;
+async function shopperAcceptSession(sessionId) {
+  try {
+    var res = await api('/shop-sessions/'+sessionId+'/match', {method:'POST'});
+    window._shopperSession = res.session;
+    if(_socket) _socket.emit('shop-session:join', {sessionId: sessionId});
+    document.getElementById('incoming-session').style.display='none';
+    var banner=document.getElementById('active-session-banner');
+    if(banner){
+      banner.style.display='block';
+      var sum=document.getElementById('active-session-summary');
+      if(sum)sum.textContent=(res.session.customer?res.session.customer.name:'Customer')+' • '+(res.session.deliveryAddress||'Address pending')+' • ₦'+Number(Math.round((res.session.depositKobo-res.session.sessionFeeKobo)/100)).toLocaleString()+' budget';
+    }
+    jointConfirmed = [false,false,false];
+    renderShopperPhase('accepted');
+    showToast('Session accepted! 🛒','success');
+  } catch(err) {
+    showToast&&showToast(err.message||'Could not accept this session','warning');
+    loadShopperAvailableSessions();
+  }
 }
 
 
@@ -4674,8 +4732,11 @@ function openShopReportIssueModal(){
 
 var _shopperOnline = false;
 
-function toggleShopperOnline() {
-  isShopperOnline = !isShopperOnline;
+async function toggleShopperOnline() {
+  var goingOnline=!isShopperOnline;
+  try{ await api('/users/me/availability',{method:'PATCH',body:JSON.stringify({isOnline:goingOnline})}); }
+  catch(err){ showToast&&showToast(err.message||'Could not update availability','warning'); return; }
+  isShopperOnline = goingOnline;
   const dot=document.getElementById('shopper-dot'), label=document.getElementById('shopper-label');
   const pill=document.getElementById('shopper-pill'), inc=document.getElementById('incoming-session');
   if(isShopperOnline){
@@ -4683,6 +4744,7 @@ function toggleShopperOnline() {
     pill.style.borderColor='#2ECC71'; pill.style.background='rgba(46,204,113,0.10)';
     if(inc) inc.style.display='block';
     showToast("You're online! Watching for sessions 🛒",'success');
+    loadShopperAvailableSessions();
   } else {
     dot.className='status-dot offline'; label.textContent='Go Online'; label.style.color='#9A9390';
     pill.style.borderColor='#2A2850'; pill.style.background='#242424';
@@ -4691,61 +4753,60 @@ function toggleShopperOnline() {
   }
 }
 
+async function loadShopperAvailableSessions(){
+  var list=document.getElementById('shopper-sessions-list');
+  if(!list)return;
+  list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">Looking for requests…</div>';
+  try{
+    var res=await api('/shop-sessions?as=available');
+    if(!res.sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';return;}
+    list.innerHTML=res.sessions.map(function(s){
+      return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;margin-bottom:12px;">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:28px;">🛒</span><div style="flex:1;"><div style="font-weight:800;font-size:16px;color:#2ECC71;">🔔 New Session Request!</div><div style="font-size:13px;color:#F2EDE8;margin-top:2px;">'+(s.customer?s.customer.name:'Customer')+' wants to shop live</div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:900;font-family:\'Playfair Display\',serif;color:#F5A623;">₦'+Number(Math.round(s.sessionFeeKobo/100)).toLocaleString()+'</div><div style="font-size:10px;color:#9A9390;">session fee</div></div></div>'
+        +'<div style="background:rgba(184,120,0,.09);border-radius:11px;padding:11px;margin-bottom:12px;"><div style="font-weight:700;font-size:12px;margin-bottom:7px;">📋 Shopping List ('+s.items.length+' items)</div>'
+        +s.items.map(function(i){return '<div style="font-size:12px;color:#F2EDE8;padding:3px 0;">• '+i.text+'</div>';}).join('')
+        +'</div><div style="font-size:12px;color:#9A9390;margin-bottom:14px;">📍 '+(s.deliveryAddress||'Address on acceptance')+'</div>'
+        +'<div style="display:flex;gap:9px;"><button class="btn btn-green" style="flex:1;" onclick="shopperAcceptSession(\''+s.id+'\')">✓ Accept Session</button></div>'
+        +'</div>';
+    }).join('');
+  }catch(err){
+    list.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px">'+(err.message||'Could not load requests')+'</div>';
+  }
+}
+
 
 function renderShopperHome() {
+  var nm=(S.user&&S.user.name)||'Shopper';
+  var u=(S.user)||{};
+  var bank=(u.bankName&&u.bankAccountNumber)?{name:u.bankName,acct:u.bankAccountNumber,holder:u.bankAccountName||u.name}:{name:'Not set',acct:'Not linked',holder:u.name||''};
   document.getElementById('shopper-body').innerHTML = `
     <div style="background:linear-gradient(180deg,rgba(184,120,0,.1) 0%,transparent 50%);padding:52px 22px 0;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
         <div>
           <p style="color:#9A9390;font-size:13px;">Welcome back,</p>
-          <div class="h3" style="margin-top:2px;">Aisha 🛒</div>
+          <div class="h3" style="margin-top:2px;">${nm} 🛒</div>
         </div>
-        <button class="online-pill" id="shopper-pill" onclick="toggleShopperOnline()" style="border-color:#2A2850;background:#242424;">
-          <div class="status-dot offline" id="shopper-dot"></div>
-          <span style="font-size:14px;font-weight:700;color:#9A9390;" id="shopper-label">Go Online</span>
+        <button class="online-pill" id="shopper-pill" onclick="toggleShopperOnline()" style="border-color:${isShopperOnline?'#2ECC71':'#2A2850'};background:${isShopperOnline?'rgba(46,204,113,0.10)':'#242424'};">
+          <div class="status-dot ${isShopperOnline?'online':'offline'}" id="shopper-dot"></div>
+          <span style="font-size:14px;font-weight:700;color:${isShopperOnline?'#2ECC71':'#9A9390'};" id="shopper-label">${isShopperOnline?'Online':'Go Online'}</span>
         </button>
       </div>
 
-      <!-- Earnings Card (dark) -->
+      <!-- Earnings Card (dark) — real wallet data -->
       <div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:22px;padding:22px;margin-bottom:16px;">
-        <div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;letter-spacing:.8px;text-transform:uppercase;">TODAY\'S EARNINGS</div>
-        <div style="font-family:\'Playfair Display\',serif;font-size:38px;font-weight:800;color:#FFFFFF;margin-top:6px;letter-spacing:-1px;">₦7,500</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;letter-spacing:.8px;text-transform:uppercase;">WALLET BALANCE</div>
+        <div style="font-family:\'Playfair Display\',serif;font-size:38px;font-weight:800;color:#FFFFFF;margin-top:6px;letter-spacing:-1px;" id="shopper-balance-display">₦…</div>
         <div style="display:flex;gap:16px;margin-top:12px;">
-          <div><div style="font-size:11px;color:rgba(255,255,255,.4);">Sessions</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;">5</div></div>
+          <div><div style="font-size:11px;color:rgba(255,255,255,.4);">This Week</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;" id="shopper-week-display">₦…</div></div>
           <div style="width:1px;background:rgba(255,255,255,.15);"></div>
-          <div><div style="font-size:11px;color:rgba(255,255,255,.4);">This Week</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;">₦34,000</div></div>
-          <div style="width:1px;background:rgba(255,255,255,.15);"></div>
-          <div><div style="font-size:11px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;font-size:16px;margin-top:2px;">★ 4.9</div></div>
+          <div><div style="font-size:11px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;font-size:16px;margin-top:2px;">★ ${(S.user&&S.user.rating)||'New'}</div></div>
         </div>
         <button style="margin-top:16px;background:#F5A623;border:none;border-radius:12px;padding:10px 20px;color:white;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px;" onclick="openWithdrawModal()">Withdraw Earnings ↑</button>
       </div>
 
-      <!-- Incoming Session Request (shown when online) -->
-      <div id="incoming-session" style="display:none;margin-bottom:16px;">
-        <div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <span style="font-size:28px;animation:pulse 1s infinite;">🛒</span>
-            <div style="flex:1;">
-              <div style="font-weight:800;font-size:16px;color:#2ECC71;">&#x1F514; New Session Request!</div>
-              <div style="font-size:13px;color:#F2EDE8;margin-top:2px;">Amara O. wants to shop live</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:20px;font-weight:900;font-family:\'Playfair Display\',serif;color:#F5A623;">₦1,500</div>
-              <div style="font-size:10px;color:#9A9390;">session fee</div>
-            </div>
-          </div>
-          <div style="background:rgba(184,120,0,.09);border-radius:11px;padding:11px;margin-bottom:12px;">
-            <div style="font-weight:700;font-size:12px;margin-bottom:7px;">📋 Shopping List (3 items)</div>
-            <div style="font-size:12px;color:#F2EDE8;padding:3px 0;">• 2kg tomatoes</div>
-            <div style="font-size:12px;color:#F2EDE8;padding:3px 0;">• Large onions (5 pcs)</div>
-            <div style="font-size:12px;color:#F2EDE8;padding:3px 0;">• Fresh pepper – ₦500 worth</div>
-          </div>
-          <div style="font-size:12px;color:#9A9390;margin-bottom:14px;">&#x1F4CD; Mile 12 Market &nbsp;•&nbsp; Budget: ₦5,000</div>
-          <div style="display:flex;gap:9px;">
-            <button class="btn btn-green" style="flex:2;" onclick="shopperAcceptSession()">✓ Accept Session</button>
-            <button class="btn btn-outline" style="flex:1;" onclick="toast('Session declined');document.getElementById('incoming-session').style.display='none'">Pass</button>
-          </div>
-        </div>
+      <!-- Real available session requests (shown when online) -->
+      <div id="incoming-session" style="display:${isShopperOnline?'block':'none'};margin-bottom:16px;">
+        <div id="shopper-sessions-list"></div>
       </div>
     </div>
 
@@ -4757,17 +4818,9 @@ function renderShopperHome() {
             <div style="font-weight:800;font-size:14px;color:#2ECC71;">🔴 Live Session Active</div>
             <div style="width:8px;height:8px;border-radius:50%;background:#2ECC71;animation:pulse 1s infinite;"></div>
           </div>
-          <div style="font-size:13px;color:#9A9390;">Amara O. • Mile 12 Market • ₦5,000 budget</div>
+          <div style="font-size:13px;color:#9A9390;" id="active-session-summary"></div>
           <button class="btn btn-primary" style="margin-top:12px;background:#2ECC71;font-size:13px;padding:10px;" onclick="renderShopperPhase('liveCall')">▶ Return to Live Session</button>
         </div>
-      </div>
-
-      <!-- Stats Grid -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:16px;">
-        <div class="stat-card"><div style="font-size:24px;">🛒</div><div class="stat-value" style="color:#F5A623;">5</div><div class="stat-label">Today's Sessions</div></div>
-        <div class="stat-card"><div style="font-size:24px;">⭐</div><div class="stat-value" style="color:#F5A623;">4.9</div><div class="stat-label">Your Rating</div></div>
-        <div class="stat-card"><div style="font-size:24px;">📋</div><div class="stat-value" style="color:#3B9FE8;">312</div><div class="stat-label">Total Sessions</div></div>
-        <div class="stat-card"><div style="font-size:24px;">💰</div><div class="stat-value" style="color:#2ECC71;font-size:16px;">₦34k</div><div class="stat-label">This Week</div></div>
       </div>
 
       <!-- Shopper type -->
@@ -4775,9 +4828,9 @@ function renderShopperHome() {
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <div style="font-weight:800;font-size:14px;">🧑‍💼 Independent Shopper</div>
-            <div style="font-size:12px;color:#9A9390;margin-top:3px;">₦1,500 per session • Platform takes 20% (₦300) • You keep ₦1,200</div>
+            <div style="font-size:12px;color:#9A9390;margin-top:3px;">Session fee tiered ₦3,000–₦5,000 by item count • Platform takes 20% • You keep 80%</div>
           </div>
-          <span class="badge b-gold">Active</span>
+          <span class="badge ${isShopperOnline?'b-gold':''}" style="${isShopperOnline?'':'background:rgba(154,147,144,.15);color:#9A9390;'}">${isShopperOnline?'Active':'Offline'}</span>
         </div>
       </div>
 
@@ -4792,7 +4845,7 @@ function renderShopperHome() {
           ['5','Only buy the approved items, pack them up'],
           ['6','Open the app — find a rider to pick up the items'],
           ['7','Rider arrives — you & rider jointly confirm all items in the app'],
-          ['8','Select your market sellers in the app — Zevo escrow pays them directly'],
+          ['8','Select your market sellers in the app — escrow pays them directly'],
           ['9','Session fee &amp; rider fee held — released after customer confirms delivery'],
           ['10','Rider leaves with items — both you & user track rider live'],
           ['11','You are now free to accept a new session immediately']
@@ -4802,26 +4855,22 @@ function renderShopperHome() {
         </div>`).join('')}
       </div>
 
-      <!-- Badges -->
-      <div class="card" style="margin-bottom:13px;">
-        <div style="font-weight:800;font-size:14px;margin-bottom:11px;">My Badges 🏅</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <span class="badge b-gold">🏅 Top Shopper</span>
-          <span class="badge b-green">✅ ID Verified</span>
-          <span class="badge b-blue">312 Sessions</span>
-        </div>
-      </div>
-
-      <!-- Payout account -->
+      <!-- Payout account — real linked bank details -->
       <div class="card">
         <div style="font-weight:800;font-size:14px;margin-bottom:4px;">🏦 Payout Account</div>
         <div style="font-size:13px;color:#9A9390;margin-bottom:11px;">Escrow funds are released here after each handover</div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Bank</span><span style="font-weight:700;">Opay</span></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Account</span><span style="font-weight:700;">••••••6789</span></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:13px;color:#9A9390;">Name</span><span style="font-weight:700;">Aisha Abdullahi</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Bank</span><span style="font-weight:700;">${bank.name}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Account</span><span style="font-weight:700;">${bank.acct}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:13px;color:#9A9390;">Name</span><span style="font-weight:700;">${bank.holder}</span></div>
         <button style="margin-top:10px;background:transparent;border:1.5px solid #3A3860;border-radius:10px;padding:9px 0;width:100%;color:#9A9390;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px;" onclick="openEditBankDetailsModal()">Edit Bank Details</button>
       </div>
     </div>`;
+
+  api('/wallet').then(function(res){
+    var b=document.getElementById('shopper-balance-display'); if(b)b.textContent='₦'+Number(Math.round(res.balanceKobo/100)).toLocaleString();
+    var w=document.getElementById('shopper-week-display'); if(w)w.textContent='₦'+Number(Math.round(res.earnings.weeklyKobo/100)).toLocaleString();
+  }).catch(function(){});
+  if(isShopperOnline)loadShopperAvailableSessions();
 }
 
 // ── Shopper session flow (mirrors customer phases exactly) ──────────────
