@@ -540,6 +540,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
     <!-- Role switcher — populated by renderRoleSwitcher(), see eGo('profile') -->
     <div id="role-switcher-slot"></div>
 
+    <button onclick="openFavouritesModal()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px 16px;margin-bottom:18px;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;">
+      <span style="font-size:18px;color:#E8392E;">&#x2665;</span> My Favourites
+    </button>
+
     <!-- Addresses -->
     <h3 style="font-size:16px;font-weight:800;margin-bottom:12px">My Addresses</h3>
     <div class="card" style="overflow:hidden;margin-bottom:18px">
@@ -1212,6 +1216,97 @@ function refreshKycSection(profileType){
     var el = document.getElementById('kyc-section-'+profileType);
     if (el) el.outerHTML = renderKycSection(profileType);
   });
+}
+
+// ── Favourites ───────────────────────────────────────────────────────
+// One Favourite row per {targetType, targetId} — VENDOR covers both cooks
+// and event planners (distinguished by vtype on the joined target), SHOPPER
+// covers Shop-For-Me shoppers. Toggling is idempotent on the backend.
+window._favouriteIds = null; // Set of "TYPE:id" strings, once loaded
+async function loadMyFavouriteIds(){
+  try{
+    var res = await api('/favourites');
+    window._favouriteIds = new Set((res.favourites||[]).map(function(f){return f.targetType+':'+f.targetId;}));
+  }catch(e){
+    window._favouriteIds = window._favouriteIds || new Set();
+  }
+}
+function _renderFavBtn(btnEl, isFav){
+  var label = btnEl.getAttribute('data-label'); // text buttons (e.g. "Favourite Aisha") opt in via this
+  if (label) { btnEl.textContent = (isFav?'★ Favourited: ':'☆ Favourite ')+label; btnEl.style.color = isFav?'#E8392E':'#9A9390'; }
+  else { btnEl.innerHTML = isFav ? '&#x2665;' : '&#x2661;'; btnEl.style.color = isFav ? '#E8392E' : '#9A9390'; }
+}
+async function toggleFavourite(targetType, targetId, btnEl){
+  if (!window._favouriteIds) await loadMyFavouriteIds();
+  var key = targetType+':'+targetId;
+  var isFav = window._favouriteIds.has(key);
+  if (btnEl) _renderFavBtn(btnEl, !isFav); // optimistic flip
+  try{
+    if (isFav) {
+      await api('/favourites/'+targetType+'/'+targetId, { method:'DELETE' });
+      window._favouriteIds.delete(key);
+      showToast&&showToast('Removed from favourites','success');
+    } else {
+      await api('/favourites', { method:'POST', body: JSON.stringify({ targetType:targetType, targetId:targetId }) });
+      window._favouriteIds.add(key);
+      showToast&&showToast('Added to favourites ❤️','success');
+    }
+    if (btnEl) _renderFavBtn(btnEl, window._favouriteIds.has(key));
+  }catch(err){
+    if (btnEl) _renderFavBtn(btnEl, isFav); // revert on failure
+    showToast&&showToast(err.message||'Could not update favourites','warning');
+  }
+}
+function favouriteHeartBtn(targetType, targetId){
+  var key = targetType+':'+targetId;
+  var isFav = window._favouriteIds && window._favouriteIds.has(key);
+  return '<button onclick="toggleFavourite(\''+targetType+'\',\''+targetId+'\',this)" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:'+(isFav?'#E8392E':'#9A9390')+';font-size:16px;cursor:pointer;margin-left:auto;">'+(isFav?'&#x2665;':'&#x2661;')+'</button>';
+}
+
+function openFavouritesModal(){
+  var html = '<div id="favourites-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:440px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">&#x2665; My Favourites</div>'
+    + '<button onclick="closeFavouritesModal()" style="background:transparent;border:none;color:#9A9390;font-size:20px;cursor:pointer;">&times;</button></div>'
+    + '<div id="favourites-modal-body"><div style="text-align:center;color:#9A9390;font-size:13px;padding:20px 0;">Loading…</div></div>'
+    + '</div></div>';
+  var existing = document.getElementById('favourites-modal'); if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  refreshFavouritesModal();
+}
+function closeFavouritesModal(){ var el = document.getElementById('favourites-modal'); if (el) el.remove(); }
+async function refreshFavouritesModal(){
+  var body = document.getElementById('favourites-modal-body'); if (!body) return;
+  try{
+    var res = await api('/favourites');
+    var favs = res.favourites||[];
+    window._favouriteIds = new Set(favs.map(function(f){return f.targetType+':'+f.targetId;}));
+    if (!favs.length) { body.innerHTML = '<div style="text-align:center;color:#9A9390;font-size:13px;padding:20px 0;">No favourites yet. Tap the &#x2661; on a cook, event planner, or shopper to save them here.</div>'; return; }
+    var vendors = favs.filter(function(f){return f.targetType==='VENDOR';});
+    var shoppers = favs.filter(function(f){return f.targetType==='SHOPPER';});
+    function row(f){
+      var t = f.target;
+      var name = f.targetType==='VENDOR' ? t.bizName : (t.user&&t.user.name)||'Shopper';
+      var sub = f.targetType==='VENDOR' ? (t.vtype==='EVENT_PLANNER'?'Event Planner':'Home Cook') : (t.market||'Shopper');
+      var emoji = f.targetType==='VENDOR' ? (t.emoji||'🍽️') : '🛒';
+      var rating = t.ratingAvg ? t.ratingAvg.toFixed(1) : 'New';
+      var viewBtn = f.targetType==='VENDOR'
+        ? '<button onclick="closeFavouritesModal();'+(t.vtype==='EVENT_PLANNER'?'openEPBooking(\''+t.id+'\')':'openCookBooking(\''+t.id+'\')')+'" style="background:rgba(232,57,46,.12);border:1px solid rgba(232,57,46,.3);border-radius:7px;padding:6px 10px;color:#E8392E;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">View</button>'
+        : '';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #2A2850;">'
+        + '<div style="width:38px;height:38px;border-radius:10px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">'+emoji+'</div>'
+        + '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:#F2EDE8;">'+name+'</div><div style="font-size:11px;color:#9A9390;">'+sub+' &bull; &#x2605;'+rating+'</div></div>'
+        + viewBtn
+        + '<button onclick="toggleFavourite(\''+f.targetType+'\',\''+f.targetId+'\',null).then(function(){refreshFavouritesModal();})" style="background:transparent;border:1px solid #2A2850;border-radius:7px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Unfavourite</button>'
+        + '</div>';
+    }
+    var html = '';
+    if (vendors.length) html += '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px;">Cooks &amp; Event Planners</div>' + vendors.map(row).join('');
+    if (shoppers.length) html += '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 4px;">Shoppers</div>' + shoppers.map(row).join('');
+    body.innerHTML = html;
+  }catch(err){
+    body.innerHTML = '<div style="text-align:center;color:#E8392E;font-size:13px;padding:20px 0;">'+(err.message||'Could not load favourites')+'</div>';
+  }
 }
 
 // ── Event proposal & comparison ─────────────────────────────────────────
@@ -2993,7 +3088,8 @@ function renderShopPhase(phase) {
         <div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;">Escrow</span><span class="badge b-green">🔓 Released</span></div>
       </div>
       <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${shopperName} (Shopper):</p>
-      <div style="display:flex;gap:6px;margin-bottom:18px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
+      ${(done.shopper&&done.shopper.id) ? `<button data-label="${shopperName}" onclick="toggleFavourite('SHOPPER','${done.shopper.id}',this)" style="background:transparent;border:1.5px solid #2A2850;border-radius:20px;padding:6px 14px;color:#9A9390;font-size:12px;cursor:pointer;margin-bottom:18px;font-family:'DM Sans',sans-serif;">☆ Favourite ${shopperName}</button>` : ''}
       <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${riderName} (Rider):</p>
       <div style="display:flex;gap:6px;margin-bottom:22px;" id="rate-rider-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('RIDER',${s},'rate-rider-stars')">⭐</span>`).join('')}</div>
       <button class="btn btn-primary" onclick="go('home')">Back to Home 🏠</button>
@@ -6825,7 +6921,7 @@ function fillEAIPrompt(text){var el=document.getElementById('ai-prompt');if(el){
 
 function openEPBooking(id){var _id=isNaN(id)?id:+id;var ep=(window._EP_DATA||D.ep||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!ep){showToast&&showToast('Event planner not found','warning');return;}bookEP(id);}
 function bookCook(id){var _id=isNaN(id)?id:+id;var c=(window._HC_DATA||D.cooks||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!c){showToast&&showToast('Cook not found','warning');return;}_cb.cookId=id;_cb.cook=c;_cb.selected={};_cb.total=0;_cb.details={};var ov=document.getElementById('__cook_bk_ov');if(!ov){ov=document.createElement('div');ov.id='__cook_bk_ov';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:#111;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;';document.body.appendChild(ov);}ov.style.display='block';ov.scrollTop=0;cookBkRender('packages');}
-function bookEP(id){var _id=isNaN(id)?id:+id;var ep=(window._EP_DATA||D.ep||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!ep){showToast&&showToast('EP not found','warning');return;}_epb.epId=id;_epb.ep=ep;_epb.selected={};_epb.selectedPkg=null;_epb.total=0;_epb.details={};var ov=document.getElementById('__ep_bk_ov');if(!ov){ov=document.createElement('div');ov.id='__ep_bk_ov';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:#111;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;';document.body.appendChild(ov);}ov.style.display='block';ov.scrollTop=0;epBkRender('packages');}
+function bookEP(id){var _id=isNaN(id)?id:+id;var ep=(window._EP_DATA||D.ep||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!ep){showToast&&showToast('EP not found','warning');return;}_epb.epId=id;_epb.ep=ep;_epb.selected={};_epb.selectedPkg=null;_epb.total=0;_epb.details={};var ov=document.getElementById('__ep_bk_ov');if(!ov){ov=document.createElement('div');ov.id='__ep_bk_ov';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:#111;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;';document.body.appendChild(ov);}ov.style.display='block';ov.scrollTop=0;epBkRender('packages');if(!window._favouriteIds)loadMyFavouriteIds().then(function(){if(_epb.phase==='packages')epBkRender('packages');});}
 function closeEPBooking(){var ov=document.getElementById('__ep_bk_ov');if(ov)ov.style.display='none';}
 function addAIGroceries(){sendPlanToShopper();}
 function sendPlanToShopper(){if(!window._aiGroceries||!window._aiGroceries.length){showToast&&showToast('Generate a meal plan first','warning');return;}var items=window._aiGroceries;var total=items.reduce(function(s,g){return s+(g.pr||0);},0);var h='<div style="padding:0 0 24px"><div style="font-size:15px;font-weight:800;color:#F2EDE8;margin-bottom:14px">🛒 Send Grocery List to Shopper</div><div style="background:#1C1C1C;border-radius:12px;padding:12px 14px;margin-bottom:12px;max-height:220px;overflow-y:auto">';items.forEach(function(g){h+='<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850"><span>'+g.em+' '+g.nm+'</span><span style="color:#2ECC71;font-weight:700">₦'+Number(g.pr).toLocaleString()+'</span></div>';});h+='</div><div style="display:flex;justify-content:space-between;padding:10px 14px;background:#242424;border-radius:10px;margin-bottom:16px"><span style="color:#9A9390">Total</span><span style="color:#2ECC71;font-weight:800">₦'+Number(total).toLocaleString()+'</span></div><button id="confirm-send-sh" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer">🛒 Send to Shopper</button></div>';showProcedureModal(h);setTimeout(function(){var btn=document.getElementById('confirm-send-sh');if(btn)btn.onclick=function(){if(!window._shopperPendingItems)window._shopperPendingItems=[];window._aiGroceries.forEach(function(g){window._shopperPendingItems.push({nm:g.nm,em:g.em,pr:g.pr,qty:1,checked:false});});closeProcedureModal();eGo('sfm');showToast&&showToast('Grocery list sent to Shopper!','success');};},50);}
@@ -6851,6 +6947,7 @@ function openCookBooking(id){
   }
   ov.style.display='block'; ov.scrollTop=0;
   cookBkRender('packages');
+  if (!window._favouriteIds) loadMyFavouriteIds().then(function(){ if(_cb.phase==='packages') cookBkRender('packages'); });
 }
 
 function closeCookBooking(){
@@ -6878,7 +6975,10 @@ function cookBkRender(phase){
   if(phase==='packages'){
     var totalSel=Object.values(_cb.selected).reduce(function(s,item){return s+(item?item.pr:0);},0);
     h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
-      +'<button onclick="closeCookBooking()" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+        +'<button onclick="closeCookBooking()" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer">&#x2190;</button>'
+        +favouriteHeartBtn('VENDOR',c.id)
+      +'</div>'
       +'<div style="display:flex;gap:14px;align-items:center">'
         +'<div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,#2d0d2d,#111);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;border:2px solid rgba(155,89,182,.3)">'+c.em+'</div>'
         +'<div><h2 style="font-size:18px;font-weight:900;margin:0 0 4px">'+c.nm+'</h2>'
@@ -7234,7 +7334,10 @@ function epBkRender(phase){
 
   if(phase==='packages'){
     h='<div style="background:linear-gradient(160deg,#0d2d1a,#111);padding:44px 20px 20px">'
-      +'<button onclick="closeEPBooking()" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+        +'<button onclick="closeEPBooking()" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer">&#x2190;</button>'
+        +favouriteHeartBtn('VENDOR',ep.id)
+      +'</div>'
       +'<div style="display:flex;gap:14px;align-items:center">'
         +'<div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,#0d2d1a,#111);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;border:2px solid rgba(46,204,113,.3)">'+ep.em+'</div>'
         +'<div><h2 style="font-size:18px;font-weight:900;margin:0 0 4px">'+ep.nm+'</h2>'

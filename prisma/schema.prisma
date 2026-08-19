@@ -84,6 +84,7 @@ model User {
   chatMessages           ChatMessage[]
   kycDocuments           KycDocument[]
   eventRequests          EventRequest[]
+  favourites             Favourite[]
 
   @@index([role])
 }
@@ -1011,4 +1012,25 @@ model ChatMessage {
   createdAt     DateTime   @default(now())
 
   @@index([threadId])
+}
+
+enum FavouriteTargetType {
+  VENDOR
+  SHOPPER
+}
+
+// One model covers cooks, event planners (both VendorProfile, distinguished
+// by vtype) and shoppers — a customer favouriting any of the three just
+// picks the right targetType. Unique on (userId, targetType, targetId) so
+// toggling is idempotent instead of needing the frontend to track state.
+model Favourite {
+  id         String              @id @default(uuid())
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType FavouriteTargetType
+  targetId   String
+  createdAt  DateTime            @default(now())
+
+  @@unique([userId, targetType, targetId])
+  @@index([userId])
 }
