@@ -2,6 +2,7 @@ const express = require("express");
 const { requireAuth, requireRole, requireSuperAdmin } = require("../middleware/auth");
 const ctrl = require("../controllers/admin.controller");
 const adminMgmt = require("../controllers/adminManagement.controller");
+const adminFiles = require("../controllers/adminFiles.controller");
 
 const router = express.Router();
 router.use(requireAuth, requireRole("ADMIN"));
@@ -37,5 +38,19 @@ router.patch("/admins/:id/suspend", requireSuperAdmin, adminMgmt.suspendAdmin);
 router.patch("/admins/:id/reactivate", requireSuperAdmin, adminMgmt.reactivateAdmin);
 router.patch("/admins/:id/remove", requireSuperAdmin, adminMgmt.removeAdmin);
 router.get("/audit-log", requireSuperAdmin, adminMgmt.listAuditLog);
+
+// Code Editor (targeted find/replace) + Codes (full raw-file editor) —
+// live-patch public/app/index.html and public/admin/index.html. Both are
+// super-admin-only; Handa has no middle admin tier to grant view-only
+// access to like PassNow's CONTENT_ADMIN, so ordinary admins get none of
+// this, matching the original "no code editor, codes... in the backend
+// [for ordinary admins]" requirement.
+router.get("/files", requireSuperAdmin, adminFiles.listFiles);
+router.post("/files/search", requireSuperAdmin, adminFiles.searchInFile);
+router.post("/files/replace", requireSuperAdmin, adminFiles.replaceInFile);
+router.get("/files/backups", requireSuperAdmin, adminFiles.listBackups);
+router.post("/files/restore", requireSuperAdmin, adminFiles.restoreBackup);
+router.get("/files/content", requireSuperAdmin, adminFiles.getContent);
+router.post("/files/save", requireSuperAdmin, express.text({ type: "*/*", limit: "5mb" }), adminFiles.saveContent);
 
 module.exports = router;

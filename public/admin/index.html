@@ -53,6 +53,12 @@
   .action-btn{padding:5px 11px;border-radius:8px;border:1px solid #333;background:#242424;color:#F2EDE8;font-size:11px;cursor:pointer}
   .action-btn:hover{border-color:#E8392E;color:#E8392E}
   .empty{color:#9A9390;font-size:13px;padding:20px;text-align:center}
+  .code-mono{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace}
+  .match-row{background:#1C1C1C;border:1px solid #2a2a2a;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px}
+  .match-row mark{background:rgba(245,166,35,.35);color:#F2EDE8;padding:0 2px;border-radius:3px}
+  .code-textarea{width:100%;min-height:60vh;background:#111;color:#F2EDE8;border:1px solid #2a2a2a;border-radius:10px;padding:14px;font-size:12px;line-height:1.5;resize:vertical;outline:none}
+  .code-textarea:focus{border-color:#E8392E}
+  .warn-box{background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.35);color:#F5A623;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -79,6 +85,8 @@
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
     <button class="nav-item" data-tab="shopsessions" data-super="1" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
     <button class="nav-item" data-tab="activecodes" data-super="1" onclick="switchTab('activecodes')">Active Codes</button>
+    <button class="nav-item" data-tab="codeeditor" data-super="1" onclick="switchTab('codeeditor')">Code Editor</button>
+    <button class="nav-item" data-tab="codes" data-super="1" onclick="switchTab('codes')">Codes</button>
     <button class="nav-item" data-tab="kyc" onclick="switchTab('kyc')">KYC Documents</button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
     <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
@@ -146,7 +154,7 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, kyc: renderKycDocuments, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, kyc: renderKycDocuments, admins: renderAdmins, auditlog: renderAuditLog };
   renderers[tab]();
 }
 
@@ -424,6 +432,187 @@ async function renderActiveCodes() {
       : '<div class="empty">No sessions with a rider assigned right now.</div>';
   } catch (e) {
     document.getElementById('activecodes-table').textContent = e.message;
+  }
+}
+
+function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ── Code Editor: targeted find/replace on the two live static HTML files ──
+let _ceFile = 'app/index.html';
+let _ceMatches = [];
+async function renderCodeEditor() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Code Editor</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Find and replace text directly in the live frontend files. Every change is backed up first and checked for valid script syntax before it\'s applied — a bad edit is rejected, not deployed.</p>' +
+    '<div class="toolbar">' +
+      '<select id="ce-file"><option value="app/index.html">app/index.html</option><option value="admin/index.html">admin/index.html</option></select>' +
+      '<input id="ce-query" placeholder="Text to find..." style="flex:1;min-width:220px">' +
+      '<button class="action-btn" onclick="ceSearch()">Search</button>' +
+    '</div>' +
+    '<div id="ce-results"></div>' +
+    '<div id="ce-replace-form"></div>' +
+    '<h2 style="margin-top:28px">Backups</h2>' +
+    '<div id="ce-backups" class="empty">Select a file above and search once to load backups.</div>';
+  document.getElementById('ce-file').value = _ceFile;
+  document.getElementById('ce-file').onchange = e => { _ceFile = e.target.value; document.getElementById('ce-results').innerHTML = ''; document.getElementById('ce-replace-form').innerHTML = ''; ceLoadBackups(); };
+  ceLoadBackups();
+}
+
+async function ceSearch() {
+  _ceFile = document.getElementById('ce-file').value;
+  const query = document.getElementById('ce-query').value;
+  const resultsEl = document.getElementById('ce-results');
+  if (!query) { resultsEl.innerHTML = '<div class="empty">Type something to search for.</div>'; return; }
+  resultsEl.innerHTML = '<div class="empty">Searching...</div>';
+  try {
+    const data = await api('/admin/files/search', { method: 'POST', body: JSON.stringify({ file: _ceFile, query, contextChars: 60 }) });
+    _ceMatches = data.matches;
+    if (!data.matches.length) { resultsEl.innerHTML = '<div class="empty">No matches found.</div>'; document.getElementById('ce-replace-form').innerHTML = ''; return; }
+    resultsEl.innerHTML = '<p style="color:#9A9390;font-size:12px;margin-bottom:8px">' + data.totalOccurrences + ' occurrence(s)' + (data.truncated ? ' (showing first ' + data.matches.length + ')' : '') + '</p>' +
+      data.matches.map(m =>
+        '<div class="match-row code-mono">#' + m.occurrenceIndex + '&nbsp; ' + escHtml(m.before) + '<mark>' + escHtml(m.match) + '</mark>' + escHtml(m.after) + '</div>'
+      ).join('');
+    document.getElementById('ce-replace-form').innerHTML =
+      '<div class="card" style="margin-top:14px">' +
+      '<div class="field"><label>Find (must match the text above exactly)</label><input id="ce-find" class="code-mono" value="' + escHtml(query) + '" style="width:100%"></div>' +
+      '<div class="field"><label>Replace with</label><textarea id="ce-replacewith" class="code-mono" style="width:100%;min-height:80px"></textarea></div>' +
+      '<div class="toolbar">' +
+        '<label style="display:flex;align-items:center;gap:6px;color:#9A9390;font-size:12px"><input type="checkbox" id="ce-replaceall"> Replace all ' + data.totalOccurrences + ' occurrences</label>' +
+        '<button class="btn" style="width:auto;padding:8px 16px" onclick="ceReplace()">Replace</button>' +
+      '</div>' +
+      '<div class="err" id="ce-replace-err"></div>' +
+      '</div>';
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="empty">' + e.message + '</div>';
+  }
+}
+
+async function ceReplace() {
+  const find = document.getElementById('ce-find').value;
+  const replaceWith = document.getElementById('ce-replacewith').value;
+  const replaceAll = document.getElementById('ce-replaceall').checked;
+  const errEl = document.getElementById('ce-replace-err');
+  errEl.textContent = '';
+  if (!confirm('Replace ' + (replaceAll ? 'ALL' : 'this') + ' occurrence(s) in ' + _ceFile + '? A backup will be taken first.')) return;
+  try {
+    const data = await api('/admin/files/replace', { method: 'POST', body: JSON.stringify({ file: _ceFile, find, replaceWith, replaceAll }) });
+    alert('Replaced ' + data.replacedCount + ' occurrence(s). Backup: ' + data.backupName);
+    document.getElementById('ce-query').value = '';
+    document.getElementById('ce-results').innerHTML = '';
+    document.getElementById('ce-replace-form').innerHTML = '';
+    ceLoadBackups();
+  } catch (e) {
+    errEl.textContent = e.message + (e.occurrences ? ' (' + e.occurrences + ' matches — check "Replace all" or narrow your search text)' : '');
+  }
+}
+
+async function ceLoadBackups() {
+  const el = document.getElementById('ce-backups');
+  if (!el) return;
+  el.className = 'empty'; el.textContent = 'Loading...';
+  try {
+    const data = await api('/admin/files/backups?file=' + encodeURIComponent(_ceFile));
+    if (!data.backups.length) { el.className = 'empty'; el.textContent = 'No backups yet for this file.'; return; }
+    el.outerHTML = '<table><thead><tr><th>Backup</th><th>Size</th><th>Created</th><th></th></tr></thead><tbody>' +
+      data.backups.map(b =>
+        '<tr><td class="code-mono" style="font-size:11px">' + b.name + '</td><td>' + Math.round(b.sizeBytes / 1024) + ' KB</td><td>' + new Date(b.createdAt).toLocaleString() + '</td>' +
+        '<td><button class="action-btn" onclick="ceRestore(\'' + b.name + '\')">Restore</button></td></tr>'
+      ).join('') + '</tbody></table>';
+  } catch (e) {
+    el.className = 'empty'; el.textContent = e.message;
+  }
+}
+
+async function ceRestore(backupName) {
+  if (!confirm('Restore ' + _ceFile + ' from ' + backupName + '? The current live version will itself be backed up first.')) return;
+  try {
+    await api('/admin/files/restore', { method: 'POST', body: JSON.stringify({ file: _ceFile, backupName }) });
+    alert('Restored.');
+    ceLoadBackups();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// ── Codes: full raw-file load/edit/save ──
+let _codesFile = 'app/index.html';
+let _codesOriginalLength = 0;
+async function renderCodes() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Codes</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Load a live frontend file\'s full raw source, edit it, and save. A backup is taken before every save, and the save is rejected if the new content fails a script syntax check.</p>' +
+    '<div class="toolbar">' +
+      '<select id="codes-file"><option value="app/index.html">app/index.html</option><option value="admin/index.html">admin/index.html</option></select>' +
+      '<button class="action-btn" onclick="codesLoad()">Load</button>' +
+      '<input id="codes-find" placeholder="Find in loaded text..." style="min-width:200px">' +
+      '<button class="action-btn" onclick="codesFind()">Find next</button>' +
+      '<button class="btn" style="width:auto;padding:8px 16px" onclick="codesSave()">Save</button>' +
+    '</div>' +
+    '<div class="err" id="codes-err"></div>' +
+    '<textarea id="codes-textarea" class="code-textarea code-mono" placeholder="Click Load to fetch the file&#39;s current contents..."></textarea>';
+  document.getElementById('codes-file').value = _codesFile;
+}
+
+async function codesLoad() {
+  _codesFile = document.getElementById('codes-file').value;
+  const ta = document.getElementById('codes-textarea');
+  const errEl = document.getElementById('codes-err');
+  errEl.textContent = '';
+  ta.value = 'Loading...';
+  try {
+    const res = await fetch(API + '/admin/files/content?file=' + encodeURIComponent(_codesFile), { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to load (' + res.status + ')');
+    const text = await res.text();
+    ta.value = text;
+    _codesOriginalLength = text.length;
+  } catch (e) {
+    ta.value = '';
+    errEl.textContent = e.message;
+  }
+}
+
+let _codesFindFrom = 0;
+function codesFind() {
+  const ta = document.getElementById('codes-textarea');
+  const q = document.getElementById('codes-find').value;
+  if (!q) return;
+  const idx = ta.value.indexOf(q, _codesFindFrom);
+  const foundIdx = idx === -1 ? ta.value.indexOf(q, 0) : idx;
+  if (foundIdx === -1) { alert('Not found.'); _codesFindFrom = 0; return; }
+  ta.focus();
+  ta.setSelectionRange(foundIdx, foundIdx + q.length);
+  const lineHeight = 18;
+  const linesBefore = ta.value.slice(0, foundIdx).split('\n').length;
+  ta.scrollTop = Math.max(0, (linesBefore - 5) * lineHeight);
+  _codesFindFrom = foundIdx + q.length;
+}
+
+async function codesSave(confirmDrasticShrink) {
+  const ta = document.getElementById('codes-textarea');
+  const errEl = document.getElementById('codes-err');
+  errEl.textContent = '';
+  const content = ta.value;
+  if (!content) { errEl.textContent = 'Nothing loaded — click Load first.'; return; }
+  if (!confirm('Save changes to ' + _codesFile + '? A backup of the current live version will be taken first.')) return;
+  try {
+    const url = API + '/admin/files/save?file=' + encodeURIComponent(_codesFile) + (confirmDrasticShrink ? '&confirmDrasticShrink=true' : '');
+    const res = await fetch(url, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'text/plain' }, body: content });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 409 && data.newSizeBytes !== undefined) {
+        if (confirm('New content is ' + Math.round(data.newSizeBytes / 1024) + 'KB vs current ' + Math.round(data.currentSizeBytes / 1024) + 'KB — more than half smaller. This often means content was lost. Save anyway?')) {
+          return codesSave(true);
+        }
+        return;
+      }
+      throw new Error(data.error || ('Save failed (' + res.status + ')'));
+    }
+    alert('Saved. Backup: ' + data.backupName);
+    _codesOriginalLength = content.length;
+  } catch (e) {
+    errEl.textContent = e.message;
   }
 }
 
