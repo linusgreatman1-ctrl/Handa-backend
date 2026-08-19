@@ -504,32 +504,25 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
           <div style="font-size:10px;color:#F5A623;font-weight:700;margin-top:2px">SECURED</div>
         </div>
       </div>
-      <!-- Live orders in escrow -->
+      <!-- Live orders in escrow — real data, loaded by loadEscrowWalletCard() -->
       <div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:#F5A623;margin-bottom:8px">🛒 Active Escrow Orders</div>
         <div id="escrow-orders-list">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">
-            <div><div style="font-size:13px;color:#F2EDE8">Live Shopping — Mile 12</div><div style="font-size:11px;color:#9A9390;margin-top:1px">Locked · Awaiting delivery</div></div>
-            <div style="font-weight:800;color:#F5A623;font-size:13px">₦7,500</div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">
-            <div><div style="font-size:13px;color:#F2EDE8">Home Cook Booking — Ngozi's Kitchen</div><div style="font-size:11px;color:#9A9390;margin-top:1px">Locked · Awaiting confirmation</div></div>
-            <div style="font-weight:800;color:#F5A623;font-size:13px">₦4,200</div>
-          </div>
+          <div style="font-size:12px;color:#9A9390;text-align:center;padding:8px 0">Loading…</div>
         </div>
       </div>
       <!-- Escrow breakdown -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <div style="flex:1;background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.2);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:18px;font-weight:900;color:#2ECC71">₦11,700</div>
+          <div style="font-size:18px;font-weight:900;color:#2ECC71" id="escrow-held-total">₦0</div>
           <div style="font-size:10px;color:#9A9390;margin-top:2px">In Escrow</div>
         </div>
         <div style="flex:1;background:rgba(59,159,232,.1);border:1px solid rgba(59,159,232,.2);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:18px;font-weight:900;color:#3B9FE8">₦38,400</div>
+          <div style="font-size:18px;font-weight:900;color:#3B9FE8" id="escrow-released-total">₦0</div>
           <div style="font-size:10px;color:#9A9390;margin-top:2px">Released Total</div>
         </div>
         <div style="flex:1;background:rgba(232,57,46,.1);border:1px solid rgba(232,57,46,.2);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:18px;font-weight:900;color:#E8392E">₦0</div>
+          <div style="font-size:18px;font-weight:900;color:#E8392E" id="escrow-disputed-total">₦0</div>
           <div style="font-size:10px;color:#9A9390;margin-top:2px">Disputed</div>
         </div>
       </div>
@@ -3348,6 +3341,35 @@ function shopperCallCustomer(type) {
 let currentAdminTab = 'overview';
 
 
+// Real GET /wallet/escrow-summary — replaces the two hardcoded example
+// rows ("Live Shopping — Mile 12", "Home Cook Booking — Ngozi's Kitchen")
+// and hardcoded ₦11,700/₦38,400/₦0 breakdown that used to sit here.
+async function loadEscrowWalletCard(){
+  var balEl=document.getElementById('escrow-main-bal');
+  if(balEl && S.user) balEl.textContent='₦'+Number(S.user.balance||0).toLocaleString();
+  try{
+    var res=await api('/wallet/escrow-summary');
+    var heldEl=document.getElementById('escrow-held-total'); if(heldEl)heldEl.textContent='₦'+Number(Math.round(res.heldKobo/100)).toLocaleString();
+    var relEl=document.getElementById('escrow-released-total'); if(relEl)relEl.textContent='₦'+Number(Math.round(res.releasedKobo/100)).toLocaleString();
+    var disEl=document.getElementById('escrow-disputed-total'); if(disEl)disEl.textContent='₦'+Number(Math.round(res.disputedKobo/100)).toLocaleString();
+    var listEl=document.getElementById('escrow-orders-list');
+    if(listEl){
+      if(!res.activeHolds.length){
+        listEl.innerHTML='<div style="font-size:12px;color:#9A9390;text-align:center;padding:8px 0">Nothing currently in escrow</div>';
+      }else{
+        listEl.innerHTML=res.activeHolds.map(function(h,idx){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;'+(idx<res.activeHolds.length-1?'border-bottom:1px solid rgba(255,255,255,.06)':'')+'">'
+            +'<div><div style="font-size:13px;color:#F2EDE8">'+h.label+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px">'+h.status+'</div></div>'
+            +'<div style="font-weight:800;color:#F5A623;font-size:13px">₦'+Number(Math.round(h.amountKobo/100)).toLocaleString()+'</div></div>';
+        }).join('');
+      }
+    }
+  }catch(err){
+    var listEl2=document.getElementById('escrow-orders-list');
+    if(listEl2)listEl2.innerHTML='<div style="font-size:12px;color:#E8392E;text-align:center;padding:8px 0">'+(err.message||'Could not load escrow data')+'</div>';
+  }
+}
+
 function openEscrowWallet(){
   var card = document.getElementById('escrow-wallet-card');
   if(card){ card.scrollIntoView({behavior:'smooth'}); 
@@ -5748,6 +5770,7 @@ function eGo(scr){
   if(scr==='event_planner'){S.role='vendor';S.vtype='event_planner';renderEPDashboard();}
   if(scr==='rider'&&typeof renderRiderDeliveries==='function'){S.role='rider';renderRiderDeliveries();}
   if(scr==='history'&&typeof renderEHistory==='function'){renderEHistory();}
+  if(scr==='profile'&&typeof loadEscrowWalletCard==='function'){loadEscrowWalletCard();}
 }
 
 function go(scr){

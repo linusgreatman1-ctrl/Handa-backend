@@ -61,6 +61,52 @@ async function sumHeldEscrow(userId) {
   return agg._sum.amountKobo || 0;
 }
 
+// Powers the customer profile's "Escrow Wallet" card — real held/released/
+// disputed totals plus a human-readable list of what's currently locked,
+// replacing what used to be two hardcoded example rows in the frontend.
+async function getEscrowSummary(req, res, next) {
+  try {
+    const [heldAgg, releasedAgg, disputedAgg, activeHolds] = await Promise.all([
+      prisma.escrowHold.aggregate({ where: { payerId: req.user.id, status: "HELD" }, _sum: { amountKobo: true } }),
+      prisma.escrowHold.aggregate({ where: { payerId: req.user.id, status: "RELEASED" }, _sum: { amountKobo: true } }),
+      prisma.escrowHold.aggregate({ where: { payerId: req.user.id, status: "DISPUTED" }, _sum: { amountKobo: true } }),
+      prisma.escrowHold.findMany({
+        where: { payerId: req.user.id, status: "HELD" },
+        include: {
+          order: { include: { vendor: { select: { bizName: true } } } },
+          booking: { include: { vendor: { select: { bizName: true } } } },
+          shopSession: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    const items = activeHolds.map((h) => {
+      let label = "Order";
+      if (h.contextType === "ORDER" && h.order) label = `${h.order.vendor.bizName} — Order`;
+      else if (h.contextType === "BOOKING" && h.booking) label = `${h.booking.vendor.bizName} — ${h.booking.type.replace("_", " ")}`;
+      else if (h.contextType === "SHOP_SESSION") label = "Shop-For-Me Session";
+      return {
+        id: h.id,
+        label,
+        amountKobo: h.amountKobo,
+        payeeRole: h.payeeRole,
+        status: `Locked · Awaiting ${h.payeeRole === "PLATFORM" ? "processing" : h.payeeRole.toLowerCase()} confirmation`,
+        autoReleaseAt: h.autoReleaseAt,
+      };
+    });
+
+    res.json({
+      heldKobo: heldAgg._sum.amountKobo || 0,
+      releasedKobo: releasedAgg._sum.amountKobo || 0,
+      disputedKobo: disputedAgg._sum.amountKobo || 0,
+      activeHolds: items,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listTransactions(req, res, next) {
   try {
     const wallet = await walletSvc.getOrCreateWallet(req.user.id);
@@ -151,4 +197,4 @@ async function listWithdrawals(req, res, next) {
   }
 }
 
-module.exports = { getWallet, listTransactions, requestWithdrawal, listWithdrawals };
+module.exports = { getWallet, listTransactions, requestWithdrawal, listWithdrawals, getEscrowSummary };
