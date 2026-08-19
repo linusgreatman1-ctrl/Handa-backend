@@ -1,16 +1,16 @@
 const express = require("express");
-const { requireAuth, requireRole, requireVendorProfile } = require("../middleware/auth");
+const { requireAuth, requireVendorProfile } = require("../middleware/auth");
 const ctrl = require("../controllers/vendors.controller");
 
 const router = express.Router();
 
 router.get("/", ctrl.listVendors);
-router.get("/me", requireAuth, requireRole("VENDOR"), requireVendorProfile, ctrl.getMyVendor);
-router.get("/me/commission-period", requireAuth, requireRole("VENDOR"), requireVendorProfile, ctrl.getCurrentCommissionPeriod);
+router.get("/me", requireAuth, requireVendorProfile, ctrl.getMyVendor);
+router.get("/me/commission-period", requireAuth, requireVendorProfile, ctrl.getCurrentCommissionPeriod);
 router.get("/:id", ctrl.getVendor);
 router.get("/:id/menu", ctrl.listMenuItems);
 
-router.use(requireAuth, requireRole("VENDOR"), requireVendorProfile);
+router.use(requireAuth, requireVendorProfile);
 router.post("/me/menu", ctrl.createMenuItem);
 router.put("/me/menu/:itemId", ctrl.updateMenuItem);
 router.delete("/me/menu/:itemId", ctrl.deleteMenuItem);

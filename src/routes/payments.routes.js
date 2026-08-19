@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAuth, requireRole, requireVendorProfile } = require("../middleware/auth");
+const { requireAuth, requireVendorProfile } = require("../middleware/auth");
 const ctrl = require("../controllers/payments.controller");
 
 const router = express.Router();
@@ -11,7 +11,7 @@ router.post("/webhook", ctrl.webhook);
 router.use(requireAuth);
 router.post("/wallet/deposit/initialize", ctrl.initializeWalletDeposit);
 router.get("/verify/:reference", ctrl.verifyPayment);
-router.post("/commission/:id/initialize", requireRole("VENDOR"), requireVendorProfile, ctrl.initializeCommissionPayment);
-router.post("/feature-boost/initialize", requireRole("VENDOR"), requireVendorProfile, ctrl.initializeFeatureBoostPayment);
+router.post("/commission/:id/initialize", requireVendorProfile, ctrl.initializeCommissionPayment);
+router.post("/feature-boost/initialize", requireVendorProfile, ctrl.initializeFeatureBoostPayment);
 
 module.exports = router;

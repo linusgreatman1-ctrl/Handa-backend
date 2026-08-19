@@ -90,25 +90,84 @@ async function updateShopperProfile(req, res, next) {
   }
 }
 
+// ── Add-a-role endpoints ──────────────────────────────────────────────
+// Multi-role accounts: an already-registered user can pick up a second
+// (or third) profile without creating a new account. Each profile table
+// has userId @unique — one row per user per table — so nothing stops a
+// user having rows in more than one of these tables at once; only the
+// registration flow (auth.controller.js's register()) previously created
+// just one. These mirror that same creation shape, just gated the other
+// way around (guard against a profile that already exists, not against
+// picking more than one at signup).
+async function createVendorProfile(req, res, next) {
+  try {
+    if (req.user.vendorProfile) return res.status(409).json({ error: "This account already has a vendor profile." });
+    const { vtype, bizName, description, tags } = req.body;
+    if (!vtype || !["GROCERY", "CATERER", "HOME_COOK", "EVENT_PLANNER", "CAKE_DESIGNER"].includes(vtype)) {
+      return res.status(400).json({ error: "A valid vendor type (vtype) is required." });
+    }
+    if (!bizName || !bizName.trim()) return res.status(400).json({ error: "Business name is required." });
+
+    const profile = await prisma.vendorProfile.create({
+      data: { userId: req.user.id, vtype, bizName, description: description || null, tags: Array.isArray(tags) ? tags : [] },
+    });
+    res.status(201).json({ vendorProfile: profile });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createRiderProfile(req, res, next) {
+  try {
+    if (req.user.riderProfile) return res.status(409).json({ error: "This account already has a rider profile." });
+    const { vehicleType, plateNumber } = req.body;
+    const profile = await prisma.riderProfile.create({
+      data: { userId: req.user.id, vehicleType: vehicleType || null, plateNumber: plateNumber || null },
+    });
+    res.status(201).json({ riderProfile: profile });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createShopperProfile(req, res, next) {
+  try {
+    if (req.user.shopperProfile) return res.status(409).json({ error: "This account already has a shopper profile." });
+    const { market } = req.body;
+    const profile = await prisma.shopperProfile.create({
+      data: { userId: req.user.id, market: market || null },
+    });
+    res.status(201).json({ shopperProfile: profile });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // "Go Online" toggle — drives whether a vendor/rider/shopper receives new
-// order/session broadcasts (see realtime/live.js presence rooms).
+// order/session broadcasts (see realtime/live.js presence rooms). Accepts
+// an explicit `profile` so a multi-role account (e.g. rider AND shopper)
+// can toggle a capacity other than their primary registered role; falls
+// back to the role-derived profile when omitted, matching pre-multi-role
+// callers.
 async function setAvailability(req, res, next) {
   try {
-    const { isOnline } = req.body;
+    const { isOnline, profile } = req.body;
     if (typeof isOnline !== "boolean") return res.status(400).json({ error: "isOnline (boolean) is required." });
 
+    const target = profile || { VENDOR: "vendor", RIDER: "rider", SHOPPER: "shopper" }[req.user.role];
+
     let updated;
-    if (req.user.role === "VENDOR" && req.user.vendorProfile) {
+    if (target === "vendor" && req.user.vendorProfile) {
       updated = await prisma.vendorProfile.update({ where: { id: req.user.vendorProfile.id }, data: { isOnline } });
-    } else if (req.user.role === "RIDER" && req.user.riderProfile) {
+    } else if (target === "rider" && req.user.riderProfile) {
       updated = await prisma.riderProfile.update({ where: { id: req.user.riderProfile.id }, data: { isOnline } });
-    } else if (req.user.role === "SHOPPER" && req.user.shopperProfile) {
+    } else if (target === "shopper" && req.user.shopperProfile) {
       updated = await prisma.shopperProfile.update({ where: { id: req.user.shopperProfile.id }, data: { isOnline } });
     } else {
-      return res.status(400).json({ error: "This account role has no availability toggle." });
+      return res.status(400).json({ error: "This account has no matching profile to toggle." });
     }
 
-    req.app.get("io")?.emit("presence:update", { userId: req.user.id, role: req.user.role, isOnline });
+    req.app.get("io")?.emit("presence:update", { userId: req.user.id, role: target, isOnline });
     res.json({ isOnline });
   } catch (err) {
     next(err);
@@ -229,6 +288,9 @@ module.exports = {
   updateVendorProfile,
   updateRiderProfile,
   updateShopperProfile,
+  createVendorProfile,
+  createRiderProfile,
+  createShopperProfile,
   setAvailability,
   uploadAvatar,
   linkBankAccount,

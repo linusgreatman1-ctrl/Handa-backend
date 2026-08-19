@@ -537,6 +537,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
       </div>
     </div>
 
+    <!-- Role switcher — populated by renderRoleSwitcher(), see eGo('profile') -->
+    <div id="role-switcher-slot"></div>
+
     <!-- Addresses -->
     <h3 style="font-size:16px;font-weight:800;margin-bottom:12px">My Addresses</h3>
     <div class="card" style="overflow:hidden;margin-bottom:18px">
@@ -1018,6 +1021,106 @@ function mapApiUser(u){
   if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; }
   if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; }
   return mapped;
+}
+
+// ── Multi-role accounts ──────────────────────────────────────────────
+// One account can hold a vendor profile AND a rider profile AND a shopper
+// profile at once (each is just a separate row in its own table — see
+// backend). eGo(scr) already sets S.role/S.vtype and renders the right
+// dashboard for any target at any time (that's exactly what login already
+// does), so switching is just calling it directly for a profile the
+// account already has. "Add a role" is a small authenticated form that
+// creates a new profile row, then hands off to eGo the same way.
+function renderRoleSwitcher(){
+  if (!S.user) return '';
+  var have = { shopper: !!S.user.shopperProfileId, rider: !!S.user.riderProfileId, vendor: !!S.user.vendorProfileId };
+  var vendorKey = S.user.vtype === 'event_planner' ? 'event_planner' : 'cook';
+  var vendorLabel = S.user.vtype === 'event_planner' ? '🎊 Event Planner' : '🧑‍🍳 ' + (S.user.bizName || 'Home Cook');
+
+  var items = [{ key: 'home', label: '🛍️ Customer' }];
+  if (have.shopper) items.push({ key: 'shopper', label: '🛒 Shopper' });
+  if (have.rider) items.push({ key: 'rider', label: '🏍️ Rider' });
+  if (have.vendor) items.push({ key: vendorKey, label: vendorLabel });
+
+  var rows = items.map(function(it){
+    var active = S.curScreen === it.key;
+    return '<button onclick="eGo(\''+it.key+'\')" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1.5px solid '+(active?'#E8392E':'#2A2850')+';background:'+(active?'rgba(232,57,46,.08)':'#242424')+';color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+it.label+(active?' — current':'')+'</button>';
+  }).join('');
+
+  var addOpts = [];
+  if (!have.vendor) addOpts.push(['cook','🧑‍🍳 Home Cook'], ['event_planner','🎊 Event Planner']);
+  if (!have.rider) addOpts.push(['rider','🏍️ Rider']);
+  if (!have.shopper) addOpts.push(['shopper','🛒 Shopper']);
+  var addBtns = addOpts.length
+    ? '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px;">Add another role</div>'
+      + addOpts.map(function(o){ return '<button onclick="openAddRoleModal(\''+o[0]+'\')" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1.5px dashed #2A2850;background:transparent;color:#9A9390;font-weight:600;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">+ '+o[1]+'</button>'; }).join('')
+    : '';
+
+  return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
+    + '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Switch role</div>'
+    + rows + addBtns
+    + '</div>';
+}
+
+var _addRoleTarget = null;
+function _arField(lb,id,ph,tp){ return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">'+lb+'</label><input class="if" id="'+id+'" '+(tp?'type="'+tp+'" ':'')+'placeholder="'+ph+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'; }
+function _arSelect(lb,id,opts){ return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">'+lb+'</label><select class="if" id="'+id+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'+opts+'</select>'; }
+
+function openAddRoleModal(target){
+  _addRoleTarget = target;
+  var labels = { cook:'Home Cook', event_planner:'Event Planner', rider:'Rider', shopper:'Shopper' };
+  var fields = '';
+  if (target === 'cook') fields = _arField('Cooking Speciality','ar-sp','e.g. Nigerian, Continental','');
+  else if (target === 'event_planner') fields = _arField('Business Name','ar-bizname','e.g. Celebrate Lagos Events','') + _arSelect('Event Speciality','ar-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>');
+  else if (target === 'rider') fields = _arSelect('Vehicle Type','ar-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>') + _arField('Plate Number','ar-plate','e.g. LG-123-AA','');
+  else if (target === 'shopper') fields = _arField('Primary Market','ar-market','e.g. Mile 12 Market, Lagos','');
+
+  var html = '<div id="add-role-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:420px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">Add another role: '+(labels[target]||target)+'</div>'
+    + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">Your name, phone, and password stay the same — just a few extra details for this role.</div>'
+    + fields
+    + '<div style="display:flex;gap:10px;margin-top:18px;">'
+    + '<button onclick="closeAddRoleModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel</button>'
+    + '<button onclick="submitAddRole()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#E8392E;color:white;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Add Role</button>'
+    + '</div></div></div>';
+
+  var existing = document.getElementById('add-role-modal'); if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function closeAddRoleModal(){
+  var el = document.getElementById('add-role-modal'); if (el) el.remove();
+  _addRoleTarget = null;
+}
+async function submitAddRole(){
+  var target = _addRoleTarget;
+  if (!target) return;
+  var path, body = {};
+  if (target === 'cook' || target === 'event_planner') {
+    path = '/users/me/vendor-profile';
+    body.vtype = target === 'cook' ? 'HOME_COOK' : 'EVENT_PLANNER';
+    body.bizName = target === 'event_planner' ? ((document.getElementById('ar-bizname')||{}).value||'').trim() : (S.user.name||'My Kitchen');
+    if (target === 'event_planner' && !body.bizName) { showToast&&showToast('Please enter a business name','warning'); return; }
+    if (target === 'cook') body.tags = [((document.getElementById('ar-sp')||{}).value||'').trim()].filter(Boolean);
+  } else if (target === 'rider') {
+    path = '/users/me/rider-profile';
+    body.vehicleType = (document.getElementById('ar-vehicle')||{}).value||'';
+    body.plateNumber = (document.getElementById('ar-plate')||{}).value||'';
+  } else if (target === 'shopper') {
+    path = '/users/me/shopper-profile';
+    body.market = (document.getElementById('ar-market')||{}).value||'';
+  } else return;
+
+  try{
+    await api(path, { method:'POST', body: JSON.stringify(body) });
+    var me = await api('/auth/me');
+    S.user = mapApiUser(me.user);
+    closeAddRoleModal();
+    showToast&&showToast('Role added!','success');
+    eGo(target);
+  }catch(err){
+    showToast&&showToast(err.message||'Could not add role','warning');
+  }
 }
 
 // Fetches real vendors + their menu items and reshapes them into the exact
@@ -4257,6 +4360,7 @@ function renderVendorProfile(){
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="showEditProcedure(\'Profile\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
+    +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
 }
@@ -4405,6 +4509,7 @@ function renderRiderProfile(){
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="showEditProcedure(\''+r[0]+'\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
+    +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
 }
@@ -5621,6 +5726,7 @@ function buildShopperProfile(){
     +'<div onclick="showNotificationsProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F514;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Notifications</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
     +'<div onclick="showSafetyProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F6E1;&#xFE0F;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Safety & Security</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
     +'<div onclick="showHelpProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;"><span style="font-size:20px;">&#x2753;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Help & Support</div><span style="color:#555;font-size:18px;">&#x203A;</span></div></div>'
+    +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-weight:800;font-size:14px;cursor:pointer;">Sign Out</button>';
   body.innerHTML=html;
   renderSellerRegistryList();
@@ -6032,6 +6138,7 @@ function eGo(scr){
   if(scr==='rider'&&typeof renderRiderDeliveries==='function'){S.role='rider';renderRiderDeliveries();}
   if(scr==='history'&&typeof renderEHistory==='function'){renderEHistory();}
   if(scr==='profile'&&typeof loadEscrowWalletCard==='function'){loadEscrowWalletCard();}
+  if(scr==='profile'){var rss=document.getElementById('role-switcher-slot');if(rss)rss.innerHTML=renderRoleSwitcher();}
 }
 
 function go(scr){

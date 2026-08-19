@@ -11,6 +11,9 @@ router.patch("/me", ctrl.updateProfile);
 router.patch("/me/vendor-profile", ctrl.updateVendorProfile);
 router.patch("/me/rider-profile", ctrl.updateRiderProfile);
 router.patch("/me/shopper-profile", ctrl.updateShopperProfile);
+router.post("/me/vendor-profile", ctrl.createVendorProfile);
+router.post("/me/rider-profile", ctrl.createRiderProfile);
+router.post("/me/shopper-profile", ctrl.createShopperProfile);
 router.patch("/me/availability", ctrl.setAvailability);
 router.post("/me/avatar", upload.single("avatar"), ctrl.uploadAvatar);
 
