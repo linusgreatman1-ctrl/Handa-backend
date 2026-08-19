@@ -1,9 +1,22 @@
 # Handa Backend
 
-**Live**: https://handa-backend-api-production.up.railway.app (Railway project `handa-backend`, Postgres attached).
-**App**: https://handa-backend-api-production.up.railway.app/app — the actual Handa frontend, wired to this backend.
-**Admin panel**: https://handa-backend-api-production.up.railway.app/admin — log in with `linusgreatman1@gmail.com` / `admin12345`.
+**Live**: https://handa-backend.onrender.com (Render free tier — web service + Postgres. Migrated off Railway once its free trial expired; see "Hosting" below).
+**App**: https://handa-backend.onrender.com/app — the actual Handa frontend, wired to this backend.
+**Admin panel**: https://handa-backend.onrender.com/admin — log in with `linusgreatman1@gmail.com` / `admin12345`.
 Demo logins for other roles: any seeded email (see `prisma/seed.js`) + `password123`.
+
+`DEV_BYPASS_PAYMENTS=true` is set on this deployment — every "pay by wallet" step succeeds regardless of balance, so the whole app can be clicked through without needing real Paystack funds. Turn it off before this is a real product.
+
+## Hosting
+
+Free-tier Render, not Railway — Railway's trial credit ran out and this
+project never had a payment method attached. Two things to know about
+Render's free tier specifically:
+- The **web service** sleeps after ~15 min idle; the next request takes
+  ~30-50s to wake it back up. Not an issue for active development.
+- The **Postgres database** is free for 30 days from creation, then Render
+  requires upgrading it to keep the data — see the dashboard for the
+  expiry date and to upgrade when that time comes.
 
 There is no RESTAURANT vendor type or restaurant/dish ordering anywhere in
 this product — removed after confirming the frontend never actually
