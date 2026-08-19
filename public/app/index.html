@@ -2612,20 +2612,43 @@ function renderShopPhase(phase) {
 
   // ── PHASE 9: Done ─────────────────────────────────────────────────────
   } else if (phase === 'done') {
+    var done=window._sfmSession||{};
+    var shopperName=sfmShopperName();
+    var riderName=(done.rider&&done.rider.user&&done.rider.user.name)||'your rider';
     body.innerHTML = `<div class="fi" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:65vh;text-align:center;padding:20px;">
       <div style="font-size:80px;margin-bottom:16px;">🎉</div>
       <div class="h2">Shopping Complete!</div>
-      <p style="color:#9A9390;font-size:15px;margin-top:8px;margin-bottom:22px;">Everything delivered successfully. Thanks for using CityChef Shop!</p>
+      <p style="color:#9A9390;font-size:15px;margin-top:8px;margin-bottom:22px;">Everything delivered successfully. Thanks for using Handa!</p>
       <div class="card" style="text-align:left;width:100%;margin-bottom:20px;">
-        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Shopper</span><span style="font-weight:700;">Aisha Abdullahi ★4.9</span></div>
-        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Rider</span><span style="font-weight:700;">Chidi Okonkwo ★4.8</span></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Shopper</span><span style="font-weight:700;">${shopperName}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Rider</span><span style="font-weight:700;">${riderName}</span></div>
         <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Items delivered</span><span style="font-weight:700;">${shopItems.length}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;">Escrow</span><span class="badge b-green">🔓 Released to Aisha</span></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;">Escrow</span><span class="badge b-green">🔓 Released</span></div>
       </div>
-      <p style="font-weight:700;font-size:14px;margin-bottom:11px;">Rate your experience:</p>
-      <div style="display:flex;gap:6px;margin-bottom:22px;">${[1,2,3,4,5].map(s=>`<span style="font-size:36px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="this.parentElement.querySelectorAll('span').forEach((x,i)=>{x.style.opacity=i<${s}?'1':'.3';x.style.transform=i===${s-1}?'scale(1.25)':'scale(1)';});showToast('Rated ${s} star${s>1?'s':''} ⭐','success');">⭐</span>`).join('')}</div>
+      <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${shopperName} (Shopper):</p>
+      <div style="display:flex;gap:6px;margin-bottom:18px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
+      <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${riderName} (Rider):</p>
+      <div style="display:flex;gap:6px;margin-bottom:22px;" id="rate-rider-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('RIDER',${s},'rate-rider-stars')">⭐</span>`).join('')}</div>
       <button class="btn btn-primary" onclick="go('home')">Back to Home 🏠</button>
     </div>`;
+  }
+}
+
+async function sfmSubmitRating(rateeRole, score, containerId){
+  var container=document.getElementById(containerId);
+  if(container){
+    container.querySelectorAll('span').forEach(function(x){
+      var s=parseInt(x.dataset.s);
+      x.style.opacity=s<=score?'1':'.3';
+      x.style.transform=s===score?'scale(1.25)':'scale(1)';
+    });
+  }
+  if(!window._sfmSession){showToast&&showToast('Rated '+score+' stars ⭐','success');return;}
+  try{
+    await api('/ratings',{method:'POST',body:JSON.stringify({contextType:'SHOP_SESSION',contextId:window._sfmSession.id,rateeRole:rateeRole,score:score})});
+    showToast&&showToast('Rated '+score+' star'+(score>1?'s':'')+' ⭐','success');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not submit rating','warning');
   }
 }
 
@@ -4233,12 +4256,23 @@ var _reportContext='order';var _reportSelected='';
 var _reportCategories={order:['Missing items','Wrong items','Food quality issue','Late delivery','Rider was rude','Other'],shopper_session:['Shopper behaviour','Item not as described','Price discrepancy','Other'],rider:['Dangerous driving','Rude behaviour','Package damaged','Other'],vendor:['Wrong order prepared','Missing items','Rude behaviour','Other'],customer:['Rude or abusive','False report','No show','Other']};
 function showReportIssue(ctx){_reportContext=ctx||'order';_reportSelected='';var cats=_reportCategories[ctx]||_reportCategories.order;var el=document.getElementById('report-categories');if(el){el.innerHTML=cats.map(function(c){return '<button onclick="selectReportCat(this,\''+c+'\')" style="padding:10px 14px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:13px;cursor:pointer;text-align:left;">'+c+'</button>';}).join('');}var desc=document.getElementById('report-desc');if(desc)desc.value='';document.getElementById('report-modal').style.display='flex';}
 function selectReportCat(btn,cat){_reportSelected=cat;document.querySelectorAll('#report-categories button').forEach(function(b){b.style.background='#242424';b.style.color='#9A9390';b.style.borderColor='#2A2850';});btn.style.background='rgba(232,57,46,.12)';btn.style.color='#E8392E';btn.style.borderColor='rgba(232,57,46,.4)';}
-function submitReport(){
+async function submitReport(){
   if(!_reportSelected){toast('Please select an issue category');return;}
-  document.getElementById('report-modal').style.display='none';
-  toast('Report submitted! Our team will contact you within 30 mins.');
-  if(_reportContext==='order_live'){
-    var rm=document.getElementById('rating-modal');if(rm)rm.style.display='flex';
+  var ctxMap={order:'ORDER',order_live:'ORDER',shopper_session:'SHOP_SESSION',rider:'RIDER',vendor:'VENDOR',customer:'CUSTOMER'};
+  var desc=(document.getElementById('report-desc')||{}).value||'';
+  try{
+    await api('/support/tickets',{method:'POST',body:JSON.stringify({
+      context: ctxMap[_reportContext]||'GENERAL',
+      category: _reportSelected,
+      description: desc||undefined,
+    })});
+    document.getElementById('report-modal').style.display='none';
+    toast('Report submitted! Our team will contact you within 30 mins.');
+    if(_reportContext==='order_live'){
+      var rm=document.getElementById('rating-modal');if(rm)rm.style.display='flex';
+    }
+  }catch(err){
+    toast(err.message||'Could not submit report');
   }
   _reportContext='';
 }
@@ -4263,13 +4297,17 @@ function showProfileSection(s){
   if(s==='favourites'){_showFavPanel();return;}
   if(s==='help-support'){_showHelpPanel();return;}
 }
-function _showNotifPanel(){
+var _notifKeys=['orderUpdates','promotions','riderAlerts','newFeatures'];
+async function _showNotifPanel(){
   var items=['Order updates','Promotions','Rider alerts','New features'];
+  var prefs={orderUpdates:true,promotions:true,riderAlerts:true,newFeatures:true};
+  try{ var res=await api('/users/me/notification-preferences'); prefs=res.preferences; }catch(err){}
   var rows=items.map(function(n,i){
+    var on=prefs[_notifKeys[i]]!==false;
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid #2A2850;">'
       +'<span style="font-size:13px;color:#F2EDE8;">'+n+'</span>'
-      +'<div id="ntog'+i+'" onclick="toggleNotif('+i+')" data-on="1" style="width:44px;height:24px;border-radius:12px;background:#2ECC71;cursor:pointer;position:relative;flex-shrink:0;">'
-      +'<span id="ntog-k'+i+'" style="position:absolute;top:2px;left:22px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s;"></span>'
+      +'<div id="ntog'+i+'" onclick="toggleNotif('+i+')" data-on="'+(on?'1':'0')+'" style="width:44px;height:24px;border-radius:12px;background:'+(on?'#2ECC71':'#444')+';cursor:pointer;position:relative;flex-shrink:0;">'
+      +'<span id="ntog-k'+i+'" style="position:absolute;top:2px;left:'+(on?'22px':'2px')+';width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s;"></span>'
       +'</div></div>';
   }).join('');
   showProcedureModal('<div style="padding:0 0 20px;">'
@@ -4706,10 +4744,19 @@ function selectShopIssue(label){
   var disp=document.getElementById('shop-issue-selected');
   if(disp){disp.style.display='block';disp.textContent='Selected: '+label;}
 }
-function submitShopReport(){
+async function submitShopReport(){
   if(!_selectedShopIssue){toast('Please select an issue category');return;}
-  closeBottomSheet();
-  toast('Report submitted. Support will contact you within 1 hour.');
+  try{
+    await api('/support/tickets',{method:'POST',body:JSON.stringify({
+      context:'SHOP_SESSION',
+      category:_selectedShopIssue,
+      contextId:window._sfmSession?window._sfmSession.id:undefined,
+    })});
+    closeBottomSheet();
+    toast('Report submitted. Support will contact you within 1 hour.');
+  }catch(err){
+    toast(err.message||'Could not submit report');
+  }
   _selectedShopIssue='';
 }
 function showBottomSheet(title,content){
@@ -5298,14 +5345,19 @@ function saveEditProcedure(){
 
 function toggleNotif(i){
   var el=document.getElementById('ntog'+i);
-  var knob=document.getElementById('ntog-knob'+i);
+  var knob=document.getElementById('ntog-k'+i);
   if(!el)return;
   var on=el.getAttribute('data-on')!=='0';
-  el.setAttribute('data-on',on?'0':'1');
-  el.style.background=on?'#444':'#2ECC71';
-  if(knob)knob.style.left=on?'2px':'22px';
+  var newOn=!on;
+  el.setAttribute('data-on',newOn?'1':'0');
+  el.style.background=newOn?'#2ECC71':'#444';
+  if(knob)knob.style.left=newOn?'22px':'2px';
   var names=['Order updates','Promotions','Rider alerts','New features'];
-  toast((names[i]||'Notification')+(on?' turned off':' turned on'));
+  toast((names[i]||'Notification')+(newOn?' turned on':' turned off'));
+  var body={}; body[_notifKeys[i]]=newOn;
+  api('/users/me/notification-preferences',{method:'PATCH',body:JSON.stringify(body)}).catch(function(err){
+    showToast&&showToast(err.message||'Could not save preference','warning');
+  });
 }
 
 
