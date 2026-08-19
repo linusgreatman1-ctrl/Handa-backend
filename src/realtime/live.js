@@ -85,15 +85,20 @@ function attachLiveSocket(httpServer) {
       if (allowed) socket.join(`booking:${bookingId}`);
     });
 
-    socket.on("shop-session:join", async ({ sessionId }) => {
-      if (!sessionId) return;
+    // Accepts an optional ack callback — callers that need to act
+    // immediately after joining (e.g. starting the WebRTC signaling below,
+    // which needs the room join to have actually landed) can await it
+    // instead of racing the async DB lookup this handler does internally.
+    socket.on("shop-session:join", async ({ sessionId }, ack) => {
+      if (!sessionId) return typeof ack === "function" && ack({ joined: false });
       const session = await prisma.shopSession.findUnique({ where: { id: sessionId } });
-      if (!session) return;
+      if (!session) return typeof ack === "function" && ack({ joined: false });
       const allowed =
         session.customerId === user.id ||
         (user.shopperProfile && session.shopperId === user.shopperProfile.id) ||
         (user.riderProfile && session.riderId === user.riderProfile.id);
       if (allowed) socket.join(`shop-session:${sessionId}`);
+      if (typeof ack === "function") ack({ joined: !!allowed });
     });
 
     socket.on("chat:join", async ({ threadId }) => {

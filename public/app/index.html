@@ -2840,7 +2840,18 @@ async function sfmStartCall(sessionId, role, localVideoElId, remoteVideoElId){
     if(rv) rv.srcObject = ev.streams[0];
   };
 
-  if(_socket) _socket.emit('webrtc:join-call', { sessionId: sessionId });
+  // Re-affirm shop-session room membership before signaling — the initial
+  // join (back when the session was created/matched) can go stale by the
+  // time either side actually starts the call (socket reconnects, long
+  // gaps between matching and starting), and a stale membership means the
+  // server would silently drop webrtc:join-call instead of relaying it.
+  // The join handler's DB check is async, so wait for its ack rather than
+  // firing webrtc:join-call right behind it (which could arrive first).
+  if(_socket){
+    _socket.emit('shop-session:join', { sessionId: sessionId }, function(){
+      if(window._rtc===rtc) _socket.emit('webrtc:join-call', { sessionId: sessionId });
+    });
+  }
 }
 
 function sfmBindWebrtcListeners(){
