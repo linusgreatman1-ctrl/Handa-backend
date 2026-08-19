@@ -72,13 +72,15 @@
   <nav>
     <div class="brand">Handa <span>Admin</span></div>
     <button class="nav-item" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
-    <button class="nav-item" data-tab="reports" onclick="switchTab('reports')">Reports</button>
+    <button class="nav-item" data-tab="reports" data-super="1" onclick="switchTab('reports')">Reports</button>
     <button class="nav-item" data-tab="users" onclick="switchTab('users')">Users</button>
     <button class="nav-item" data-tab="vendors" onclick="switchTab('vendors')">Vendors</button>
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
-    <button class="nav-item" data-tab="shopsessions" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
+    <button class="nav-item" data-tab="shopsessions" data-super="1" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
     <button class="nav-item" data-tab="kyc" onclick="switchTab('kyc')">KYC Documents</button>
+    <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
+    <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
     <div class="spacer"></div>
     <div class="who"><b id="who-name"></b><span id="who-email"></span></div>
     <button class="logout" onclick="logout()">Sign out</button>
@@ -123,8 +125,9 @@ async function doLogin() {
     currentUser = data.user;
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-screen').classList.remove('hidden');
-    document.getElementById('who-name').textContent = currentUser.name;
+    document.getElementById('who-name').textContent = currentUser.name + (currentUser.isSuperAdmin ? ' (Super Admin)' : '');
     document.getElementById('who-email').textContent = currentUser.email || currentUser.phone || '';
+    document.querySelectorAll('.nav-item[data-super]').forEach(b => b.classList.toggle('hidden', !currentUser.isSuperAdmin));
     switchTab('dashboard');
   } catch (e) {
     err.textContent = e.message;
@@ -142,7 +145,7 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, kyc: renderKycDocuments };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, kyc: renderKycDocuments, admins: renderAdmins, auditlog: renderAuditLog };
   renderers[tab]();
 }
 
@@ -403,6 +406,93 @@ async function renderShopSessions() {
       : '<div class="empty">No Shop-For-Me sessions yet.</div>';
   } catch (e) {
     document.getElementById('shopsessions-table').textContent = e.message;
+  }
+}
+
+async function renderAdmins() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Admins</h2>' +
+    '<div class="toolbar"><button class="action-btn" onclick="openAddAdminForm()">+ Add Admin</button></div>' +
+    '<div id="add-admin-form"></div>' +
+    '<div id="admins-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/admins');
+    const rows = data.admins.map(a => {
+      const isSelf = a.id === currentUser.id;
+      let actions = '';
+      if (isSelf) {
+        actions = '<span style="color:#9A9390">(you)</span>';
+      } else if (a.status === 'DELETED') {
+        actions = '<span class="pill grey">Removed</span>';
+      } else {
+        actions = (a.status === 'ACTIVE'
+          ? '<button class="action-btn" onclick="suspendAdmin(\'' + a.id + '\')">Suspend</button>'
+          : '<button class="action-btn" onclick="reactivateAdmin(\'' + a.id + '\')">Reactivate</button>') +
+          ' <button class="action-btn" onclick="removeAdmin(\'' + a.id + '\',\'' + a.name.replace(/'/g, "\\'") + '\')">Remove</button>';
+      }
+      return '<tr><td>' + a.name + (a.isSuperAdmin ? ' <span class="pill amber">Super</span>' : '') + '</td><td>' + (a.email || a.phone || '—') + '</td>' +
+        '<td>' + pill(a.status) + '</td><td>' + (a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : 'Never') + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    document.getElementById('admins-table').outerHTML = data.admins.length
+      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Status</th><th>Last Login</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No admins found.</div>';
+  } catch (e) {
+    document.getElementById('admins-table').textContent = e.message;
+  }
+}
+function openAddAdminForm() {
+  document.getElementById('add-admin-form').innerHTML =
+    '<div class="card" style="max-width:360px;margin-bottom:16px">' +
+    '<div class="field"><label>Name</label><input id="na-name"></div>' +
+    '<div class="field"><label>Email</label><input id="na-email" type="email"></div>' +
+    '<div class="field"><label>Password</label><input id="na-password" type="password"></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn" style="width:auto;padding:10px 16px" onclick="submitAddAdmin()">Create</button>' +
+    '<button class="action-btn" onclick="document.getElementById(\'add-admin-form\').innerHTML=\'\'">Cancel</button></div>' +
+    '<div class="err" id="na-err"></div></div>';
+}
+async function submitAddAdmin() {
+  const name = document.getElementById('na-name').value.trim();
+  const email = document.getElementById('na-email').value.trim();
+  const password = document.getElementById('na-password').value;
+  const err = document.getElementById('na-err');
+  err.textContent = '';
+  try {
+    await api('/admin/admins', { method: 'POST', body: JSON.stringify({ name, email, password }) });
+    document.getElementById('add-admin-form').innerHTML = '';
+    renderAdmins();
+  } catch (e) {
+    err.textContent = e.message;
+  }
+}
+async function suspendAdmin(id) {
+  try { await api('/admin/admins/' + id + '/suspend', { method: 'PATCH' }); renderAdmins(); }
+  catch (e) { alert(e.message); }
+}
+async function reactivateAdmin(id) {
+  try { await api('/admin/admins/' + id + '/reactivate', { method: 'PATCH' }); renderAdmins(); }
+  catch (e) { alert(e.message); }
+}
+async function removeAdmin(id, name) {
+  if (!confirm('Remove admin "' + name + '"? They will be logged out immediately and can no longer sign in.')) return;
+  try { await api('/admin/admins/' + id + '/remove', { method: 'PATCH' }); renderAdmins(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderAuditLog() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Audit Log</h2><div id="auditlog-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/audit-log');
+    const rows = data.logs.map(l =>
+      '<tr><td>' + new Date(l.createdAt).toLocaleString() + '</td><td>' + l.actorName + '</td><td>' + l.action + '</td>' +
+      '<td>' + (l.targetType || '—') + '</td><td>' + (l.details || '') + '</td></tr>'
+    ).join('');
+    document.getElementById('auditlog-table').outerHTML = data.logs.length
+      ? '<table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No admin actions recorded yet.</div>';
+  } catch (e) {
+    document.getElementById('auditlog-table').textContent = e.message;
   }
 }
 

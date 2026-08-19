@@ -1479,7 +1479,7 @@ async function submitProposalForRequest(requestId){
     })});
     closeSubmitProposalModal();
     showToast&&showToast('Proposal submitted!','success');
-    if(typeof renderVendorOrders==='function') renderVendorOrders();
+    if(typeof loadOpenEventRequests==='function') loadOpenEventRequests();
   }catch(err){
     showToast&&showToast(err.message||'Could not submit proposal','warning');
   }
@@ -4664,7 +4664,7 @@ function vendorNav(tab){
   });
   var ab=document.getElementById('vnav-'+tab);
   if(ab){ab.classList.add('active');var dot=ab.querySelector('.ntab-dot');if(dot){dot.style.opacity='1';dot.style.background='#2ECC71';}var lbl=ab.querySelector('.ntab-label');if(lbl)lbl.style.color='#2ECC71';}
-  if(tab==='orders')renderVendorOrders();
+  if(tab==='orders')renderCookDashboard();
   else if(tab==='menu')renderVendorMenu();
   else if(tab==='earnings')renderVendorEarnings();
   else if(tab==='messages')renderVendorMessages();
@@ -4672,13 +4672,14 @@ function vendorNav(tab){
   else renderVendorProfile();
 }
 
-function renderVendorOrders(){
+// Real Order-based dashboard for GROCERY/CATERER/CAKE_DESIGNER vendors —
+// these sell via checkout (real Order rows), not Booking, so they need
+// their own real accept/decline/mark-ready flow rather than
+// renderVendorDashboard('cook')'s /bookings?as=vendor query.
+function renderVendorOrdersReal(){
   var body=document.getElementById('vendor-body');if(!body)return;
-  _vendorOnline=false;
   var nm=S.user?S.user.name:'Vendor';
-  var em2=S.user?S.user.email:'';
   var isGrocery=(S.vtype==='grocery');
-  var takesOrders=(['event_planner'].indexOf(S.vtype||'restaurant')<0);
   var groceryBanner=isGrocery?
     '<div style="background:linear-gradient(135deg,rgba(46,204,113,.15),rgba(59,159,232,.08));border:1.5px solid rgba(46,204,113,.35);border-radius:16px;padding:14px;margin-bottom:16px;display:flex;align-items:center;gap:12px;" onclick="vendorNav(\'menu\')">'
     +'<div style="width:44px;height:44px;border-radius:13px;background:rgba(46,204,113,.15);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">&#x1F4F9;</div>'
@@ -4690,59 +4691,111 @@ function renderVendorOrders(){
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'
     +'<div><p style="color:#9A9390;font-size:13px;">Welcome back,</p>'
     +'<div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:#F2EDE8;margin-top:2px;">'+nm+' &#x1F37D;</div></div>'
-    +'<button class="online-pill" id="vendor-pill" onclick="toggleVendorOnline()" style="border-color:#2A2850;background:#242424;">'
-    +'<div class="status-dot offline" id="vendor-status-dot"></div>'
-    +'<span style="font-size:14px;font-weight:700;color:#9A9390;" id="vendor-status-lbl">Go Online</span>'
+    +'<button class="online-pill" id="vendor-pill" onclick="toggleVendorOnline()" style="border-color:'+(_vendorOnline?'#2ECC71':'#2A2850')+';background:'+(_vendorOnline?'rgba(46,204,113,0.10)':'#242424')+';">'
+    +'<div class="status-dot '+(_vendorOnline?'online':'offline')+'" id="vendor-status-dot"></div>'
+    +'<span style="font-size:14px;font-weight:700;color:'+(_vendorOnline?'#2ECC71':'#9A9390')+';" id="vendor-status-lbl">'+(_vendorOnline?'Online':'Go Online')+'</span>'
     +'</button></div>'
 
-    // New incoming order (hidden until online)
-    +'<div id="vendor-incoming-order" style="display:none;margin-bottom:16px;">'
-    +'<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
-    +'<span style="font-size:26px;">&#x1F37D;</span>'
-    +'<div style="flex:1;">'
-    +'<div style="font-weight:800;font-size:15px;color:#2ECC71;">&#x1F514; New Incoming Order!</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-top:2px;">Adaeze O. &bull; &#x20a6;6,400 &bull; Escrow secured &#x1F512;</div>'
-    +'</div>'
-    +'<span style="background:#2ECC71;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span>'
-    +'</div>'
-    +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;">'
-    +'<div style="font-weight:700;font-size:14px;color:#F2EDE8;margin-bottom:4px;">#CC4831 &mdash; Jollof Rice x2, Chicken x1</div>'
-    +'<div style="font-size:12px;color:#9A9390;">Victoria Island &bull; &#x20a6;6,400</div>'
-    +'</div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="acceptVendorOrder(this)" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Accept Order</button>'
-    +'<button onclick="declineVendorOrder(this)" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">&#x2715; Decline</button>'
-    +'</div></div></div>'
-
-    // Earnings card
+    // Real revenue card — computed from today's DELIVERED/CONFIRMED orders
     +'<div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:22px;padding:22px;margin-bottom:16px;">'
     +'<div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;letter-spacing:.8px;text-transform:uppercase;">TODAY\'S REVENUE</div>'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:38px;font-weight:800;color:#FFFFFF;margin-top:6px;letter-spacing:-1px;">&#x20a6;142,000</div>'
+    +'<div style="font-family:\'Playfair Display\',serif;font-size:38px;font-weight:800;color:#FFFFFF;margin-top:6px;letter-spacing:-1px;" id="vendor-today-revenue">&#x20a6;…</div>'
     +'<div style="display:flex;gap:16px;margin-top:12px;">'
-    +'<div><div style="font-size:11px;color:rgba(255,255,255,.4);">Orders</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;">23</div></div>'
-    +'<div style="width:1px;background:rgba(255,255,255,.15);"></div>'
-    +'<div><div style="font-size:11px;color:rgba(255,255,255,.4);">This Week</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;">&#x20a6;680k</div></div>'
-    +'<div style="width:1px;background:rgba(255,255,255,.15);"></div>'
-    +'<div><div style="font-size:11px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;font-size:16px;margin-top:2px;">&#x2605; 4.8</div></div>'
+    +'<div><div style="font-size:11px;color:rgba(255,255,255,.4);">Orders Today</div><div style="font-weight:800;color:#FFF;font-size:16px;margin-top:2px;" id="vendor-today-count">…</div></div>'
     +'</div></div>'
 
-    // Stats grid
-    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">'
-    +'<div style="background:rgba(255,255,255,.07);border-radius:12px;padding:10px;text-align:center;"><p style="font-weight:900;font-size:17px;margin:0 0 2px;color:#2ECC71;">&#x20A6;142k</p><p style="color:#9A9390;font-size:10px;margin:0;">Today</p></div>'
-    +'<div style="background:rgba(255,255,255,.07);border-radius:12px;padding:10px;text-align:center;"><p style="font-weight:900;font-size:17px;margin:0 0 2px;color:#F5A623;">23</p><p style="color:#9A9390;font-size:10px;margin:0;">Orders</p></div>'
-    +'<div style="background:rgba(255,255,255,.07);border-radius:12px;padding:10px;text-align:center;"><p style="font-weight:900;font-size:17px;margin:0 0 2px;color:#3B9FE8;">4.8&#x2605;</p><p style="color:#9A9390;font-size:10px;margin:0;">Rating</p></div>'
-    +'</div>'
     +groceryBanner
-    +(S.vtype==='event_planner'?'<div id="event-requests-section" style="margin-bottom:16px;"></div>':'')
 
-    // How to start
+    // Real orders, bucketed by status
+    +'<div id="vendor-orders-incoming" style="margin-bottom:16px;"></div>'
+    +'<div id="vendor-orders-preparing" style="margin-bottom:16px;"></div>'
+    +'<div id="vendor-orders-ready" style="margin-bottom:16px;"></div>'
+
     +'<div style="background:rgba(46,204,113,.06);border:1.5px solid rgba(46,204,113,.2);border-radius:14px;padding:14px;margin-bottom:14px;">'
     +'<div style="font-size:13px;font-weight:700;color:#2ECC71;margin-bottom:6px;">&#x1F4A1; Tap Go Online to start receiving orders</div>'
-    +'<div style="font-size:12px;color:#9A9390;">Orders appear here when you go online. You can accept or decline each one.</div>'
+    +'<div style="font-size:12px;color:#9A9390;">Orders appear here the moment a customer checks out. Accept, mark ready, then a rider picks up automatically.</div>'
     +'</div>'
     +'</div>';
-  if(S.vtype==='event_planner') loadOpenEventRequests();
+  vendorBindOrderListener();
+  loadVendorOrders();
+}
+
+async function loadVendorOrders(){
+  try{
+    var res=await api('/orders?as=vendor');
+    var orders=res.orders||[];
+    var incoming=orders.filter(function(o){return o.status==='PENDING';});
+    var preparing=orders.filter(function(o){return ['ACCEPTED','PREPARING'].indexOf(o.status)>=0;});
+    var ready=orders.filter(function(o){return ['READY_FOR_PICKUP','RIDER_ASSIGNED','PICKED_UP'].indexOf(o.status)>=0;});
+
+    var todayStr=new Date().toDateString();
+    var completedToday=orders.filter(function(o){return ['DELIVERED','CONFIRMED'].indexOf(o.status)>=0 && new Date(o.createdAt).toDateString()===todayStr;});
+    var revenueKobo=completedToday.reduce(function(s,o){return s+o.subtotalKobo;},0);
+    var revEl=document.getElementById('vendor-today-revenue'); if(revEl) revEl.textContent='₦'+Number(Math.round(revenueKobo/100)).toLocaleString();
+    var cntEl=document.getElementById('vendor-today-count'); if(cntEl) cntEl.textContent=String(completedToday.length);
+
+    function itemsSummary(o){ return (o.items||[]).map(function(i){return i.qty+'x '+i.name;}).join(', '); }
+
+    var incEl=document.getElementById('vendor-orders-incoming');
+    if(incEl){
+      incEl.innerHTML = incoming.length
+        ? '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🔔 Incoming ('+incoming.length+')</p>'
+          + incoming.map(function(o){
+            return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:16px;margin-bottom:12px;">'
+              + '<div style="font-weight:700;font-size:14px;color:#F2EDE8;margin-bottom:2px;">'+(o.customer?o.customer.name:'Customer')+' &bull; ₦'+Number(Math.round(o.totalKobo/100)).toLocaleString()+'</div>'
+              + '<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">'+itemsSummary(o)+'</div>'
+              + '<div style="display:flex;gap:8px;">'
+              + '<button onclick="acceptVendorOrderReal(\''+o.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept</button>'
+              + '<button onclick="declineVendorOrderReal(\''+o.id+'\')" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">✕ Decline</button>'
+              + '</div></div>';
+          }).join('')
+        : '';
+    }
+    var prepEl=document.getElementById('vendor-orders-preparing');
+    if(prepEl){
+      prepEl.innerHTML = preparing.length
+        ? '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">👨‍🍳 Preparing ('+preparing.length+')</p>'
+          + preparing.map(function(o){
+            return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px;margin-bottom:10px;">'
+              + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><div><div style="font-weight:700;color:#F2EDE8;">'+(o.customer?o.customer.name:'Customer')+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+itemsSummary(o)+'</div></div><span style="background:rgba(245,166,35,.15);color:#F5A623;font-size:10px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap;">'+o.status+'</span></div>'
+              + '<button onclick="vendorMarkOrderReady(\''+o.id+'\')" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid rgba(46,204,113,.4);background:transparent;color:#2ECC71;font-weight:700;font-size:13px;cursor:pointer;">✓ Mark Ready for Pickup</button>'
+              + '</div>';
+          }).join('')
+        : '';
+    }
+    var readyEl=document.getElementById('vendor-orders-ready');
+    if(readyEl){
+      readyEl.innerHTML = ready.length
+        ? '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🏍️ Awaiting Rider ('+ready.length+')</p>'
+          + ready.map(function(o){
+            var statusLabel={READY_FOR_PICKUP:'Waiting for a rider to accept',RIDER_ASSIGNED:'Rider assigned',PICKED_UP:'Picked up — out for delivery'}[o.status]||o.status;
+            return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px;margin-bottom:10px;"><div style="font-weight:700;color:#F2EDE8;">'+(o.customer?o.customer.name:'Customer')+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+itemsSummary(o)+'</div><div style="font-size:12px;color:#3B9FE8;margin-top:6px;font-weight:700;">'+statusLabel+'</div></div>';
+          }).join('')
+        : '';
+    }
+  }catch(err){
+    var incEl2=document.getElementById('vendor-orders-incoming');
+    if(incEl2) incEl2.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px;">'+(err.message||'Could not load orders')+'</div>';
+  }
+}
+async function acceptVendorOrderReal(id){
+  try{ await api('/orders/'+id+'/accept',{method:'POST'}); showToast&&showToast('Order accepted ✓','success'); loadVendorOrders(); }
+  catch(err){ showToast&&showToast(err.message||'Could not accept order','warning'); }
+}
+async function declineVendorOrderReal(id){
+  try{ await api('/orders/'+id+'/decline',{method:'POST'}); showToast&&showToast('Order declined','warning'); loadVendorOrders(); }
+  catch(err){ showToast&&showToast(err.message||'Could not decline order','warning'); }
+}
+async function vendorMarkOrderReady(id){
+  try{ await api('/orders/'+id+'/ready',{method:'POST'}); showToast&&showToast('Marked ready — riders notified 🏍️','success'); loadVendorOrders(); }
+  catch(err){ showToast&&showToast(err.message||'Could not mark ready','warning'); }
+}
+// Vendor auto-joins its own room on socket connect (see src/realtime/live.js)
+// — just listen for the new-order push and refresh the real list live.
+function vendorBindOrderListener(){
+  if(!_socket||_socket._vendorOrdersBound)return;
+  _socket._vendorOrdersBound=true;
+  _socket.on('order:new',function(){ if(_vendorOnline) loadVendorOrders(); });
 }
 
 async function loadOpenEventRequests(){
@@ -5971,20 +6024,18 @@ async function toggleVendorOnline(){
   var dot=document.getElementById('vendor-status-dot');
   var lbl=document.getElementById('vendor-status-lbl');
   var pill=document.getElementById('vendor-pill');
-  var inc=document.getElementById('vendor-incoming-order');
   if(_vendorOnline){
     if(dot)dot.className='status-dot online';
     if(lbl){lbl.textContent='Online';lbl.style.color='#2ECC71';}
     if(pill){pill.style.borderColor='#2ECC71';pill.style.background='rgba(46,204,113,0.10)';}
-    if(inc)inc.style.display='block';
     toast("You are online! Watching for orders \uD83D\uDE0B");
   } else {
     if(dot)dot.className='status-dot offline';
     if(lbl){lbl.textContent='Go Online';lbl.style.color='#9A9390';}
     if(pill){pill.style.borderColor='#2A2850';pill.style.background='#242424';}
-    if(inc)inc.style.display='none';
     toast('Gone offline');
   }
+  if(['grocery','caterer','cake_designer'].indexOf(S.vtype)>=0 && typeof loadVendorOrders==='function') loadVendorOrders();
 }
 
 function renderShopperHistory() {
@@ -6394,19 +6445,6 @@ function doSearch(){
 
 
 
-function declineVendorOrder(btn){
-  var inc=document.getElementById('vendor-incoming-order');
-  if(inc)inc.style.display='none';
-  _vendorOnline=false;
-  var dot=document.getElementById('vendor-status-dot');
-  var lbl=document.getElementById('vendor-status-lbl');
-  var pill=document.getElementById('vendor-pill');
-  if(dot)dot.className='status-dot offline';
-  if(lbl){lbl.textContent='Go Online';lbl.style.color='#9A9390';}
-  if(pill){pill.style.borderColor='#2A2850';pill.style.background='#242424';}
-  toast('Order declined. You are now offline.');
-}
-
 window._riderActiveSession=null;
 window._riderActiveType=null; // 'SHOP_SESSION' | 'ORDER'
 async function acceptRiderDelivery(sessionId){
@@ -6566,140 +6604,6 @@ function declineRiderDelivery(btn){
 
 
 
-function acceptVendorOrder(btn){
-  var inc=document.getElementById('vendor-incoming-order');
-  if(inc)inc.style.display='none';
-  // Auto-advance straight to "Start Preparing" then show the full vendor orders page
-  vendorRenderActiveOrders();
-}
-
-function vendorRenderActiveOrders(){
-  var body=document.getElementById('vendor-body');
-  if(!body)return;
-  // Preserve the header (padding area) — just replace/add the active orders section
-  var existing=document.getElementById('vendor-active-section');
-  if(!existing){
-    existing=document.createElement('div');
-    existing.id='vendor-active-section';
-    body.appendChild(existing);
-  }
-  existing.innerHTML=''
-    // "Start Preparing" banner — auto shown after Accept
-    +'<div style="background:linear-gradient(135deg,rgba(46,204,113,.12),rgba(59,159,232,.05));border:2px solid rgba(46,204,113,.4);border-radius:16px;padding:16px;margin:0 16px 16px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
-    +'<div style="width:10px;height:10px;border-radius:50%;background:#2ECC71;animation:pulse .8s infinite;flex-shrink:0;"></div>'
-    +'<div style="font-weight:800;font-size:15px;color:#2ECC71;">Order Accepted! Start Preparing</div></div>'
-    +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;">'
-    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:2px;">#CC4831 &mdash; Jollof Rice x2, Chicken x1</div>'
-    +'<div style="font-size:12px;color:#9A9390;">Adaeze O. &bull; Victoria Island &bull; &#x20a6;6,400</div>'
-    +'<div style="font-size:12px;color:#F5A623;margin-top:3px;font-weight:700;">&#x1F512; Escrow secured</div></div>'
-    +'<div style="font-size:12px;color:#9A9390;text-align:center;">Kitchen is now preparing this order</div></div>'
-
-    // Active Orders section
-    +'<div style="padding:0 16px;">'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;color:#F2EDE8;margin-bottom:12px;">Active Orders</div>'
-
-    // Order 1 - newly accepted
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:12px;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
-    +'<div><div style="font-weight:700;color:#F2EDE8;">#CC4831 &mdash; Jollof Rice x2, Chicken x1</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-top:3px;">Preparing &bull; Just started</div></div>'
-    +'<span style="background:rgba(245,166,35,.15);color:#F5A623;font-size:10px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap;">In Kitchen</span></div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="vendorMarkReady(this,\'CC4831\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(46,204,113,.4);background:transparent;color:#2ECC71;font-weight:700;font-size:13px;cursor:pointer;">&#x2713; Mark Ready</button>'
-    +'<button onclick="vendorFindRider(\'CC4831\')" style="flex:1;padding:10px;border-radius:10px;border:none;background:#3B9FE8;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">&#x1F6F5; Find Rider</button>'
-    +'</div></div>'
-
-    // Order 2 - existing
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:12px;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
-    +'<div><div style="font-weight:700;color:#F2EDE8;">#CC4820 &mdash; Fried Rice x3</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-top:3px;">Preparing &bull; 15 min</div></div>'
-    +'<span style="background:rgba(245,166,35,.15);color:#F5A623;font-size:10px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap;">In Kitchen</span></div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="vendorMarkReady(this,\'CC4820\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(46,204,113,.4);background:transparent;color:#2ECC71;font-weight:700;font-size:13px;cursor:pointer;">&#x2713; Mark Ready</button>'
-    +'<button onclick="vendorFindRider(\'CC4820\')" style="flex:1;padding:10px;border-radius:10px;border:none;background:#3B9FE8;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">&#x1F6F5; Find Rider</button>'
-    +'</div></div>'
-
-    // Order 3 - existing
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:12px;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
-    +'<div><div style="font-weight:700;color:#F2EDE8;">#CC4812 &mdash; Suya Platter</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-top:3px;">Preparing &bull; 10 min</div></div>'
-    +'<span style="background:rgba(245,166,35,.15);color:#F5A623;font-size:10px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap;">In Kitchen</span></div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="vendorMarkReady(this,\'CC4812\')" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(46,204,113,.4);background:transparent;color:#2ECC71;font-weight:700;font-size:13px;cursor:pointer;">&#x2713; Mark Ready</button>'
-    +'<button onclick="vendorFindRider(\'CC4812\')" style="flex:1;padding:10px;border-radius:10px;border:none;background:#3B9FE8;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">&#x1F6F5; Find Rider</button>'
-    +'</div></div>'
-    +'</div>';
-}
-
-function vendorMarkReady(btn,orderId){
-  var card=btn.parentElement.parentElement;
-  var statusEl=card.querySelector('span');
-  if(statusEl){statusEl.textContent='Ready';statusEl.style.background='rgba(46,204,113,.15)';statusEl.style.color='#2ECC71';}
-  var sub=card.querySelector('div > div:nth-child(2)');
-  if(sub)sub.textContent='Ready for pickup';
-  btn.style.display='none';
-  toast('Order #'+orderId+' marked as ready!');
-}
-
-function vendorFindRider(orderId){
-  // Show the vendor map screen with rider heading to customer
-  vendorNav('map');
-  setTimeout(function(){
-    var body=document.getElementById('vendor-body');
-    if(!body)return;
-    body.innerHTML=''
-      +'<div style="padding:52px 16px 10px;">'
-      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
-      +'<div style="width:10px;height:10px;border-radius:50%;background:#3B9FE8;flex-shrink:0;animation:pulse .8s infinite;"></div>'
-      +'<div style="font-family:\'Playfair Display\',serif;font-size:17px;font-weight:900;color:#3B9FE8;">Rider Heading to Customer</div>'
-      +'<span style="margin-left:auto;background:#3B9FE8;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#fff;">ETA 7 min</span>'
-      +'</div></div>'
-      // Map
-      +'<div class="mapbox" style="margin:0 16px 14px;border-radius:18px;height:220px;">'
-      +'<div class="mgrid"></div><div class="mroad"></div>'
-      +'<div class="mpin" style="left:8%"><div class="mpc" style="width:36px;height:36px;background:#555;opacity:.5;">&#x1F3EA;</div><div class="mpl" style="color:#555;">Vendor</div></div>'
-      +'<div class="mpin mrider" style="left:52%"><div class="mpc" style="width:48px;height:48px;background:#F5A623;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#F5A623;font-weight:800;">Rider</div></div>'
-      +'<div class="mpin" style="right:6%"><div class="mpc" style="width:40px;height:40px;background:#3B9FE8;">&#x1F3E0;</div><div class="mpl" style="color:#3B9FE8;">Customer</div></div>'
-      +'<div class="mlive">&#x25CF; LIVE</div>'
-      +'</div>'
-      // Info below map
-      +'<div style="padding:0 16px;">'
-      +'<div style="background:#1C1C1C;border:1.5px solid rgba(59,159,232,.3);border-radius:14px;padding:14px;margin-bottom:12px;">'
-      +'<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'
-      +'<span style="font-size:12px;color:#9A9390;">Order</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">#'+orderId+' &mdash; Jollof Rice x2</span></div>'
-      +'<div style="display:flex;justify-content:space-between;">'
-      +'<span style="font-size:12px;color:#9A9390;">Delivering to</span><span style="font-size:12px;font-weight:700;color:#F2EDE8;">Adaeze O., Victoria Island</span></div>'
-      +'</div>'
-      +'<div style="display:flex;gap:8px;margin-bottom:14px;">'
-      +'<button onclick="openCallModal(\'Rider\',\'08034567890\',\'Rider\',\'&#x1F6F5;\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4DE; Call Rider</button>'
-      +'<button onclick="toast(\'Message sent to rider!\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4AC; Message Rider</button>'
-      +'</div>'
-      +'<div style="background:rgba(59,159,232,.08);border-radius:12px;padding:10px;text-align:center;font-size:12px;color:#3B9FE8;">Order Delivered automatically in 20 seconds...</div>'
-      +'</div>';
-    // Auto-advance to Order Delivered after 20 seconds
-    clearTimeout(window._vendorDeliveryTimer);
-    window._vendorDeliveryTimer=setTimeout(function(){vendorOrderDelivered(orderId);},20000);
-  },350);
-}
-
-function vendorOrderDelivered(orderId){
-  clearTimeout(window._vendorDeliveryTimer);
-  var body=document.getElementById('vendor-body');
-  if(!body)return;
-  body.innerHTML=''
-    +'<div style="padding:80px 24px 32px;text-align:center;">'
-    +'<div style="font-size:64px;margin-bottom:16px;">&#x1F389;</div>'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:24px;font-weight:900;color:#2ECC71;margin-bottom:8px;">Order Delivered!</div>'
-    +'<div style="font-size:14px;color:#9A9390;margin-bottom:6px;">Order #'+orderId+' has been successfully delivered.</div>'
-    +'<div style="font-size:13px;color:#F5A623;font-weight:700;margin-bottom:32px;">&#x1F512; Payment released from escrow</div>'
-    +'<button onclick="vendorNav(\'orders\')" style="width:100%;padding:14px;border-radius:14px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-weight:800;font-size:15px;cursor:pointer;">Back to Dashboard</button>'
-    +'</div>';
-}
-
-
 // ── HANDA NAVIGATION ─────────────────────────────────────────────────────────
 var _eRole='customer';
 var _eScreenMap={
@@ -6737,7 +6641,7 @@ function eGo(scr){
   if(scr==='events'){window._EP_DATA=D.ep||[];renderEP(D.ep);}
   if(scr==='sfm'||scr==='liveshop')buildShop();
   if(scr==='shopper'&&typeof renderShopperHome==='function'){S.role='shopper';renderShopperHome();}
-  if(scr==='cook'||scr==='homecook'){S.role='vendor';S.vtype='home_cook';renderCookDashboard();}
+  if(scr==='cook'||scr==='homecook'){S.role='vendor';S.vtype=(S.user&&S.user.vtype)||'home_cook';renderCookDashboard();}
   if(scr==='event_planner'){S.role='vendor';S.vtype='event_planner';renderEPDashboard();}
   if(scr==='rider'&&typeof renderRiderDeliveries==='function'){S.role='rider';renderRiderDeliveries();}
   if(scr==='history'&&typeof renderEHistory==='function'){renderEHistory();}
@@ -6995,12 +6899,17 @@ async function renderVendorDashboard(kind){
   h+='<div id="vendor-commission-row" style="display:flex;justify-content:space-between;align-items:center"><div><p style="font-size:22px;font-weight:900;color:#F2EDE8;margin:0" id="vendor-commission-amt">₦…</p><p style="color:#9A9390;font-size:11px;margin:0">Due every Sunday</p></div>';
   h+='<button onclick="payCommission()" style="padding:10px 14px;background:'+accent+';color:'+(isCook?'#fff':'#111')+';border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">Pay Now</button></div>';
   h+='<p style="color:#E74C3C;font-size:10px;margin:8px 0 0;font-weight:600">⚠️ Failure to pay weekly commission leads to account suspension.</p></div>';
+  // Open event requests (RFP layer) — was previously only ever built into
+  // the dead renderVendorOrders() function, which event-planner vendors
+  // never route to. loadOpenEventRequests() itself is unchanged/already real.
+  if(!isCook) h+='<div id="event-requests-section" style="margin-bottom:16px"></div>';
   h+='<div style="background:#1C1C1C;border:1.5px solid rgba(245,166,35,.3);border-radius:14px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">';
   h+='<div><p style="font-weight:700;font-size:14px;margin:0 0 2px">⭐ Get Featured</p><p style="color:#9A9390;font-size:12px;margin:0">Appear on Handa homepage</p></div>';
   h+='<button onclick="payToFeature()" style="padding:10px 14px;background:#F5A623;color:#111;border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">₦5,000/wk</button></div>';
   h+='<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">'+label+'</p>';
   h+='<div id="vendor-bookings-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>';
   h+='</div>';el.innerHTML=h;
+  if(!isCook) loadOpenEventRequests();
 
   try{
     var period=await api('/vendors/me/commission-period');
@@ -7028,7 +6937,15 @@ async function renderVendorDashboard(kind){
     if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load bookings')+'</div>';
   }
 }
-function renderCookDashboard(){renderVendorDashboard('cook');}
+function renderCookDashboard(){
+  // GROCERY/CATERER/CAKE_DESIGNER vendors sell via checkout (real Order
+  // rows), not Booking — renderVendorDashboard('cook') only ever queries
+  // /bookings?as=vendor, which is always empty for these three types even
+  // when they have real paid orders sitting in PENDING.
+  var orderBased=['grocery','caterer','cake_designer'].indexOf(S.vtype)>=0;
+  if(orderBased){renderVendorOrdersReal();return;}
+  renderVendorDashboard('cook');
+}
 function renderEPDashboard(){renderVendorDashboard('ep');}
 
 async function vendorBookingAction(id,action){

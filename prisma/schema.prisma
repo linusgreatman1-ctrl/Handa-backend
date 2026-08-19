@@ -47,6 +47,11 @@ model User {
   status       AccountStatus @default(ACTIVE)
   avatarUrl    String?
 
+  // Only meaningful when role=ADMIN — gates admin-management endpoints,
+  // analytics, and rider-session monitoring away from ordinary admins.
+  // Provisioned once via migration backfill, not settable through the API.
+  isSuperAdmin Boolean @default(false)
+
   address String?
   state   String?
   lga     String?
@@ -1033,4 +1038,23 @@ model Favourite {
 
   @@unique([userId, targetType, targetId])
   @@index([userId])
+}
+
+// Super-admin-only trail of sensitive admin actions (admin management,
+// verification decisions, dispute refunds, account status changes).
+// actorId/actorName/actorEmail are a denormalized snapshot rather than a
+// foreign key — an entry stays readable even after the acting admin is
+// later removed.
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actorName  String
+  actorEmail String?
+  action     String
+  targetType String?
+  targetId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

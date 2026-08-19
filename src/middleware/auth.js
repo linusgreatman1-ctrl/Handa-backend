@@ -29,6 +29,7 @@ async function requireAuth(req, res, next) {
         name: true,
         email: true,
         phone: true,
+        isSuperAdmin: true,
         vendorProfile: { select: { id: true, vtype: true, isVerified: true } },
         riderProfile: { select: { id: true, isVerified: true } },
         shopperProfile: { select: { id: true, isVerified: true } },
@@ -83,10 +84,20 @@ function requireShopperProfile(req, res, next) {
   next();
 }
 
+// Gates admin-management endpoints (add/suspend/remove other admins) and
+// the analytics/rider-session monitoring tabs away from ordinary admins.
+function requireSuperAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "ADMIN" || !req.user.isSuperAdmin) {
+    return res.status(403).json({ error: "Super admin access required." });
+  }
+  next();
+}
+
 module.exports = {
   requireAuth,
   requireRole,
   requireVendorProfile,
   requireRiderProfile,
   requireShopperProfile,
+  requireSuperAdmin,
 };

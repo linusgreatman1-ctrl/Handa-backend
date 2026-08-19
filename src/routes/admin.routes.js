@@ -1,12 +1,14 @@
 const express = require("express");
-const { requireAuth, requireRole } = require("../middleware/auth");
+const { requireAuth, requireRole, requireSuperAdmin } = require("../middleware/auth");
 const ctrl = require("../controllers/admin.controller");
+const adminMgmt = require("../controllers/adminManagement.controller");
 
 const router = express.Router();
 router.use(requireAuth, requireRole("ADMIN"));
 
 router.get("/dashboard", ctrl.dashboardStats);
-router.get("/reports", ctrl.getReports);
+// Analytics — super-admin only.
+router.get("/reports", requireSuperAdmin, ctrl.getReports);
 
 router.get("/users", ctrl.listUsers);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
@@ -21,7 +23,16 @@ router.patch("/kyc-documents/:id", ctrl.reviewKycDocument);
 
 router.get("/withdrawals", ctrl.listWithdrawalsForAdmin);
 
-router.get("/shop-sessions", ctrl.listShopSessionsForAdmin);
-router.get("/shop-sessions/:id", ctrl.getShopSessionTimeline);
+// Rider-session monitoring — super-admin only.
+router.get("/shop-sessions", requireSuperAdmin, ctrl.listShopSessionsForAdmin);
+router.get("/shop-sessions/:id", requireSuperAdmin, ctrl.getShopSessionTimeline);
+
+// Admin management + audit trail — super-admin only.
+router.get("/admins", requireSuperAdmin, adminMgmt.listAdmins);
+router.post("/admins", requireSuperAdmin, adminMgmt.createAdmin);
+router.patch("/admins/:id/suspend", requireSuperAdmin, adminMgmt.suspendAdmin);
+router.patch("/admins/:id/reactivate", requireSuperAdmin, adminMgmt.reactivateAdmin);
+router.patch("/admins/:id/remove", requireSuperAdmin, adminMgmt.removeAdmin);
+router.get("/audit-log", requireSuperAdmin, adminMgmt.listAuditLog);
 
 module.exports = router;

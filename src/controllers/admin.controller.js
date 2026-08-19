@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { logAdminAction } = require("../services/auditLog.service");
 
 // Headline numbers for the admin panel's landing dashboard — cheap
 // aggregate counts, not full row dumps.
@@ -146,7 +147,16 @@ async function updateUserStatus(req, res, next) {
     if (!["ACTIVE", "SUSPENDED", "DELETED"].includes(status)) return res.status(400).json({ error: "Invalid status." });
     if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot change your own account status." });
 
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, name: true, email: true } });
+    if (!target) return res.status(404).json({ error: "User not found." });
+    // Changing another admin's status is admin management, not routine
+    // moderation — same rule the dedicated /admin/admins endpoints enforce.
+    if (target.role === "ADMIN" && !req.user.isSuperAdmin) {
+      return res.status(403).json({ error: "Only a super admin can change another admin's status." });
+    }
+
     const user = await prisma.user.update({ where: { id: req.params.id }, data: { status } });
+    await logAdminAction(req.user, "USER_STATUS_CHANGED", "User", user.id, `Set ${target.name} (${target.email || "no email"}) status to ${status}`);
     res.json({ user: { id: user.id, status: user.status } });
   } catch (err) {
     next(err);
@@ -175,6 +185,7 @@ async function setVendorVerified(req, res, next) {
     const { isVerified } = req.body;
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const vendor = await prisma.vendorProfile.update({ where: { id: req.params.id }, data: { isVerified } });
+    await logAdminAction(req.user, "VENDOR_VERIFIED", "VendorProfile", vendor.id, `Set isVerified=${isVerified} for ${vendor.bizName}`);
     res.json({ vendor });
   } catch (err) {
     next(err);
@@ -186,6 +197,7 @@ async function setRiderVerified(req, res, next) {
     const { isVerified } = req.body;
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const rider = await prisma.riderProfile.update({ where: { id: req.params.id }, data: { isVerified } });
+    await logAdminAction(req.user, "RIDER_VERIFIED", "RiderProfile", rider.id, `Set isVerified=${isVerified}`);
     res.json({ rider });
   } catch (err) {
     next(err);
@@ -197,6 +209,7 @@ async function setShopperVerified(req, res, next) {
     const { isVerified } = req.body;
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const shopper = await prisma.shopperProfile.update({ where: { id: req.params.id }, data: { isVerified } });
+    await logAdminAction(req.user, "SHOPPER_VERIFIED", "ShopperProfile", shopper.id, `Set isVerified=${isVerified}`);
     res.json({ shopper });
   } catch (err) {
     next(err);
@@ -229,6 +242,7 @@ async function reviewKycDocument(req, res, next) {
       where: { id: req.params.id },
       data: { status, rejectionReason: status === "REJECTED" ? rejectionReason || null : null, reviewedAt: new Date() },
     });
+    await logAdminAction(req.user, "KYC_REVIEWED", "KycDocument", document.id, `${status}${rejectionReason ? " — " + rejectionReason : ""}`);
     res.json({ document });
   } catch (err) {
     next(err);

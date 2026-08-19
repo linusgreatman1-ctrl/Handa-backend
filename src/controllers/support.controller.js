@@ -1,6 +1,7 @@
 const prisma = require("../config/db");
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
+const { logAdminAction } = require("../services/auditLog.service");
 
 async function createTicket(req, res, next) {
   try {
@@ -121,6 +122,15 @@ async function updateTicketStatus(req, res, next) {
     }
 
     const ticket = await prisma.supportTicket.update({ where: { id: existing.id }, data });
+    if (existing.isDispute || data.refundAmountKobo) {
+      await logAdminAction(
+        req.user,
+        "DISPUTE_RESOLVED",
+        "SupportTicket",
+        ticket.id,
+        `Status → ${status}${data.refundAmountKobo ? `, refund ₦${Math.round(data.refundAmountKobo / 100)}` : ""}`
+      );
+    }
     res.json({ ticket });
   } catch (err) {
     next(err);
