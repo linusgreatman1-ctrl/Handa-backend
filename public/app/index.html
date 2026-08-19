@@ -3257,15 +3257,20 @@ function sendShopperChat() {
 window._shopperSession = null;
 async function shopperAcceptSession(sessionId) {
   try {
-    var res = await api('/shop-sessions/'+sessionId+'/match', {method:'POST'});
-    window._shopperSession = res.session;
+    await api('/shop-sessions/'+sessionId+'/match', {method:'POST'});
+    // POST /match's own response is a bare Prisma update result (no
+    // relations) — customer name and items are both missing from it, so
+    // fetch the full session (same shape the customer side already
+    // relies on) rather than rendering off an incomplete object.
+    var full = await api('/shop-sessions/'+sessionId);
+    window._shopperSession = full.session;
     if(_socket) _socket.emit('shop-session:join', {sessionId: sessionId});
     document.getElementById('incoming-session').style.display='none';
     var banner=document.getElementById('active-session-banner');
     if(banner){
       banner.style.display='block';
       var sum=document.getElementById('active-session-summary');
-      if(sum)sum.textContent=(res.session.customer?res.session.customer.name:'Customer')+' • '+(res.session.deliveryAddress||'Address pending')+' • ₦'+Number(Math.round((res.session.depositKobo-res.session.sessionFeeKobo)/100)).toLocaleString()+' budget';
+      if(sum)sum.textContent=(full.session.customer?full.session.customer.name:'Customer')+' • '+(full.session.deliveryAddress||'Address pending')+' • ₦'+Number(Math.round((full.session.depositKobo-full.session.sessionFeeKobo)/100)).toLocaleString()+' budget';
     }
     jointConfirmed = [false,false,false];
     renderShopperPhase('accepted');
