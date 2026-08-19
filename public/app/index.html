@@ -470,7 +470,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
   </div>
 </div>
 <div id="screen-ecooks" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 14px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">HOME COOKS 🧑‍🍳</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900">Find Your <span style="color:#9B59B6">Cook</span></h1></div><div class="pill-row" id="cook-pills"><button class="pill pon" onclick="filterCooks('all',this)">All</button><button class="pill" onclick="filterCooks('Nigerian',this)">🍛 Nigerian</button><button class="pill" onclick="filterCooks('Continental',this)">Continental</button><button class="pill" onclick="filterCooks('Pastry',this)">Pastry</button><button class="pill" onclick="filterCooks('Vegetarian',this)">Vegetarian</button></div><div style="background:#1C1C1C;border-top:1px solid #2A2850;padding:12px 16px"><div style="display:flex;gap:8px;margin-bottom:8px"><select id="loc-state-cooks" onchange="loadLGAs(this.value,'loc-lga-cooks')" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">📍 Select State</option><option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT (Abuja)</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option></select></div><div style="display:flex;gap:8px"><select id="loc-lga-cooks" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">Select LGA…</option></select><button onclick="filterByState(document.getElementById('loc-state-cooks').value,document.getElementById('loc-lga-cooks').value,'cooks')" style="padding:10px 16px;background:#9B59B6;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">Search</button></div></div><div id="cook-list" style="padding:14px 16px 80px"></div></div>
-<div id="screen-events" class="escreen"><div style="background:linear-gradient(160deg,#0d2d1a,#111);padding:44px 20px 14px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><p style="color:#2ECC71;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">EVENT PLANNERS 🎊</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900">Find Your <span style="color:#2ECC71">Planner</span></h1></div><div style="background:#1C1C1C;border-top:1px solid #2A2850;padding:12px 16px"><div style="display:flex;gap:8px;margin-bottom:8px"><select id="loc-state-events" onchange="loadLGAs(this.value,'loc-lga-events')" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">📍 Select State</option><option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT (Abuja)</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option></select></div><div style="display:flex;gap:8px"><select id="loc-lga-events" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">Select LGA…</option></select><button onclick="filterByState(document.getElementById('loc-state-events').value,document.getElementById('loc-lga-events').value,'events')" style="padding:10px 16px;background:#2ECC71;color:#111;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">Search</button></div></div><div id="e-ep-list" style="padding:14px 16px 80px"></div></div>
+<div id="screen-events" class="escreen"><div style="background:linear-gradient(160deg,#0d2d1a,#111);padding:44px 20px 14px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><p style="color:#2ECC71;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">EVENT PLANNERS 🎊</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900">Find Your <span style="color:#2ECC71">Planner</span></h1></div><div style="padding:12px 16px 0;display:flex;gap:8px"><button onclick="openPostEventRequestModal()" style="flex:1;padding:11px;background:#2ECC71;color:#111;border:none;border-radius:11px;font-weight:800;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">📢 Post an Event Request</button><button onclick="openMyEventRequestsModal()" style="flex:1;padding:11px;background:#1C1C1C;color:#F2EDE8;border:1.5px solid #2A2850;border-radius:11px;font-weight:800;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">📋 My Requests</button></div><div style="background:#1C1C1C;border-top:1px solid #2A2850;padding:12px 16px;margin-top:12px"><div style="display:flex;gap:8px;margin-bottom:8px"><select id="loc-state-events" onchange="loadLGAs(this.value,'loc-lga-events')" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">📍 Select State</option><option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT (Abuja)</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option></select></div><div style="display:flex;gap:8px"><select id="loc-lga-events" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">Select LGA…</option></select><button onclick="filterByState(document.getElementById('loc-state-events').value,document.getElementById('loc-lga-events').value,'events')" style="padding:10px 16px;background:#2ECC71;color:#111;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">Search</button></div></div><div id="e-ep-list" style="padding:14px 16px 80px"></div></div>
 <div id="screen-aiplanner" class="escreen"><div style="background:linear-gradient(160deg,#0a1a0a,#111);padding:44px 20px 22px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">←</button><p style="color:#2ECC71;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">AI MEAL PLANNER 🤖</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900;margin-bottom:4px">Plan Meals &amp; <span style="color:#2ECC71">Build Cart</span></h1><p style="color:#9A9390;font-size:13px;margin:0">AI-powered weekly meal plan &amp; grocery list</p></div><div style="padding:20px 16px"><p style="color:#9A9390;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Quick Plans</p><div style="display:flex;flex-wrap:wrap;margin-bottom:20px"><span class="plan-chip" onclick="fillEAIPrompt('Weekly family food plan for 4 people, 7 days under &#x20a6;40,000')">👨‍👩‍👧‍👦 Family · 7 days</span><span class="plan-chip" onclick="fillEAIPrompt('Keto diet meal plan for 1 person, 7 days')">🥩 Keto Diet</span><span class="plan-chip" onclick="fillEAIPrompt('Ramadan meal plan for a family of 4')">🌙 Ramadan</span><span class="plan-chip" onclick="fillEAIPrompt('Budget grocery shopping for 2 people under &#x20a6;15,000')">💰 Budget</span><span class="plan-chip" onclick="fillEAIPrompt('Healthy vegetarian meal plan 5 days')">🥗 Vegetarian</span><span class="plan-chip" onclick="fillEAIPrompt('High protein bodybuilding meal plan 7 days')">💪 High Protein</span></div><p style="color:#9A9390;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Describe your needs</p><textarea class="if" id="ai-prompt" rows="3" style="margin-bottom:12px" placeholder="e.g. Meals for family of 4, 7 days, under &#x20a6;40,000. Breakfast, lunch &amp; dinner."></textarea><button class="btn grn full" onclick="runAIPlan()" style="padding:14px;margin-bottom:20px">🤖 Generate Meal Plan &amp; Grocery List</button><div id="ai-result" style="display:none;padding-bottom:80px"></div></div></div>
 <div id="screen-profile" class="escreen">
   <!-- Header -->
@@ -1204,6 +1204,182 @@ function refreshKycSection(profileType){
     var el = document.getElementById('kyc-section-'+profileType);
     if (el) el.outerHTML = renderKycSection(profileType);
   });
+}
+
+// ── Event proposal & comparison ─────────────────────────────────────────
+// Customer posts one broadcast request; qualified event-planner vendors
+// each submit a priced proposal; the customer compares and accepts one,
+// which creates a real Booking (see acceptEventProposal → backend) and
+// hands off to the existing booking/escrow/payment flow unchanged. Every
+// screen here is a dynamically-injected modal, same pattern as
+// openAddRoleModal — no new full-screen HTML blocks needed.
+function openPostEventRequestModal(){
+  var svcOpts = ['Decoration','Catering','Photography','Planning','Music/DJ','Venue'];
+  var html = '<div id="event-request-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:440px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">📢 Post an Event Request</div>'
+    + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">Qualified event planners will see this and send you proposals to compare.</div>'
+    + _arSelect('Event Type','er-type','<option>Wedding</option><option>Birthday</option><option>Corporate Event</option><option>Conference</option><option>Party</option><option>Naming Ceremony</option><option>Other</option>')
+    + _arField('Event Date','er-date','','date')
+    + _arField('Venue / Location','er-venue','e.g. Eko Hotel, Lagos','')
+    + _arField('Expected Guests','er-guests','e.g. 200','number')
+    + _arField('Budget (₦)','er-budget','e.g. 1500000','number')
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Needed</label>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="er-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
+    + '</div>'
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="er-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Anything else planners should know"></textarea>'
+    + '<div style="display:flex;gap:10px;margin-top:18px;">'
+    + '<button onclick="closeEventRequestModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;">Cancel</button>'
+    + '<button onclick="submitEventRequest()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:700;cursor:pointer;">Post Request</button>'
+    + '</div></div></div>';
+  var existing=document.getElementById('event-request-modal'); if(existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function closeEventRequestModal(){
+  var el=document.getElementById('event-request-modal'); if(el) el.remove();
+}
+async function submitEventRequest(){
+  var eventType=(document.getElementById('er-type')||{}).value||'';
+  var eventDate=(document.getElementById('er-date')||{}).value||'';
+  var venue=(document.getElementById('er-venue')||{}).value||'';
+  var guests=(document.getElementById('er-guests')||{}).value||'';
+  var budget=(document.getElementById('er-budget')||{}).value||'';
+  var notes=(document.getElementById('er-notes')||{}).value||'';
+  var services=[].slice.call(document.querySelectorAll('.er-svc:checked')).map(function(c){return c.value;});
+  if(!eventDate){showToast&&showToast('Please select an event date','warning');return;}
+  if(!venue.trim()){showToast&&showToast('Please enter a venue','warning');return;}
+  try{
+    await api('/event-requests',{method:'POST',body:JSON.stringify({
+      eventType:eventType, eventDate:eventDate, venue:venue.trim(),
+      guestCount: guests?parseInt(guests):null, budgetKobo: budget?Math.round(parseFloat(budget)*100):null,
+      servicesRequested: services, notes: notes.trim()||null,
+    })});
+    closeEventRequestModal();
+    showToast&&showToast('Event request posted — planners can now send proposals','success');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not post request','warning');
+  }
+}
+
+async function openMyEventRequestsModal(){
+  var html = '<div id="my-requests-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:460px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">📋 My Event Requests</div><button onclick="closeMyEventRequestsModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">✕</button></div>'
+    + '<div id="my-requests-list" style="font-size:13px;color:#9A9390;">Loading…</div>'
+    + '</div></div>';
+  var existing=document.getElementById('my-requests-modal'); if(existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  try{
+    var res = await api('/event-requests?as=customer');
+    var list = document.getElementById('my-requests-list');
+    if(!res.requests.length){ list.innerHTML='<div style="text-align:center;padding:20px;">No event requests yet.</div>'; return; }
+    var statusColors={OPEN:'#F5A623',PROPOSAL_ACCEPTED:'#2ECC71',CANCELLED:'#9A9390'};
+    list.innerHTML = res.requests.map(function(r){
+      var sc = statusColors[r.status]||'#9A9390';
+      return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
+        + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
+        + '<div style="font-size:12px;color:#2ECC71;margin-top:4px;font-weight:700;">'+r._count.proposals+' proposal'+(r._count.proposals===1?'':'s')+' received</div>'
+        + '</div>';
+    }).join('');
+  }catch(err){
+    document.getElementById('my-requests-list').textContent = err.message||'Could not load requests';
+  }
+}
+function closeMyEventRequestsModal(){
+  var el=document.getElementById('my-requests-modal'); if(el) el.remove();
+}
+
+async function openEventRequestDetailModal(id){
+  var html = '<div id="event-detail-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:480px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">Proposals</div><button onclick="closeEventDetailModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">✕</button></div>'
+    + '<div id="event-detail-body" style="font-size:13px;color:#9A9390;">Loading…</div>'
+    + '</div></div>';
+  var existing=document.getElementById('event-detail-modal'); if(existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  try{
+    var res = await api('/event-requests/'+id);
+    var r = res.request;
+    var body = document.getElementById('event-detail-body');
+    var header = '<div style="background:#242424;border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+      + '<b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><br>'
+      + '<span style="font-size:12px;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+(r.guestCount?' • 👥 '+r.guestCount:'')+'</span>'
+      + '</div>';
+    if(!r.proposals.length){
+      body.innerHTML = header + '<div style="text-align:center;padding:20px;">No proposals yet — check back soon.</div>';
+      return;
+    }
+    body.innerHTML = header + r.proposals.map(function(p){
+      var canAccept = r.status==='OPEN' && p.status==='PENDING';
+      var statusColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
+      var sc = statusColors[p.status]||'#9A9390';
+      return '<div style="background:#242424;border:1.5px solid '+(p.status==='ACCEPTED'?'#2ECC71':'#2A2850')+';border-radius:12px;padding:13px 14px;margin-bottom:10px;">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><b style="color:#F2EDE8;font-size:14px;">'+(p.vendor?p.vendor.bizName:'Planner')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+p.status+'</span></div>'
+        + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(p.priceKobo/100)).toLocaleString()+'</div>'
+        + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Includes: '+p.servicesIncluded.join(', ')+'</div>':'')
+        + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
+        + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">"'+p.notes+'"</div>':'')
+        + (canAccept?'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept This Proposal</button>':'')
+        + '</div>';
+    }).join('');
+  }catch(err){
+    document.getElementById('event-detail-body').textContent = err.message||'Could not load request';
+  }
+}
+function closeEventDetailModal(){
+  var el=document.getElementById('event-detail-modal'); if(el) el.remove();
+}
+async function acceptEventProposal(requestId, proposalId){
+  if(!confirm('Accept this proposal? This creates a real booking and declines the others.')) return;
+  try{
+    await api('/event-requests/'+requestId+'/proposals/'+proposalId+'/accept',{method:'POST'});
+    closeEventDetailModal();
+    closeMyEventRequestsModal();
+    showToast&&showToast('Proposal accepted! Pay the deposit from your bookings to confirm.','success');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not accept proposal','warning');
+  }
+}
+
+async function openSubmitProposalModal(requestId){
+  var svcOpts = ['Decoration','Catering','Photography','Planning','Music/DJ','Venue'];
+  var html = '<div id="submit-proposal-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:420px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:8px;">Submit a Proposal</div>'
+    + _arField('Your Price (₦)','sp-price','e.g. 1800000','number')
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Included</label>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="sp-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
+    + '</div>'
+    + _arField('Timeline','sp-timeline','e.g. Ready within 2 weeks','')
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes to Customer</label><textarea id="sp-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Why choose you"></textarea>'
+    + '<div style="display:flex;gap:10px;margin-top:18px;">'
+    + '<button onclick="closeSubmitProposalModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;">Cancel</button>'
+    + '<button onclick="submitProposalForRequest(\''+requestId+'\')" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:700;cursor:pointer;">Submit</button>'
+    + '</div></div></div>';
+  var existing=document.getElementById('submit-proposal-modal'); if(existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function closeSubmitProposalModal(){
+  var el=document.getElementById('submit-proposal-modal'); if(el) el.remove();
+}
+async function submitProposalForRequest(requestId){
+  var price=(document.getElementById('sp-price')||{}).value||'';
+  var timeline=(document.getElementById('sp-timeline')||{}).value||'';
+  var notes=(document.getElementById('sp-notes')||{}).value||'';
+  var services=[].slice.call(document.querySelectorAll('.sp-svc:checked')).map(function(c){return c.value;});
+  if(!price||parseFloat(price)<=0){showToast&&showToast('Enter a valid price','warning');return;}
+  try{
+    await api('/event-requests/'+requestId+'/proposals',{method:'POST',body:JSON.stringify({
+      priceKobo: Math.round(parseFloat(price)*100), servicesIncluded: services,
+      timeline: timeline.trim()||null, notes: notes.trim()||null,
+    })});
+    closeSubmitProposalModal();
+    showToast&&showToast('Proposal submitted!','success');
+    if(typeof renderVendorOrders==='function') renderVendorOrders();
+  }catch(err){
+    showToast&&showToast(err.message||'Could not submit proposal','warning');
+  }
 }
 
 // Fetches real vendors + their menu items and reshapes them into the exact
@@ -4346,6 +4522,7 @@ function renderVendorOrders(){
     +'<div style="background:rgba(255,255,255,.07);border-radius:12px;padding:10px;text-align:center;"><p style="font-weight:900;font-size:17px;margin:0 0 2px;color:#3B9FE8;">4.8&#x2605;</p><p style="color:#9A9390;font-size:10px;margin:0;">Rating</p></div>'
     +'</div>'
     +groceryBanner
+    +(S.vtype==='event_planner'?'<div id="event-requests-section" style="margin-bottom:16px;"></div>':'')
 
     // How to start
     +'<div style="background:rgba(46,204,113,.06);border:1.5px solid rgba(46,204,113,.2);border-radius:14px;padding:14px;margin-bottom:14px;">'
@@ -4353,10 +4530,28 @@ function renderVendorOrders(){
     +'<div style="font-size:12px;color:#9A9390;">Orders appear here when you go online. You can accept or decline each one.</div>'
     +'</div>'
     +'</div>';
+  if(S.vtype==='event_planner') loadOpenEventRequests();
 }
 
-
-
+async function loadOpenEventRequests(){
+  var el=document.getElementById('event-requests-section');
+  if(!el) return;
+  el.innerHTML='<div style="font-size:12px;color:#9A9390;padding:8px 0;">Loading open event requests…</div>';
+  try{
+    var res=await api('/event-requests?as=vendor&status=OPEN');
+    if(!res.requests.length){ el.innerHTML=''; return; }
+    el.innerHTML='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📢 Open Event Requests</div>'
+      + res.requests.map(function(r){
+        return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;">'
+          + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="color:#9A9390;font-size:11px;">'+(r.customer?r.customer.name:'Customer')+'</span></div>'
+          + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+(r.guestCount?' • 👥 '+r.guestCount:'')+(r.budgetKobo?' • Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')+'</div>'
+          + '<button onclick="openSubmitProposalModal(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Submit Proposal</button>'
+          + '</div>';
+      }).join('');
+  }catch(err){
+    el.innerHTML='';
+  }
+}
 
 function vendorTrackRider(orderId){toast('Tracking rider for '+orderId);showVendorTrackModal('Emeka O.','~4 mins');}
 

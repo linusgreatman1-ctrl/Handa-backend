@@ -30,6 +30,7 @@ const chatRoutes = require("./routes/chat.routes");
 const adminRoutes = require("./routes/admin.routes");
 const configRoutes = require("./routes/config.routes");
 const kycRoutes = require("./routes/kyc.routes");
+const eventRequestsRoutes = require("./routes/eventRequests.routes");
 
 const app = express();
 
@@ -121,6 +122,7 @@ app.use("/api/notifications", notificationsRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/config", configRoutes);
 app.use("/api/kyc", kycRoutes);
+app.use("/api/event-requests", eventRequestsRoutes);
 app.use("/api/admin", adminRoutes);
 
 app.use(notFoundHandler);

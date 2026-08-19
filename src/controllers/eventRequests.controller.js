@@ -1,0 +1,213 @@
+const prisma = require("../config/db");
+const { notify } = require("../services/notifications.service");
+const { generateReference } = require("../utils/reference");
+
+// Broadcast one event request to every qualified (EVENT_PLANNER) vendor,
+// let them each submit a priced proposal, and let the customer compare
+// and pick a winner — the RFP layer described in the architecture doc's
+// event-proposal section. Accepting a proposal creates a real Booking and
+// hands off to that model's existing escrow/payment/completion machinery
+// unchanged; this controller only owns the request → proposals → pick
+// stage before a Booking exists.
+
+async function createEventRequest(req, res, next) {
+  try {
+    const { eventType, eventDate, venue, guestCount, budgetKobo, servicesRequested, notes } = req.body;
+    if (!eventType || !eventDate || !venue) {
+      return res.status(400).json({ error: "eventType, eventDate, and venue are required." });
+    }
+    const request = await prisma.eventRequest.create({
+      data: {
+        customerId: req.user.id,
+        eventType,
+        eventDate: new Date(eventDate),
+        venue,
+        guestCount: guestCount != null ? Number(guestCount) : null,
+        budgetKobo: budgetKobo != null ? Number(budgetKobo) : null,
+        servicesRequested: Array.isArray(servicesRequested) ? servicesRequested : [],
+        notes: notes || null,
+      },
+    });
+    res.status(201).json({ request });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listEventRequests(req, res, next) {
+  try {
+    const { as, status } = req.query;
+
+    if (as === "vendor") {
+      if (!req.user.vendorProfile || req.user.vendorProfile.vtype !== "EVENT_PLANNER") {
+        return res.status(403).json({ error: "Only event planner accounts can browse event requests." });
+      }
+      const requests = await prisma.eventRequest.findMany({
+        where: { status: status || "OPEN" },
+        include: { customer: { select: { name: true } }, _count: { select: { proposals: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      });
+      return res.json({ requests });
+    }
+
+    const requests = await prisma.eventRequest.findMany({
+      where: { customerId: req.user.id, ...(status && { status }) },
+      include: { _count: { select: { proposals: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ requests });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getEventRequest(req, res, next) {
+  try {
+    const request = await prisma.eventRequest.findUnique({
+      where: { id: req.params.id },
+      include: {
+        customer: { select: { name: true, phone: true } },
+        proposals: { include: { vendor: { select: { bizName: true, ratingAvg: true, ratingCount: true } } }, orderBy: { createdAt: "asc" } },
+      },
+    });
+    if (!request) return res.status(404).json({ error: "Event request not found." });
+
+    const isOwner = request.customerId === req.user.id;
+    const myVendorId = req.user.vendorProfile?.id;
+
+    if (!isOwner) {
+      // A planner sees the request itself, but only their own proposal —
+      // not competitors' bids.
+      request.proposals = request.proposals.filter((p) => p.vendorId === myVendorId);
+    }
+
+    res.json({ request });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function submitProposal(req, res, next) {
+  try {
+    if (!req.user.vendorProfile || req.user.vendorProfile.vtype !== "EVENT_PLANNER") {
+      return res.status(403).json({ error: "Only event planner accounts can submit proposals." });
+    }
+    const { priceKobo, servicesIncluded, timeline, notes } = req.body;
+    if (!priceKobo || priceKobo <= 0) return res.status(400).json({ error: "A valid priceKobo is required." });
+
+    const request = await prisma.eventRequest.findUnique({ where: { id: req.params.id } });
+    if (!request) return res.status(404).json({ error: "Event request not found." });
+    if (request.status !== "OPEN") return res.status(400).json({ error: "This event request is no longer open." });
+
+    const existing = await prisma.eventProposal.findFirst({
+      where: { eventRequestId: request.id, vendorId: req.user.vendorProfile.id, status: "PENDING" },
+    });
+    if (existing) return res.status(409).json({ error: "You already have a pending proposal on this request." });
+
+    const proposal = await prisma.eventProposal.create({
+      data: {
+        eventRequestId: request.id,
+        vendorId: req.user.vendorProfile.id,
+        priceKobo: Number(priceKobo),
+        servicesIncluded: Array.isArray(servicesIncluded) ? servicesIncluded : [],
+        timeline: timeline || null,
+        notes: notes || null,
+      },
+    });
+
+    await notify(
+      req.app.get("io"),
+      request.customerId,
+      "ORDER_UPDATE",
+      "New proposal received",
+      `An event planner submitted a proposal for your ${request.eventType} request.`,
+      { eventRequestId: request.id }
+    );
+
+    res.status(201).json({ proposal });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function acceptProposal(req, res, next) {
+  try {
+    const request = await prisma.eventRequest.findUnique({ where: { id: req.params.id } });
+    if (!request) return res.status(404).json({ error: "Event request not found." });
+    if (request.customerId !== req.user.id) return res.status(403).json({ error: "You do not own this event request." });
+    if (request.status !== "OPEN") return res.status(400).json({ error: "This event request is no longer open." });
+
+    const proposal = await prisma.eventProposal.findUnique({ where: { id: req.params.proposalId } });
+    if (!proposal || proposal.eventRequestId !== request.id) return res.status(404).json({ error: "Proposal not found." });
+    if (proposal.status !== "PENDING") return res.status(400).json({ error: "This proposal is no longer pending." });
+
+    const io = req.app.get("io");
+
+    const booking = await prisma.$transaction(async (tx) => {
+      const newBooking = await tx.booking.create({
+        data: {
+          bookingNumber: generateReference("EVT"),
+          type: "EVENT_PLANNING",
+          status: "ACCEPTED", // the planner already committed to this price by proposing
+          customerId: request.customerId,
+          vendorId: proposal.vendorId,
+          eventDate: request.eventDate,
+          venue: request.venue,
+          guestCount: request.guestCount,
+          notes: [request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
+          paymentMethod: "WALLET",
+          totalKobo: proposal.priceKobo,
+        },
+      });
+
+      await tx.eventProposal.update({ where: { id: proposal.id }, data: { status: "ACCEPTED" } });
+      await tx.eventProposal.updateMany({
+        where: { eventRequestId: request.id, id: { not: proposal.id }, status: "PENDING" },
+        data: { status: "DECLINED" },
+      });
+      await tx.eventRequest.update({
+        where: { id: request.id },
+        data: { status: "PROPOSAL_ACCEPTED", acceptedProposalId: proposal.id, acceptedAt: new Date() },
+      });
+
+      return newBooking;
+    });
+
+    const losers = await prisma.eventProposal.findMany({ where: { eventRequestId: request.id, status: "DECLINED" } });
+    await notify(io, req.user.id, "ORDER_UPDATE", "Proposal accepted", "Pay the deposit to confirm your event booking.", { bookingId: booking.id });
+    for (const loser of losers) {
+      const vendorUser = await prisma.vendorProfile.findUnique({ where: { id: loser.vendorId }, select: { userId: true } });
+      if (vendorUser) {
+        await notify(io, vendorUser.userId, "ORDER_UPDATE", "Proposal not selected", "The customer chose a different proposal for this event request.", { eventRequestId: request.id });
+      }
+    }
+    const winnerVendor = await prisma.vendorProfile.findUnique({ where: { id: proposal.vendorId }, select: { userId: true } });
+    if (winnerVendor) {
+      await notify(io, winnerVendor.userId, "ORDER_UPDATE", "Proposal accepted!", "Your event proposal was accepted. Awaiting the customer's deposit.", { bookingId: booking.id });
+    }
+
+    res.json({ booking });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function cancelEventRequest(req, res, next) {
+  try {
+    const request = await prisma.eventRequest.findUnique({ where: { id: req.params.id } });
+    if (!request) return res.status(404).json({ error: "Event request not found." });
+    if (request.customerId !== req.user.id) return res.status(403).json({ error: "You do not own this event request." });
+    if (request.status !== "OPEN") return res.status(400).json({ error: "Only an open request can be cancelled." });
+
+    await prisma.$transaction([
+      prisma.eventRequest.update({ where: { id: request.id }, data: { status: "CANCELLED" } }),
+      prisma.eventProposal.updateMany({ where: { eventRequestId: request.id, status: "PENDING" }, data: { status: "WITHDRAWN" } }),
+    ]);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { createEventRequest, listEventRequests, getEventRequest, submitProposal, acceptProposal, cancelEventRequest };

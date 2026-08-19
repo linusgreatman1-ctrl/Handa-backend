@@ -83,6 +83,7 @@ model User {
   chatParticipants       ChatParticipant[]
   chatMessages           ChatMessage[]
   kycDocuments           KycDocument[]
+  eventRequests          EventRequest[]
 
   @@index([role])
 }
@@ -166,6 +167,7 @@ model VendorProfile {
   shopSessionStore  ShopSession[]      @relation("ShopSessionStore")
   featureBoosts     FeatureBoost[]
   commissionPeriods CommissionPeriod[]
+  eventProposals    EventProposal[]
 
   @@index([vtype])
   @@index([isOnline])
@@ -483,6 +485,72 @@ model Booking {
   @@index([customerId])
   @@index([vendorId])
   @@index([status])
+}
+
+// ── Event proposal / comparison marketplace ────────────────────────────
+// A layer on top of Booking, not a replacement for it: a customer posts
+// one EventRequest (no vendor picked yet), qualified EVENT_PLANNER vendors
+// each submit an EventProposal, and accepting one proposal creates a real
+// Booking (status ACCEPTED — the planner already committed to this price
+// by proposing, so acceptance is the mutual-agreement point; the customer
+// then just pays the deposit like any other booking) and auto-declines
+// the rest. Direct single-vendor booking (createBooking above) is
+// unchanged and still how caterers/home cooks are normally booked.
+enum EventRequestStatus {
+  OPEN
+  PROPOSAL_ACCEPTED
+  CANCELLED
+}
+
+model EventRequest {
+  id         String @id @default(uuid())
+  customerId String
+  customer   User   @relation(fields: [customerId], references: [id])
+
+  eventType         String
+  eventDate         DateTime
+  venue             String
+  guestCount        Int?
+  budgetKobo        Int?
+  servicesRequested String[] @default([])
+  notes             String?
+
+  status             EventRequestStatus @default(OPEN)
+  acceptedProposalId String?
+
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+
+  proposals EventProposal[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+enum EventProposalStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
+
+model EventProposal {
+  id             String        @id @default(uuid())
+  eventRequestId String
+  eventRequest   EventRequest  @relation(fields: [eventRequestId], references: [id], onDelete: Cascade)
+  vendorId       String
+  vendor         VendorProfile @relation(fields: [vendorId], references: [id])
+
+  priceKobo        Int
+  servicesIncluded String[] @default([])
+  timeline         String?
+  notes            String?
+
+  status    EventProposalStatus @default(PENDING)
+  createdAt DateTime            @default(now())
+
+  @@index([eventRequestId])
+  @@index([vendorId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────
