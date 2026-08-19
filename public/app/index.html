@@ -3188,10 +3188,13 @@ function onSfmStatus(status){
   var nextPhase=SFM_STATUS_PHASE[status];
   if(!nextPhase)return;
   // Forward-only: ignore a stray/duplicate push that would rewind a
-  // screen the customer (or an earlier event) already advanced past.
+  // screen the customer (or an earlier event) already advanced past. A
+  // same-phase re-push is allowed through — PACKAGING and FINDING_RIDER
+  // both map to 'packaging' but have different on-screen copy, so the
+  // second push still needs to re-render.
   var curIdx=SFM_PHASE_ORDER.indexOf(window._sfmPhase);
   var nextIdx=SFM_PHASE_ORDER.indexOf(nextPhase);
-  if(curIdx>=0&&nextIdx>=0&&nextIdx<=curIdx)return;
+  if(curIdx>=0&&nextIdx>=0&&nextIdx<curIdx)return;
   api('/shop-sessions/'+window._sfmSession.id).then(function(res){
     window._sfmSession=res.session;
     renderShopPhase(nextPhase);
