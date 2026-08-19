@@ -126,7 +126,12 @@ async function listOrders(req, res, next) {
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
-        include: { items: true, vendor: { include: { user: { select: { name: true, phone: true } } } }, rider: { include: { user: { select: { name: true, phone: true } } } } },
+        include: {
+          items: true,
+          customer: { select: { name: true, phone: true } },
+          vendor: { include: { user: { select: { name: true, phone: true } } } },
+          rider: { include: { user: { select: { name: true, phone: true } } } },
+        },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -260,6 +265,11 @@ async function acceptDelivery(req, res, next) {
     const updated = await prisma.order.update({
       where: { id: order.id },
       data: { status: "RIDER_ASSIGNED", riderId: req.user.riderProfile.id },
+      include: {
+        items: true,
+        customer: { select: { name: true, phone: true } },
+        vendor: { include: { user: { select: { name: true, phone: true } } } },
+      },
     });
 
     if (order.paymentMethod !== "CASH_ON_DELIVERY" && order.deliveryFeeKobo > 0) {
@@ -274,6 +284,10 @@ async function acceptDelivery(req, res, next) {
     }
 
     req.app.get("io")?.to(`order:${order.id}`).emit("order:status", { orderId: order.id, status: "RIDER_ASSIGNED", riderId: req.user.riderProfile.id });
+    // Never leak the handover codes to the rider's own screen — same rule
+    // as getOrder/listOrders.
+    updated.pickupCode = undefined;
+    updated.deliveryCode = undefined;
     res.json({ order: updated });
   } catch (err) {
     next(err);

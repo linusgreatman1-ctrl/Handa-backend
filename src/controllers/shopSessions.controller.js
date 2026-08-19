@@ -295,7 +295,11 @@ async function acceptDelivery(req, res, next) {
     if (session.status !== "FINDING_RIDER") return res.status(409).json({ error: "This session is not looking for a rider yet." });
     if (session.riderId) return res.status(409).json({ error: "Another rider has already accepted this delivery." });
 
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "RIDER_ASSIGNED", riderId: req.user.riderProfile.id } });
+    const updated = await prisma.shopSession.update({
+      where: { id: session.id },
+      data: { status: "RIDER_ASSIGNED", riderId: req.user.riderProfile.id },
+      include: { items: true, customer: { select: { name: true, phone: true } }, shopper: { include: { user: { select: { name: true, phone: true } } } } },
+    });
 
     if (session.riderFeeKobo > 0) {
       await escrow.createHold({
@@ -309,6 +313,10 @@ async function acceptDelivery(req, res, next) {
     }
 
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "RIDER_ASSIGNED" });
+    // Never leak the handover codes to the rider's own screen — same rule
+    // as getSession/listSessions.
+    updated.pickupCode = undefined;
+    updated.deliveryCode = undefined;
     res.json({ session: updated });
   } catch (err) {
     next(err);
