@@ -940,6 +940,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
       <div style="font-size:12px;color:#9A9390;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Describe the Issue</div>
       <textarea id="report-desc" placeholder="Tell us what happened in detail..." style="width:100%;min-height:80px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:13px;resize:none;outline:none;box-sizing:border-box;"></textarea>
     </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:12px;color:#9A9390;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Refund Requested (optional)</div>
+      <input id="report-refund" type="number" placeholder="₦ amount" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;box-sizing:border-box;">
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:12px;color:#9A9390;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Photo Evidence (optional)</div>
+      <input id="report-evidence" type="file" accept="image/*" style="width:100%;color:#9A9390;font-family:'DM Sans',sans-serif;font-size:12px;">
+    </div>
     <button onclick="submitReport()" style="width:100%;padding:14px;border-radius:13px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-family:'DM Sans',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">Submit Report</button>
     <button onclick="closeReportIssue()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:point
 
@@ -4863,16 +4871,35 @@ var _reportContext='order';var _reportSelected='';
 var _reportCategories={order:['Missing items','Wrong items','Food quality issue','Late delivery','Rider was rude','Other'],shopper_session:['Shopper behaviour','Item not as described','Price discrepancy','Other'],rider:['Dangerous driving','Rude behaviour','Package damaged','Other'],vendor:['Wrong order prepared','Missing items','Rude behaviour','Other'],customer:['Rude or abusive','False report','No show','Other']};
 function showReportIssue(ctx){_reportContext=ctx||'order';_reportSelected='';var cats=_reportCategories[ctx]||_reportCategories.order;var el=document.getElementById('report-categories');if(el){el.innerHTML=cats.map(function(c){return '<button onclick="selectReportCat(this,\''+c+'\')" style="padding:10px 14px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:13px;cursor:pointer;text-align:left;">'+c+'</button>';}).join('');}var desc=document.getElementById('report-desc');if(desc)desc.value='';document.getElementById('report-modal').style.display='flex';}
 function selectReportCat(btn,cat){_reportSelected=cat;document.querySelectorAll('#report-categories button').forEach(function(b){b.style.background='#242424';b.style.color='#9A9390';b.style.borderColor='#2A2850';});btn.style.background='rgba(232,57,46,.12)';btn.style.color='#E8392E';btn.style.borderColor='rgba(232,57,46,.4)';}
+// Uploads one evidence photo to an already-created ticket — raw fetch,
+// not api(), since a FormData body needs the browser's own multipart
+// Content-Type (with boundary), which api() always overrides to JSON.
+async function uploadTicketEvidence(ticketId, fileInputEl){
+  var file = fileInputEl && fileInputEl.files && fileInputEl.files[0];
+  if(!file) return;
+  var fd = new FormData();
+  fd.append('evidence', file);
+  try{
+    await fetch(API_BASE+'/support/tickets/'+ticketId+'/evidence', { method:'POST', headers:{ 'Authorization':'Bearer '+_accessToken }, body: fd });
+  }catch(err){ /* best-effort — the ticket itself already went through */ }
+}
+
 async function submitReport(){
   if(!_reportSelected){toast('Please select an issue category');return;}
   var ctxMap={order:'ORDER',order_live:'ORDER',shopper_session:'SHOP_SESSION',rider:'RIDER',vendor:'VENDOR',customer:'CUSTOMER'};
   var desc=(document.getElementById('report-desc')||{}).value||'';
+  var refundEl=document.getElementById('report-refund');
+  var refundNaira=refundEl?parseFloat(refundEl.value):NaN;
+  var evidenceEl=document.getElementById('report-evidence');
   try{
-    await api('/support/tickets',{method:'POST',body:JSON.stringify({
+    var res = await api('/support/tickets',{method:'POST',body:JSON.stringify({
       context: ctxMap[_reportContext]||'GENERAL',
       category: _reportSelected,
       description: desc||undefined,
+      isDispute: !!(refundNaira>0 || (evidenceEl&&evidenceEl.files&&evidenceEl.files[0])),
+      requestedRefundKobo: refundNaira>0 ? Math.round(refundNaira*100) : undefined,
     })});
+    if(evidenceEl&&evidenceEl.files&&evidenceEl.files[0]) await uploadTicketEvidence(res.ticket.id, evidenceEl);
     document.getElementById('report-modal').style.display='none';
     toast('Report submitted! Our team will contact you within 30 mins.');
     if(_reportContext==='order_live'){
@@ -5353,12 +5380,18 @@ function selectShopIssue(label){
 }
 async function submitShopReport(){
   if(!_selectedShopIssue){toast('Please select an issue category');return;}
+  var refundEl=document.getElementById('shop-issue-refund');
+  var refundNaira=refundEl?parseFloat(refundEl.value):NaN;
+  var evidenceEl=document.getElementById('shop-issue-evidence');
   try{
-    await api('/support/tickets',{method:'POST',body:JSON.stringify({
+    var res = await api('/support/tickets',{method:'POST',body:JSON.stringify({
       context:'SHOP_SESSION',
       category:_selectedShopIssue,
       contextId:window._sfmSession?window._sfmSession.id:undefined,
+      isDispute: !!(refundNaira>0 || (evidenceEl&&evidenceEl.files&&evidenceEl.files[0])),
+      requestedRefundKobo: refundNaira>0 ? Math.round(refundNaira*100) : undefined,
     })});
+    if(evidenceEl&&evidenceEl.files&&evidenceEl.files[0]) await uploadTicketEvidence(res.ticket.id, evidenceEl);
     closeBottomSheet();
     toast('Report submitted. Support will contact you within 1 hour.');
   }catch(err){
@@ -5402,6 +5435,8 @@ function openShopReportIssueModal(){
     +'<div id="shop-issue-selected" style="display:none;background:rgba(46,204,113,.1);border:1.5px solid rgba(46,204,113,.3);border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:13px;color:#2ECC71;font-weight:700;"></div>'
     +issueHtml
     +'<textarea id="shop-issue-detail" placeholder="Additional details (optional)..." rows="3" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:10px;color:#F2EDE8;font-size:13px;resize:none;margin-bottom:12px;box-sizing:border-box;"></textarea>'
+    +'<input id="shop-issue-refund" type="number" placeholder="₦ refund requested (optional)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:10px;color:#F2EDE8;font-size:13px;margin-bottom:12px;box-sizing:border-box;">'
+    +'<input id="shop-issue-evidence" type="file" accept="image/*" style="width:100%;color:#9A9390;font-size:12px;margin-bottom:12px;">'
     +'<button onclick="submitShopReport()" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-bottom:8px;">Submit Report</button>'
     +'<button onclick="closeBottomSheet()" style="width:100%;background:transparent;border:1.5px solid #2A2850;border-radius:14px;padding:13px;font-size:14px;font-weight:700;color:#9A9390;cursor:pointer;">Back to Payment</button>'
   );

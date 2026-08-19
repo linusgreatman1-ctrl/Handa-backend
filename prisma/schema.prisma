@@ -920,6 +920,17 @@ model SupportTicket {
   createdAt   DateTime      @default(now())
   resolvedAt  DateTime?
 
+  // Disputes are support tickets with a money claim attached — same
+  // table, extra fields, rather than a parallel model. See
+  // src/services/escrow.service.js's disputeHold() for how a HELD hold
+  // gets pulled out of the auto-release sweep while one of these is
+  // under investigation.
+  isDispute           Boolean   @default(false)
+  evidenceUrl         String?
+  requestedRefundKobo Int?
+  refundAmountKobo    Int?
+  refundedAt          DateTime?
+
   @@index([userId])
   @@index([status])
 }

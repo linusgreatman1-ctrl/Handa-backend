@@ -294,11 +294,21 @@ async function renderTickets() {
   main.innerHTML = '<h2>Support Tickets</h2><div id="tickets-table" class="empty">Loading...</div>';
   try {
     const data = await api('/support/tickets/all');
-    const rows = data.tickets.map(t =>
-      '<tr><td>' + t.category + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '</td>' +
-      '<td>' + pill(t.status) + '</td>' +
-      '<td>' + (t.status !== 'RESOLVED' ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">Resolve</button>' : '') + '</td></tr>'
-    ).join('');
+    const rows = data.tickets.map(t => {
+      const disputeInfo = t.isDispute
+        ? (t.evidenceUrl ? '<a href="' + t.evidenceUrl + '" target="_blank">Evidence</a> · ' : '')
+          + (t.requestedRefundKobo ? 'Requested: ' + money(t.requestedRefundKobo) : '')
+          + (t.refundAmountKobo ? ' · Refunded: ' + money(t.refundAmountKobo) : '')
+        : '';
+      const actions = t.status !== 'RESOLVED'
+        ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">Resolve</button>'
+          + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\')">Resolve with Refund</button>' : '')
+          + (t.isDispute && t.status === 'OPEN' ? ' <button class="action-btn" onclick="investigateTicket(\'' + t.id + '\')">Investigate</button>' : '')
+        : '';
+      return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '<br><small>' + disputeInfo + '</small></td>' +
+        '<td>' + pill(t.status) + '</td>' +
+        '<td>' + actions + '</td></tr>';
+    }).join('');
     document.getElementById('tickets-table').outerHTML = data.tickets.length
       ? '<table><thead><tr><th>Category</th><th>Context</th><th>User</th><th>Description</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div class="empty">No support tickets.</div>';
@@ -309,6 +319,20 @@ async function renderTickets() {
 async function resolveTicket(id) {
   try { await api('/support/tickets/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'RESOLVED', resolution: 'Resolved by admin' }) }); renderTickets(); }
   catch (e) { alert(e.message); }
+}
+async function investigateTicket(id) {
+  try { await api('/support/tickets/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'IN_PROGRESS' }) }); renderTickets(); }
+  catch (e) { alert(e.message); }
+}
+async function resolveTicketWithRefund(id) {
+  const naira = prompt('Refund amount in Naira?');
+  if (naira === null) return;
+  const kobo = Math.round(parseFloat(naira) * 100);
+  if (!kobo || kobo <= 0) { alert('Enter a valid amount.'); return; }
+  try {
+    await api('/support/tickets/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'RESOLVED', resolution: 'Refund approved', refundAmountKobo: kobo }) });
+    renderTickets();
+  } catch (e) { alert(e.message); }
 }
 
 async function renderWithdrawals() {
