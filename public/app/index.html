@@ -5187,7 +5187,7 @@ async function rejectItem(id) {
 }
 
 function afterShopperAuth(){
-  document.querySelectorAll('.screen').forEach(function(sc){
+  document.querySelectorAll('.escreen').forEach(function(sc){
     sc.classList.remove('active');
     sc.style.display='none';
   });
@@ -6300,7 +6300,7 @@ function _finishLogin(nm){
   var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
   window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
   connectSocket();
-  if(_eRole==='shopper'){S.role='shopper';afterShopperAuth();}
+  if(_eRole==='shopper'){S.role='shopper';S.curScreen='shopper';afterShopperAuth();var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}}
   else if(_eRole==='cook'){eGo('cook');}
   else if(_eRole==='event_planner'){eGo('event_planner');}
   else if(_eRole==='rider'){S.role='rider';if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
@@ -6381,7 +6381,7 @@ async function tryRestoreSession(){
     connectSocket();
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
     var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
-    if(_eRole==='shopper'){S.role='shopper';afterShopperAuth();}
+    if(_eRole==='shopper'){S.role='shopper';S.curScreen='shopper';afterShopperAuth();var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}}
     else if(_eRole==='cook'){eGo('cook');}
     else if(_eRole==='event_planner'){eGo('event_planner');}
     else if(_eRole==='rider'){if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
