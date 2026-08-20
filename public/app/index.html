@@ -7240,63 +7240,47 @@ function openEPChat(){if(!_epb||!_epb.ep)return;var ov=document.getElementById('
 function callEP(){if(!_epb||!_epb.ep)return;openCallModal(_epb.ep.nm,_epb.ep.ph||'+234000','Event Planner',_epb.ep.em||'🎊');}
 function waEP(){if(!_epb||!_epb.ep)return;window.open('https://wa.me/'+(_epb.ep.ph||'234000').replace(/[^0-9]/g,''),'_blank');}
 
-function populateHistory(){
+var STATUS_COLORS={REQUESTED:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#E8392E',
+  SEARCHING:'#F5A623',MATCHED:'#3B9FE8',BUILDING_LIST:'#3B9FE8',LIVE_CALL:'#3B9FE8',PACKAGING:'#3B9FE8',FINDING_RIDER:'#3B9FE8',RIDER_ASSIGNED:'#3B9FE8',OUT_FOR_DELIVERY:'#3B9FE8',DELIVERED:'#2ECC71'};
+async function populateHistory(){
   _allOrders = [];
-  var now = new Date();
-  // Cook bookings
-  if(window._cookBookings){
-    Object.keys(window._cookBookings).forEach(function(cookId){
-      var cook = (D.cooks||[]).find(function(c){return String(c.id)===String(cookId);});
-      (window._cookBookings[cookId]||[]).forEach(function(b){
-        _allOrders.push({
-          icon: cook?cook.em:'🧑‍🍳',
-          title: (cook?cook.nm:'Home Cook')+' Session',
-          sub: b.packages?b.packages.map(function(p){return p.nm;}).join(', '):(b.notes||'Cooking session'),
-          date: b.date+(b.time?' at '+b.time:''),
-          amount: b.total||0,
-          status: b.status||'Confirmed',
-          statusColor: b.status==='Cancelled'?'#E8392E':'#2ECC71',
-          type: 'Home Cook',
-          ts: b.ts||Date.now()
-        });
+  try{
+    var [bRes,sRes]=await Promise.all([
+      api('/bookings?as=customer').catch(function(){return {bookings:[]};}),
+      api('/shop-sessions?as=customer').catch(function(){return {sessions:[]};}),
+    ]);
+    (bRes.bookings||[]).forEach(function(b){
+      var isEP=b.type==='EVENT_PLANNING';
+      _allOrders.push({
+        icon: isEP?'🎊':'🧑‍🍳',
+        title: (b.vendor?b.vendor.bizName:(isEP?'Event Planner':'Home Cook'))+(isEP?' – Event':' Session'),
+        sub: b.servicePackage?b.servicePackage.label:((b.selectedItems||[]).map(function(i){return i.name;}).join(', ')||b.notes||'Booking'),
+        date: (b.eventDate?new Date(b.eventDate).toLocaleDateString():'')+(b.eventTime?' at '+b.eventTime:''),
+        amount: Math.round((b.totalKobo||0)/100),
+        status: b.status,
+        statusColor: STATUS_COLORS[b.status]||'#9A9390',
+        type: isEP?'Event':'Home Cook',
+        ts: new Date(b.createdAt).getTime(),
+        bookingId: b.id, totalKobo: b.totalKobo
       });
     });
-  }
-  // EP bookings
-  if(window._epBookings){
-    Object.keys(window._epBookings).forEach(function(epId){
-      var ep = (D.ep||[]).find(function(e){return String(e.id)===String(epId);});
-      (window._epBookings[epId]||[]).forEach(function(b){
-        _allOrders.push({
-          icon: ep?ep.em:'🎊',
-          title: (ep?ep.nm:'Event Planner')+' – '+(b.type||'Event'),
-          sub: 'Venue: '+(b.venue||'TBD')+(b.guests?' • '+b.guests+' guests':''),
-          date: b.date+(b.time?' at '+b.time:''),
-          amount: b.total||0,
-          status: b.status||'Confirmed',
-          statusColor: b.status==='Cancelled'?'#E8392E':'#2ECC71',
-          type: 'Event',
-          ts: b.ts||Date.now()
-        });
-      });
-    });
-  }
-  // Shopper sessions
-  if(window._shopSessions){
-    (window._shopSessions||[]).forEach(function(s){
+    (sRes.sessions||[]).forEach(function(s){
       _allOrders.push({
         icon:'🛒',title:'Shopping Session',
-        sub:s.items||'Grocery shop',date:s.date||'',
-        amount:s.total||0,status:s.status||'Completed',
-        statusColor:'#2ECC71',type:'Shopping',ts:s.ts||Date.now()
+        sub:(s.items||[]).map(function(i){return i.text;}).join(', ')||'Grocery shop',
+        date:new Date(s.createdAt).toLocaleDateString(),
+        amount:Math.round((s.depositKobo||(s.itemsTotalKobo+s.sessionFeeKobo)||0)/100),
+        status:s.status,statusColor:STATUS_COLORS[s.status]||'#9A9390',type:'Shopping',ts:new Date(s.createdAt).getTime(),
+        sessionId: s.id
       });
     });
-  }
+  }catch(err){}
   _allOrders.sort(function(a,b){return (b.ts||0)-(a.ts||0);});
 }
-function renderEHistory(){
+async function renderEHistory(){
   var el=document.getElementById('history-list');if(!el)return;
-  populateHistory();
+  el.innerHTML='<div style="text-align:center;padding:40px;color:#9A9390">Loading…</div>';
+  await populateHistory();
   if(!_allOrders.length){
     el.innerHTML='<div style="text-align:center;padding:60px 20px;color:#9A9390"><div style="font-size:48px;margin-bottom:16px">📋</div><h3 style="margin:0 0 8px;font-size:16px;color:#F2EDE8">No orders yet</h3><p style="font-size:13px;margin:0">Your bookings and shopping sessions will appear here</p></div>';
     return;
@@ -7315,14 +7299,66 @@ function renderEHistory(){
 function renderEHistoryItems(orders){
   if(!orders.length)return '<div style="text-align:center;padding:40px;color:#9A9390"><p>No orders in this category</p></div>';
   return orders.map(function(o){
+    var payBtn = (o.bookingId && o.status==='ACCEPTED')
+      ? '<button onclick="event.stopPropagation();payForBooking(\''+o.bookingId+'\','+o.totalKobo+')" style="margin-top:6px;padding:6px 12px;border-radius:8px;border:none;background:#E8392E;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">Pay Now</button>'
+      : '';
     return '<div style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px">'
       +'<div style="width:44px;height:44px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+o.icon+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px;color:#F2EDE8">'+o.title+'</div>'
       +'<div style="font-size:11px;color:#9A9390;margin-top:2px">'+o.sub+'</div>'
       +'<div style="font-size:10px;color:#555;margin-top:2px">'+o.date+'</div></div>'
       +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#F2EDE8;font-size:13px">₦'+Number(o.amount).toLocaleString()+'</div>'
-      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px">'+o.status+'</div></div></div>';
+      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px">'+o.status+'</div>'+payBtn+'</div></div>';
   }).join('');
+}
+// Opens a Wallet-vs-Card/Transfer/USSD picker for an ACCEPTED booking,
+// mirroring the vendor payment-method picker built for commission/feature
+// boost payments — then, for non-wallet methods, opens Paystack's real
+// checkout in a new tab and polls the booking until it leaves ACCEPTED
+// (webhook confirms payment → status flips to CONFIRMED), so the customer
+// is brought back to where they left off automatically.
+function payForBooking(bookingId, totalKobo){
+  var html = '<div id="bkpay-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:360px;width:100%;padding:20px;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">Pay ₦'+Number(Math.round(totalKobo/100)).toLocaleString()+'</div>'
+    + '<div style="font-size:12px;color:#9A9390;margin-bottom:14px;">Choose how to pay into escrow</div>'
+    + '<button onclick="closeBookingPayModal();_payBookingWallet(\''+bookingId+'\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💰 Wallet Balance</button>'
+    + '<button onclick="closeBookingPayModal();_payBookingCard(\''+bookingId+'\','+totalKobo+')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💳 Card / Bank Transfer / USSD</button>'
+    + '<button onclick="closeBookingPayModal()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
+    + '</div></div>';
+  var d=document.createElement('div');d.id='bkpay-modal-wrap';d.innerHTML=html;document.body.appendChild(d);
+}
+function closeBookingPayModal(){var d=document.getElementById('bkpay-modal-wrap');if(d)d.remove();}
+async function _payBookingWallet(bookingId){
+  try{
+    var res=await api('/bookings/'+bookingId+'/pay',{method:'POST',body:JSON.stringify({paymentMethod:'WALLET'})});
+    if(res.paid){showToast&&showToast('Payment successful — booking confirmed!','success');renderEHistory();}
+  }catch(err){showToast&&showToast(err.message||'Could not process payment','warning');}
+}
+async function _payBookingCard(bookingId,totalKobo){
+  openEscrowModal(Math.round(totalKobo/100), async function(){
+    try{
+      var methodMap={card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var paymentMethod=methodMap[window._escrowMethod]||'CARD';
+      var res=await api('/bookings/'+bookingId+'/pay',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
+      if(res.paid){showToast&&showToast('Payment successful — booking confirmed!','success');renderEHistory();return;}
+      if(res.authorizationUrl){
+        window.open(res.authorizationUrl,'_blank');
+        showToast&&showToast('Complete payment in the new tab, then return here.','success');
+        var pollIv=setInterval(async function(){
+          try{
+            var r=await api('/bookings/'+bookingId);
+            if(r.booking.status!=='ACCEPTED'){
+              clearInterval(pollIv);
+              if(r.booking.status==='CONFIRMED')showToast&&showToast('Payment confirmed — booking is set!','success');
+              if(S.curScreen==='history')renderEHistory();
+            }
+          }catch(e){}
+        },4000);
+        setTimeout(function(){clearInterval(pollIv);},10*60*1000);
+      }
+    }catch(err){showToast&&showToast(err.message||'Could not process payment','warning');}
+  });
 }
 function filterEHistory(btn,cat){
   document.querySelectorAll('#history-list button').forEach(function(b){
