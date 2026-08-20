@@ -30,7 +30,19 @@ async function atFetch(url, body) {
     },
     body: new URLSearchParams(body).toString(),
   });
-  const json = await res.json();
+  // Africa's Talking returns JSON on success, but auth/validation failures
+  // (e.g. "The supplied authentication is invalid") come back as plain
+  // text — res.json() throws SyntaxError on those, which would otherwise
+  // surface as an opaque 500 with no useful message.
+  const raw = await res.text();
+  let json;
+  try {
+    json = JSON.parse(raw);
+  } catch (parseErr) {
+    const err = new Error(raw.trim() || "Africa's Talking request failed.");
+    err.status = res.status >= 400 ? res.status : 502;
+    throw err;
+  }
   if (!res.ok) {
     const err = new Error(json.SMSMessageData?.Message || json.errorMessage || "Africa's Talking request failed.");
     err.status = res.status >= 400 ? res.status : 502;
@@ -45,7 +57,18 @@ async function sendSms(toPhone, message) {
   const senderId = process.env.AFRICASTALKING_SENDER_ID;
   const body = { username, to: toPhone, message };
   if (senderId) body.from = senderId;
-  return atFetch(SMS_BASE, body);
+  const result = await atFetch(SMS_BASE, body);
+  // A 2xx HTTP response only means Africa's Talking accepted the request —
+  // actual delivery is reported per-recipient and can still fail (e.g.
+  // insufficient balance, invalid number), which would otherwise look like
+  // a silent success to the caller.
+  const recipient = result.SMSMessageData?.Recipients?.[0];
+  if (recipient && recipient.status !== "Success") {
+    const err = new Error(`SMS not delivered: ${recipient.status}`);
+    err.status = 502;
+    throw err;
+  }
+  return result;
 }
 
 // Places an outbound call from the account's Africa's Talking virtual
