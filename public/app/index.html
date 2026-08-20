@@ -443,7 +443,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <label class="il">Phone or Email</label>
       <div class="ir"><span class="ii">✉️</span><input class="if ic" id="inp-identifier" type="text" placeholder="+234 800 000 0000 or you@example.com"></div>
       <label class="il">Password</label>
-      <div class="ir" style="margin-bottom:20px"><span class="ii">🔒</span><input class="if ic" id="inp-pass" type="password" placeholder="••••••••"></div>
+      <div class="ir" style="margin-bottom:20px"><span class="ii">🔒</span><input class="if ic" id="inp-pass" type="password" placeholder="••••••••" style="padding-right:40px"><span onclick="togglePwVisibility('inp-pass',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:16px;cursor:pointer;user-select:none;">👁️</span></div>
     </div>
     <div id="reg-form" style="display:none"></div>
     <button class="btn full" id="auth-btn" onclick="doAuth()" style="padding:15px;font-size:16px;margin-bottom:14px">Sign In →</button>
@@ -1552,6 +1552,17 @@ function N(n){return '\u20a6'+Number(n).toLocaleString();}
 function B(t,c){return '<span class="bdg '+c+'">'+t+'</span>';}
 function St(r){return '<span class="stars">'+'★'.repeat(Math.floor(r))+'☆'.repeat(5-Math.floor(r))+' <span class="sc">'+r+'</span></span>';}
 function toast(m){var o=document.querySelector('.toast');if(o)o.remove();var t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},2800);}
+
+function pwToggleBtn(inputId){
+  return '<span onclick="togglePwVisibility(\''+inputId+'\',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:16px;cursor:pointer;user-select:none;">&#x1F441;&#xFE0F;</span>';
+}
+function togglePwVisibility(id,btn){
+  var inp=document.getElementById(id);
+  if(!inp)return;
+  var show=inp.type==='password';
+  inp.type=show?'text':'password';
+  btn.textContent=show?'🙈':'👁️';
+}
 
 // ═══════════════════ NAVIGATION ═════════════════════════════════════════════
 function afterAuth(){
@@ -7212,7 +7223,10 @@ function buildRegForm(){
   var states=['','Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
   var stateOpts=states.map(function(s){return '<option'+(s?'':' value=""')+'>'+(s||'Select State\u2026')+'</option>';}).join('');
   var stateLGA='<label class="il">State</label><select class="if" id="r-state" onchange="loadLGAs(this.value)" style="margin-bottom:12px">'+stateOpts+'</select><label class="il">Local Government</label><select class="if" id="r-lga" style="margin-bottom:12px"><option value="">Select LGA\u2026</option></select>';
-  var fld=function(lb,ii,id,ph,tp){return '<label class="il">'+lb+'</label><div class="ir"><span class="ii">'+ii+'</span><input class="if ic" id="'+id+'" '+(tp?'type="'+tp+'" ':'')+' placeholder="'+ph+'"></div>';};
+  var fld=function(lb,ii,id,ph,tp){
+    var eye=tp==='password'?pwToggleBtn(id):'';
+    return '<label class="il">'+lb+'</label><div class="ir"><span class="ii">'+ii+'</span><input class="if ic" id="'+id+'" '+(tp?'type="'+tp+'" ':'')+' placeholder="'+ph+'"'+(eye?' style="padding-right:40px"':'')+'>'+eye+'</div>';
+  };
   var sel=function(lb,id,opts){return '<label class="il">'+lb+'</label><select class="if" id="'+id+'" style="margin-bottom:12px">'+opts+'</select>';};
   var ta=function(lb,id,ph){return '<label class="il">'+lb+'</label><textarea class="if" id="'+id+'" rows="3" placeholder="'+ph+'" style="margin-bottom:12px"></textarea>';};
   var bank=fld('Bank Account Name','&#x1F3E6;','r-bankname','Account holder name','')+fld('Bank Name','&#x1F3E6;','r-bankname2','e.g. GTBank, OPay','')+fld('Account Number','&#x1F4B3;','r-bankacct','10-digit account number','');

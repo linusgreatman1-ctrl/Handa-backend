@@ -68,7 +68,7 @@
     <h1>Handa <span style="color:#E8392E">Admin</span></h1>
     <p>Sign in with an ADMIN-role account.</p>
     <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="username"></div>
-    <div class="field"><label>Password</label><input id="login-password" type="password" autocomplete="current-password"></div>
+    <div class="field"><label>Password</label><div style="position:relative"><input id="login-password" type="password" autocomplete="current-password" style="padding-right:38px"><span onclick="togglePwVisibility('login-password',this)" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:16px;cursor:pointer;user-select:none;">👁️</span></div></div>
     <button class="btn" id="login-btn" onclick="doLogin()">Sign In</button>
     <div class="err" id="login-err"></div>
   </div>
@@ -128,6 +128,13 @@ async function api(path, opts = {}) {
   return data;
 }
 
+function togglePwVisibility(id, btn) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.textContent = show ? '🙈' : '👁️';
+}
 function money(kobo) { return '₦' + ((kobo || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 const NG_STATES = ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
 function stateFilterOptions(selected) { return '<option value="">All states</option>' + NG_STATES.map(s => '<option' + (selected === s ? ' selected' : '') + '>' + s + '</option>').join(''); }
@@ -1167,7 +1174,7 @@ function openAddAdminForm() {
     '<div class="card" style="max-width:360px;margin-bottom:16px">' +
     '<div class="field"><label>Name</label><input id="na-name"></div>' +
     '<div class="field"><label>Email</label><input id="na-email" type="email"></div>' +
-    '<div class="field"><label>Password</label><input id="na-password" type="password"></div>' +
+    '<div class="field"><label>Password</label><div style="position:relative"><input id="na-password" type="password" style="padding-right:38px"><span onclick="togglePwVisibility(\'na-password\',this)" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:16px;cursor:pointer;user-select:none;">👁️</span></div></div>' +
     '<div class="field"><label>Tier</label><select id="na-tier"><option value="ORDINARY">Ordinary Admin</option><option value="CONTENT">Content Admin</option></select></div>' +
     '<div style="display:flex;gap:8px"><button class="btn" style="width:auto;padding:10px 16px" onclick="submitAddAdmin()">Create</button>' +
     '<button class="action-btn" onclick="document.getElementById(\'add-admin-form\').innerHTML=\'\'">Cancel</button></div>' +
