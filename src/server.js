@@ -31,6 +31,7 @@ const configRoutes = require("./routes/config.routes");
 const kycRoutes = require("./routes/kyc.routes");
 const eventRequestsRoutes = require("./routes/eventRequests.routes");
 const favouritesRoutes = require("./routes/favourites.routes");
+const voiceRoutes = require("./routes/voice.routes");
 
 const app = express();
 
@@ -124,6 +125,7 @@ app.use("/api/kyc", kycRoutes);
 app.use("/api/event-requests", eventRequestsRoutes);
 app.use("/api/favourites", favouritesRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/voice", voiceRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { logAdminAction } = require("../services/auditLog.service");
+const africastalking = require("../services/africastalking.service");
 
 // Headline numbers for the admin panel's landing dashboard — cheap
 // aggregate counts, not full row dumps.
@@ -207,6 +208,39 @@ async function getVendorDetailForAdmin(req, res, next) {
       prisma.servicePackage.findMany({ where: { vendorId: vendor.id }, orderBy: { label: "asc" } }),
     ]);
     res.json({ vendor, kycDocuments, commissionPeriods, finance, menuItems, servicePackages });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Ad-hoc outreach to any user's real phone number (customer, vendor,
+// rider, or shopper — every role's User row carries `phone`) from the
+// admin panel. Both actions require Africa's Talking credentials to be
+// set; in their absence the service throws a clear 503 rather than
+// pretending the message/call went out.
+async function smsUserForAdmin(req, res, next) {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ error: "message is required." });
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, name: true, phone: true } });
+    if (!target) return res.status(404).json({ error: "User not found." });
+    if (!target.phone) return res.status(400).json({ error: "This user has no phone number on file." });
+    await africastalking.sendSms(target.phone, message);
+    logAdminAction(req.user, "SMS_SENT", "User", target.id, message.slice(0, 200));
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function callUserForAdmin(req, res, next) {
+  try {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, name: true, phone: true } });
+    if (!target) return res.status(404).json({ error: "User not found." });
+    if (!target.phone) return res.status(400).json({ error: "This user has no phone number on file." });
+    await africastalking.initiateCall(target.phone);
+    logAdminAction(req.user, "CALL_INITIATED", "User", target.id, null);
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -843,6 +877,8 @@ module.exports = {
   getVendorDetailForAdmin,
   deleteMenuItemForAdmin,
   deleteServicePackageForAdmin,
+  smsUserForAdmin,
+  callUserForAdmin,
   getRiderDetailForAdmin,
   getShopperDetailForAdmin,
   setVendorVerified,

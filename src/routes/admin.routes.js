@@ -19,6 +19,8 @@ router.get("/vendors/:id", requireContentOrSuperAdmin, ctrl.getVendorDetailForAd
 router.patch("/vendors/:id/verify", ctrl.setVendorVerified);
 router.delete("/menu-items/:id", requireSuperAdmin, ctrl.deleteMenuItemForAdmin);
 router.delete("/service-packages/:id", requireSuperAdmin, ctrl.deleteServicePackageForAdmin);
+router.post("/users/:id/sms", requireContentOrSuperAdmin, ctrl.smsUserForAdmin);
+router.post("/users/:id/call", requireContentOrSuperAdmin, ctrl.callUserForAdmin);
 router.get("/riders", requireContentOrSuperAdmin, ctrl.listRidersForAdmin);
 router.get("/riders/:id", requireContentOrSuperAdmin, ctrl.getRiderDetailForAdmin);
 router.patch("/riders/:id/verify", ctrl.setRiderVerified);

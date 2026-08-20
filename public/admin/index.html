@@ -283,10 +283,13 @@ async function renderUsers() {
       } else if (u.shopperProfile) {
         verifyBtn = '<button class="action-btn" onclick="setProfileVerified(\'shopper\',\'' + u.shopperProfile.id + '\',' + (!u.shopperProfile.isVerified) + ')">' + (u.shopperProfile.isVerified ? 'Unverify' : 'Verify') + '</button>';
       }
+      const outreachBtns = u.phone
+        ? ' <button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call</button>'
+        : '';
       return '<tr><td>' + u.name + '</td><td>' + (u.email || u.phone || '—') + '</td><td>' + u.role + '</td><td>' + (u.state || '—') + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
         '<td>' + (u.status === 'ACTIVE'
           ? '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'SUSPENDED\')">Suspend</button>'
-          : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + ' ' + verifyBtn + '</td></tr>';
+          : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + ' ' + verifyBtn + outreachBtns + '</td></tr>';
     }).join('');
     const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
     const pager = '<div class="toolbar" style="margin-top:12px">'
@@ -308,6 +311,21 @@ async function setUserStatus(id, status) {
 async function setProfileVerified(kind, id, isVerified) {
   try { await api('/admin/' + kind + 's/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderUsers(); }
   catch (e) { alert(e.message); }
+}
+async function openSmsModal(userId, name) {
+  const message = prompt('Send an SMS to ' + name + ':');
+  if (message === null || !message.trim()) return;
+  try {
+    await api('/admin/users/' + userId + '/sms', { method: 'POST', body: JSON.stringify({ message: message.trim() }) });
+    alert('Message sent to ' + name + '.');
+  } catch (e) { alert(e.message); }
+}
+async function callUser(userId, name) {
+  if (!confirm('Place a call to ' + name + '?')) return;
+  try {
+    await api('/admin/users/' + userId + '/call', { method: 'POST' });
+    alert('Calling ' + name + '… the call will connect through to the support line once answered.');
+  } catch (e) { alert(e.message); }
 }
 
 async function renderVendors() {
@@ -361,6 +379,7 @@ async function renderVendorDetail(id) {
         card('Verified', v.isVerified ? 'Yes' : 'Pending', '') +
         card('Wallet Balance', money(f.balanceKobo), '') +
       '</div>' +
+      (u.phone ? '<div class="toolbar" style="margin-top:10px"><button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button></div>' : '') +
       '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
         card('Paid Out', money(f.paidKobo), 'Released into wallet') +
         card('Pending', money(f.pendingKobo), 'Held in escrow, awaiting release') +
@@ -748,6 +767,7 @@ async function renderRiderDetail(id) {
         card('Vehicle', (r.vehicleType || 'Not set') + (r.plateNumber ? ' · ' + r.plateNumber : ''), '') +
         card('Deliveries', r.deliveries, 'Rating ' + (r.ratingAvg || 0).toFixed(1)) +
       '</div>' +
+      (u.phone ? '<div class="toolbar" style="margin-top:10px"><button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button></div>' : '') +
       '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
         card('Wallet Balance', money(f.balanceKobo), '') +
         card('Paid Out', money(f.paidKobo), 'Released into wallet') +
@@ -802,6 +822,7 @@ async function renderShopperDetail(id) {
         card('Market', s.market || 'Not set', '') +
         card('Rating', (s.ratingAvg || 0).toFixed(1), s.ratingCount + ' ratings') +
       '</div>' +
+      (u.phone ? '<div class="toolbar" style="margin-top:10px"><button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button></div>' : '') +
       '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
         card('Wallet Balance', money(f.balanceKobo), '') +
         card('Paid Out', money(f.paidKobo), 'Released into wallet') +
