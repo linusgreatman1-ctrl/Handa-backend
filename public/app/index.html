@@ -3112,7 +3112,17 @@ async function sfmStartCall(sessionId, role, localVideoElId, remoteVideoElId){
   var iceServers = await sfmFetchIceServers();
   var pc = new RTCPeerConnection({ iceServers: iceServers });
   rtc.pc = pc;
-  if(rtc.localStream) rtc.localStream.getTracks().forEach(function(t){ pc.addTrack(t, rtc.localStream); });
+  if(rtc.localStream){
+    rtc.localStream.getTracks().forEach(function(t){ pc.addTrack(t, rtc.localStream); });
+  }else{
+    // No camera/mic on this side (denied or unavailable) -- without at
+    // least one transceiver, the SDP offer/answer carries no media
+    // section at all, so ICE has nothing to negotiate over and the call
+    // never connects even though the other side might have a working
+    // camera. A receive-only audio transceiver keeps the connection real
+    // and connectable either way.
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+  }
 
   pc.onicecandidate = function(ev){
     if(ev.candidate && rtc.remoteSocketId && _socket){
