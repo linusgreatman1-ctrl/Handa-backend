@@ -13,8 +13,17 @@ async function openThread(req, res, next) {
     const allParticipantIds = Array.from(new Set([req.user.id, ...(participantIds || [])]));
     if (allParticipantIds.length < 2) return res.status(400).json({ error: "At least one other participant is required." });
 
+    // Scoped to the current user being a participant — contextId alone
+    // isn't unique per conversation (e.g. a vendor's profile id is the
+    // same for every customer who chats with them), so without this a
+    // second customer's lookup would land on the first customer's thread
+    // and then 404 on every message fetch (never actually added as a
+    // participant of it).
     let thread = contextId
-      ? await prisma.chatThread.findFirst({ where: { contextType, contextId }, include: { participants: true } })
+      ? await prisma.chatThread.findFirst({
+          where: { contextType, contextId, participants: { some: { userId: req.user.id } } },
+          include: { participants: true },
+        })
       : null;
 
     if (!thread) {

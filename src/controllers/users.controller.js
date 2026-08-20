@@ -180,6 +180,21 @@ async function setAvailability(req, res, next) {
   }
 }
 
+// Powers the customer profile header's "Orders"/"Reviews" stat pills —
+// previously hardcoded (47/12) regardless of the logged-in account.
+async function getMyStats(req, res, next) {
+  try {
+    const [completedBookings, completedSessions, reviewsGiven] = await Promise.all([
+      prisma.booking.count({ where: { customerId: req.user.id, status: "COMPLETED" } }),
+      prisma.shopSession.count({ where: { customerId: req.user.id, status: "COMPLETED" } }),
+      prisma.rating.count({ where: { raterId: req.user.id } }),
+    ]);
+    res.json({ ordersCount: completedBookings + completedSessions, reviewsCount: reviewsGiven });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function uploadAvatar(req, res, next) {
   try {
     if (!req.file) return res.status(400).json({ error: "No image uploaded." });
@@ -298,6 +313,7 @@ module.exports = {
   createRiderProfile,
   createShopperProfile,
   setAvailability,
+  getMyStats,
   uploadAvatar,
   linkBankAccount,
   listBanks,

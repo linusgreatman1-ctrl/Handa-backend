@@ -39,7 +39,7 @@ async function getVendor(req, res, next) {
     const vendor = await prisma.vendorProfile.findUnique({
       where: { id: req.params.id },
       include: {
-        user: { select: { name: true, address: true, state: true, lga: true, avatarUrl: true, phone: true } },
+        user: { select: { id: true, name: true, address: true, state: true, lga: true, avatarUrl: true, phone: true } },
         menuItems: { orderBy: [{ popular: "desc" }, { name: "asc" }] },
         servicePackages: true,
       },

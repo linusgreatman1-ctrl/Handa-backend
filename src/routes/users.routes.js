@@ -15,6 +15,7 @@ router.post("/me/vendor-profile", ctrl.createVendorProfile);
 router.post("/me/rider-profile", ctrl.createRiderProfile);
 router.post("/me/shopper-profile", ctrl.createShopperProfile);
 router.patch("/me/availability", ctrl.setAvailability);
+router.get("/me/stats", ctrl.getMyStats);
 router.post("/me/avatar", upload.single("avatar"), ctrl.uploadAvatar);
 
 router.get("/banks", ctrl.listBanks);
