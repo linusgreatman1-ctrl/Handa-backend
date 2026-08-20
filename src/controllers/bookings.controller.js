@@ -154,7 +154,15 @@ async function payBooking(req, res, next) {
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
     if (booking.status !== "ACCEPTED") return res.status(409).json({ error: "This booking has not been accepted by the vendor yet." });
 
-    if (booking.paymentMethod === "WALLET") {
+    // The customer can choose their payment method here, at actual pay
+    // time -- not be locked into whatever was recorded when the booking
+    // was first requested (which may have been a placeholder default).
+    const paymentMethod = req.body.paymentMethod || booking.paymentMethod;
+    if (paymentMethod !== booking.paymentMethod) {
+      await prisma.booking.update({ where: { id: booking.id }, data: { paymentMethod } });
+    }
+
+    if (paymentMethod === "WALLET") {
       await prisma.$transaction(async (tx) => {
         await walletSvc.debitWallet(req.user.id, booking.totalKobo, "ESCROW_HOLD", { contextType: "BOOKING", contextId: booking.id, description: "Booking payment" }, tx);
       });

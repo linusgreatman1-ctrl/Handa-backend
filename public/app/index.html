@@ -37,6 +37,11 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
   body{max-width:none;width:100%;margin:0;box-shadow:none;background:#111}
   #app-sidebar{display:flex}
   #bnav{display:none !important}
+  /* The vendor/rider/shopper dashboards each carry their own in-flow
+     bottom nav bar (not #bnav) for mobile/tablet — the sidebar is the
+     only nav on desktop, so these must be hidden there too or both show
+     at once. */
+  .dash-bnav{display:none !important}
   /* The universal content-centering rule. --gutter is the minimum
      breathing room against the viewport edge; --cap is how wide the
      actual reading column is allowed to get before more space just
@@ -466,7 +471,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <!-- Shopper Home -->
     <div id="shopper-home-view" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
       <div class="scrollable" style="padding-bottom:10px;" id="shopper-body"></div>
-      <nav style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid rgba(255,255,255,0.08);padding:6px 0 max(10px,env(safe-area-inset-bottom));flex-shrink:0;box-shadow:0 -4px 20px rgba(0,0,0,.15);border-top:1px solid rgba(255,255,255,0.08);">
+      <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid rgba(255,255,255,0.08);padding:6px 0 max(10px,env(safe-area-inset-bottom));flex-shrink:0;box-shadow:0 -4px 20px rgba(0,0,0,.15);border-top:1px solid rgba(255,255,255,0.08);">
         <button class="ntab active" id="snav-home" onclick="shopperNav('home')"><div class="ntab-icon">🏠</div><div class="ntab-dot"></div><div class="ntab-label" style="color:#F5A623;">Home</div></button>
         <button class="ntab" id="snav-history" onclick="shopperNav('history')"><div class="ntab-icon">📋</div><div class="ntab-dot"></div><div class="ntab-label">History</div></button>
         <button class="ntab" id="snav-earnings" onclick="shopperNav('earnings')"><div class="ntab-icon">💰</div><div class="ntab-dot"></div><div class="ntab-label">Earnings</div></button>
@@ -476,7 +481,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <!-- Shopper Profile -->
     <div id="shopper-profile-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
       <div class="scrollable" style="padding:52px 22px 30px;" id="shopper-profile-body"></div>
-      <nav style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid rgba(255,255,255,0.08);padding:6px 0 max(10px,env(safe-area-inset-bottom));flex-shrink:0;box-shadow:0 -4px 20px rgba(0,0,0,.15);border-top:1px solid rgba(255,255,255,0.08);">
+      <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid rgba(255,255,255,0.08);padding:6px 0 max(10px,env(safe-area-inset-bottom));flex-shrink:0;box-shadow:0 -4px 20px rgba(0,0,0,.15);border-top:1px solid rgba(255,255,255,0.08);">
         <button class="ntab" id="snav2-home" onclick="shopperNav('home')"><div class="ntab-icon">🏠</div><div class="ntab-dot"></div><div class="ntab-label">Home</div></button>
         <button class="ntab" id="snav2-history" onclick="shopperNav('history')"><div class="ntab-icon">📋</div><div class="ntab-dot"></div><div class="ntab-label">History</div></button>
         <button class="ntab" id="snav2-earnings" onclick="shopperNav('earnings')"><div class="ntab-icon">💰</div><div class="ntab-dot"></div><div class="ntab-label">Earnings</div></button>
@@ -576,7 +581,13 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
 
     <!-- Settings -->
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:12px">Settings</h3>
     <div class="card" style="overflow:hidden;margin-bottom:18px;padding:0">
+      <button onclick="openEditProfileModal('customer')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:14px 16px;cursor:pointer;font-family:'DM Sans',sans-serif">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(155,89,182,.12);display:flex;align-items:center;justify-content:center;font-size:18px">✏️</div>
+        <div style="flex:1;text-align:left"><div style="font-weight:700;font-size:14px;color:#F2EDE8">Edit Profile</div><div style="font-size:12px;color:#9A9390">Name, phone, email, address</div></div>
+        <span style="color:#666">›</span>
+      </button>
       <button onclick="_showPaymentMethods()" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:14px 16px;cursor:pointer;font-family:'DM Sans',sans-serif">
         <div style="width:38px;height:38px;border-radius:10px;background:rgba(59,159,232,.12);display:flex;align-items:center;justify-content:center;font-size:18px">💳</div>
         <div style="flex:1;text-align:left"><div style="font-weight:700;font-size:14px;color:#F2EDE8">Payment Methods</div><div style="font-size:12px;color:#9A9390">Cards, bank transfer, USSD</div></div>
@@ -605,7 +616,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 <div id="screen-homecookdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="vendor-body"></div>
-    <nav style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
+    <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
       <button id="vnav-orders" class="ntab active" onclick="vendorNav('orders')"><div class="ntab-icon">&#x1F514;</div><div class="ntab-dot" style="opacity:1;background:#2ECC71;"></div><div class="ntab-label" style="color:#2ECC71;">Orders</div></button>
       <button id="vnav-menu" class="ntab" onclick="vendorNav('menu')"><div class="ntab-icon">&#x1F37D;&#xFE0F;</div><div class="ntab-dot"></div><div class="ntab-label">Menu</div></button>
       <button id="vnav-earnings" class="ntab" onclick="vendorNav('earnings')"><div class="ntab-icon">&#x1F4B0;</div><div class="ntab-dot"></div><div class="ntab-label">Earnings</div></button>
@@ -618,7 +629,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 <div id="screen-epdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="ep-vendor-body"></div>
-    <nav style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
+    <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
       <button id="ep-vnav-orders" class="ntab active" onclick="vendorNav('orders')"><div class="ntab-icon">&#x1F514;</div><div class="ntab-dot" style="opacity:1;background:#2ECC71;"></div><div class="ntab-label" style="color:#2ECC71;">Orders</div></button>
       <button id="ep-vnav-menu" class="ntab" onclick="vendorNav('menu')"><div class="ntab-icon">&#x1F4E6;</div><div class="ntab-dot"></div><div class="ntab-label">Packages</div></button>
       <button id="ep-vnav-earnings" class="ntab" onclick="vendorNav('earnings')"><div class="ntab-icon">&#x1F4B0;</div><div class="ntab-dot"></div><div class="ntab-label">Earnings</div></button>
@@ -631,7 +642,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 <div id="screen-riderdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="rider-body"></div>
-    <nav style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
+    <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
       <button id="rnav-deliveries" class="ntab active" onclick="riderNav('deliveries')"><div class="ntab-icon">&#x1F4E6;</div><div class="ntab-dot" style="opacity:1;background:#F5A623;"></div><div class="ntab-label" style="color:#F5A623;">Deliveries</div></button>
       <button id="rnav-map" class="ntab" onclick="riderNav('map')"><div class="ntab-icon">&#x1F5FA;&#xFE0F;</div><div class="ntab-dot"></div><div class="ntab-label">Map</div></button>
       <button id="rnav-earnings" class="ntab" onclick="riderNav('earnings')"><div class="ntab-icon">&#x1F4B0;</div><div class="ntab-dot"></div><div class="ntab-label">Earnings</div></button>
@@ -720,6 +731,9 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <div style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900;color:#F2EDE8;" id="escrow-amount">₦0</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:14px;" id="escrow-pay-methods">
+      <button onclick="selectEscrowMethod(this,'wallet')" style="display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;transition:all .2s;">
+        <span style="font-size:22px;">💰</span><div><div style="font-weight:700;font-size:14px;">Wallet Balance</div><div style="font-size:11px;color:#9A9390;">Pay instantly from your wallet</div></div>
+      </button>
       <button onclick="selectEscrowMethod(this,'card')" style="display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;transition:all .2s;">
         <span style="font-size:22px;">💳</span><div><div style="font-weight:700;font-size:14px;">Debit / Credit Card</div><div style="font-size:11px;color:#9A9390;">Visa, Mastercard, Verve</div></div>
       </button>
@@ -2887,7 +2901,7 @@ function promptCallTopUp(topUpRequiredKobo){
   showToast('Your call ran past the tier already paid — pay '+N(topUpRequiredKobo/100)+' more to continue','warning');
   openEscrowModal(topUpRequiredKobo/100, async function(){
     try{
-      var methodMap={card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
       var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
       var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-call-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
       if(res.session)window._sfmSession=res.session;
@@ -2984,7 +2998,7 @@ async function depositAndFindShopper() {
       // reference item.id) hit the right row.
       shopItems=createRes.session.items.map(function(it){return {id:it.id,text:it.text,approved:it.approved,price:it.priceKobo?Math.round(it.priceKobo/100):null};});
 
-      var methodMap={card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
       var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
       var payRes=await api('/shop-sessions/'+window._sfmSession.id+'/pay',{method:'POST',body:JSON.stringify({budgetKobo:budgetKobo,paymentMethod:paymentMethod})});
       if(payRes.session)window._sfmSession=payRes.session;
@@ -5900,7 +5914,7 @@ function showHelpProc(){
 function showAddFundsModal(){
   showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
     +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
-    +'</div><div style="margin-bottom:12px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div><div style="background:#242424;border-radius:12px;padding:12px;margin-bottom:16px;"><div style="font-size:12px;color:#9A9390;">Paying via</div><div style="font-weight:700;color:#F2EDE8;">GTBank Debit &#x2022; &#x2022;&#x2022;&#x2022;&#x2022;5678</div></div><button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Add Funds</button></div>');
+    +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div><button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Continue to Payment</button></div>');
 }
 // Real Paystack checkout — initializes a transaction and hands the user
 // off to Paystack's hosted page. Without PAYSTACK_SECRET_KEY configured on
@@ -6126,12 +6140,14 @@ function renderAppSidebarNav(scr){
       +'<button class="sb-nav-item" data-sbtab="menu" onclick="vendorNav(\'menu\')"><span class="sb-ic">🍽️</span>'+(isEP?'Packages':'Menu')+'</button>'
       +'<button class="sb-nav-item" data-sbtab="earnings" onclick="vendorNav(\'earnings\')"><span class="sb-ic">💰</span>Earnings</button>'
       +'<button class="sb-nav-item" data-sbtab="messages" onclick="vendorNav(\'messages\')"><span class="sb-ic">💬</span>Messages</button>'
+      +'<button class="sb-nav-item" data-sbtab="history" onclick="vendorNav(\'history\')"><span class="sb-ic">📋</span>History</button>'
       +'<button class="sb-nav-item" data-sbtab="profile" onclick="vendorNav(\'profile\')"><span class="sb-ic">👤</span>Profile</button>';
   } else if(scr==='rider'){
     el.innerHTML=''
       +'<button class="sb-nav-item on" data-sbtab="deliveries" onclick="riderNav(\'deliveries\')"><span class="sb-ic">🛵</span>Deliveries</button>'
       +'<button class="sb-nav-item" data-sbtab="map" onclick="riderNav(\'map\')"><span class="sb-ic">🗺️</span>Map</button>'
       +'<button class="sb-nav-item" data-sbtab="earnings" onclick="riderNav(\'earnings\')"><span class="sb-ic">💰</span>Earnings</button>'
+      +'<button class="sb-nav-item" data-sbtab="history" onclick="riderNav(\'history\')"><span class="sb-ic">📋</span>History</button>'
       +'<button class="sb-nav-item" data-sbtab="profile" onclick="riderNav(\'profile\')"><span class="sb-ic">👤</span>Profile</button>';
   } else {
     el.innerHTML=''
@@ -7318,28 +7334,10 @@ function renderEHistoryItems(orders){
 // (webhook confirms payment → status flips to CONFIRMED), so the customer
 // is brought back to where they left off automatically.
 function payForBooking(bookingId, totalKobo){
-  var html = '<div id="bkpay-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
-    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:360px;width:100%;padding:20px;font-family:\'DM Sans\',sans-serif;">'
-    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">Pay ₦'+Number(Math.round(totalKobo/100)).toLocaleString()+'</div>'
-    + '<div style="font-size:12px;color:#9A9390;margin-bottom:14px;">Choose how to pay into escrow</div>'
-    + '<button onclick="closeBookingPayModal();_payBookingWallet(\''+bookingId+'\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💰 Wallet Balance</button>'
-    + '<button onclick="closeBookingPayModal();_payBookingCard(\''+bookingId+'\','+totalKobo+')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💳 Card / Bank Transfer / USSD</button>'
-    + '<button onclick="closeBookingPayModal()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
-    + '</div></div>';
-  var d=document.createElement('div');d.id='bkpay-modal-wrap';d.innerHTML=html;document.body.appendChild(d);
-}
-function closeBookingPayModal(){var d=document.getElementById('bkpay-modal-wrap');if(d)d.remove();}
-async function _payBookingWallet(bookingId){
-  try{
-    var res=await api('/bookings/'+bookingId+'/pay',{method:'POST',body:JSON.stringify({paymentMethod:'WALLET'})});
-    if(res.paid){showToast&&showToast('Payment successful — booking confirmed!','success');renderEHistory();}
-  }catch(err){showToast&&showToast(err.message||'Could not process payment','warning');}
-}
-async function _payBookingCard(bookingId,totalKobo){
   openEscrowModal(Math.round(totalKobo/100), async function(){
     try{
-      var methodMap={card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
-      var paymentMethod=methodMap[window._escrowMethod]||'CARD';
+      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
       var res=await api('/bookings/'+bookingId+'/pay',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
       if(res.paid){showToast&&showToast('Payment successful — booking confirmed!','success');renderEHistory();return;}
       if(res.authorizationUrl){
@@ -7370,42 +7368,24 @@ function filterEHistory(btn,cat){
   if(el)el.innerHTML=renderEHistoryItems(filtered);
 }
 
-// 2. Add New Card - proper card entry form
+// Card details are never collected inside our own app — that would mean
+// handling raw PANs/CVVs ourselves, which is both a real security risk and
+// unnecessary. Paystack's own hosted checkout (already used for every real
+// payment) captures and tokenizes the card directly with them, and offers
+// its own "save this card" option on that page — so this screen just
+// explains that instead of faking a local card-save form.
 function addNewCard(){
   showProcedureModal(
-    '<div style="padding:0 0 24px">'
-    +'<p style="font-size:16px;font-weight:800;margin-bottom:20px">Add New Card</p>'
-    +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Card Number</label>'
-    +'<input id="card-num" class="if" placeholder="0000 0000 0000 0000" maxlength="19" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/(.{4})/g,\'$1 \').trim()" style="margin-bottom:12px">'
-    +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Cardholder Name</label>'
-    +'<input id="card-name" class="if" placeholder="Name on card" style="margin-bottom:12px">'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'
-    +'<div><label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Expiry</label>'
-    +'<input id="card-exp" class="if" placeholder="MM/YY" maxlength="5" oninput="var v=this.value.replace(/[^0-9]/g,\'\');if(v.length>2)v=v.slice(0,2)+\'/\'+v.slice(2);this.value=v"></div>'
-    +'<div><label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">CVV</label>'
-    +'<input id="card-cvv" class="if" placeholder="123" maxlength="4" type="password"></div>'
+    '<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add New Card</div></div>'
+    +'<div style="text-align:center;padding:20px 10px;color:#9A9390;">'
+    +'<div style="font-size:40px;margin-bottom:12px;">🔒</div>'
+    +'<p style="font-size:14px;color:#F2EDE8;font-weight:700;margin-bottom:8px;">Cards are added securely during checkout</p>'
+    +'<p style="font-size:13px;line-height:1.6;">We never collect your card number directly. The next time you pay with a card, you\'ll enter it on Paystack\'s own secure page — you can save it there for faster checkout next time.</p>'
     +'</div>'
-    +'<button id="save-card-btn" style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">💳 Save Card</button>'
-    +'</div>'
+    +'<button onclick="closeProcedureModal()" style="width:100%;padding:12px;border-radius:12px;background:#242424;border:1.5px solid #2A2850;color:#9A9390;font-weight:700;cursor:pointer;">Got It</button></div>'
   );
-  setTimeout(function(){
-    var btn=document.getElementById('save-card-btn');
-    if(!btn)return;
-    btn.onclick=function(){
-      var num=(document.getElementById('card-num')||{}).value||'';
-      var name=(document.getElementById('card-name')||{}).value||'';
-      var exp=(document.getElementById('card-exp')||{}).value||'';
-      var cvv=(document.getElementById('card-cvv')||{}).value||'';
-      if(num.replace(/\s/g,'').length<16){showToast&&showToast('Please enter a valid 16-digit card number','warning');return;}
-      if(!name.trim()){showToast&&showToast('Please enter the cardholder name','warning');return;}
-      if(exp.length<5){showToast&&showToast('Please enter expiry date (MM/YY)','warning');return;}
-      if(cvv.length<3){showToast&&showToast('Please enter CVV','warning');return;}
-      if(!window._savedCards)window._savedCards=[];
-      window._savedCards.push({num:'**** **** **** '+num.replace(/\s/g,'').slice(-4),name:name.trim(),exp:exp,type:num[0]==='4'?'Visa':'Mastercard'});
-      closeProcedureModal();
-      showToast&&showToast('Card added successfully!','success');
-    };
-  },50);
 }
 
 // 3. Help & Support - Live Chat and Call
