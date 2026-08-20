@@ -15,9 +15,13 @@ router.get("/users", ctrl.listUsers);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
 
 router.get("/vendors", ctrl.listVendorsForAdmin);
+router.get("/vendors/:id", requireContentOrSuperAdmin, ctrl.getVendorDetailForAdmin);
 router.patch("/vendors/:id/verify", ctrl.setVendorVerified);
 router.get("/riders", requireContentOrSuperAdmin, ctrl.listRidersForAdmin);
+router.get("/riders/:id", requireContentOrSuperAdmin, ctrl.getRiderDetailForAdmin);
 router.patch("/riders/:id/verify", ctrl.setRiderVerified);
+router.get("/shoppers", requireContentOrSuperAdmin, ctrl.listShoppersForAdmin);
+router.get("/shoppers/:id", requireContentOrSuperAdmin, ctrl.getShopperDetailForAdmin);
 router.patch("/shoppers/:id/verify", ctrl.setShopperVerified);
 
 router.get("/kyc-documents", ctrl.listKycDocumentsForAdmin);
@@ -25,6 +29,12 @@ router.patch("/kyc-documents/:id", ctrl.reviewKycDocument);
 
 router.get("/withdrawals", ctrl.listWithdrawalsForAdmin);
 router.get("/payments", requireContentOrSuperAdmin, ctrl.listPayments);
+
+router.get("/bookings", requireContentOrSuperAdmin, ctrl.listBookingsForAdmin);
+router.get("/bookings/:id", requireContentOrSuperAdmin, ctrl.getBookingDetailForAdmin);
+router.get("/commissions", requireContentOrSuperAdmin, ctrl.listCommissionsForAdmin);
+router.get("/escrow", requireContentOrSuperAdmin, ctrl.listEscrowHoldsForAdmin);
+router.get("/ratings", requireContentOrSuperAdmin, ctrl.listRatingsForAdmin);
 
 // Rider-session monitoring — content admin or super admin.
 router.get("/shop-sessions", requireContentOrSuperAdmin, ctrl.listShopSessionsForAdmin);

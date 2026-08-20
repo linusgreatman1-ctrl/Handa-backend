@@ -60,6 +60,10 @@ async function applyVerifiedPayment(data) {
     await orderFlow.confirmShopSessionPayment(data.metadata.sessionId, data.amount, data.reference);
     return { purpose, sessionId: data.metadata.sessionId };
   }
+  if (purpose === "SHOP_SESSION_CALL_TOPUP") {
+    await orderFlow.confirmCallTopUp(data.metadata.sessionId, data.amount, data.reference);
+    return { purpose, sessionId: data.metadata.sessionId };
+  }
   if (purpose === "COMMISSION_PAYMENT") {
     await orderFlow.confirmCommissionPayment(data.metadata.commissionPeriodId, data.reference);
     return { purpose };

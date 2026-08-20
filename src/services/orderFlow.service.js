@@ -64,6 +64,36 @@ async function ensureShopperFeeHold(session) {
   });
 }
 
+// Applies a confirmed call-fee top-up payment (see shopSessions.controller's
+// payCallTopUp) — increments both the session fee and deposit by exactly
+// what was charged, creates a second SHOPPER escrow hold for just the
+// delta (itemized alongside the original base-fee hold from
+// ensureShopperFeeHold, matching this file's "one hold per beneficiary"
+// pattern), and moves the session on to PACKAGING now that the real
+// duration-based fee has been paid in full.
+async function confirmCallTopUp(sessionId, amountKobo, reference) {
+  const session = await prisma.shopSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw Object.assign(new Error("Shop session not found."), { status: 404 });
+
+  const updated = await prisma.shopSession.update({
+    where: { id: sessionId },
+    data: { sessionFeeKobo: { increment: amountKobo }, depositKobo: { increment: amountKobo }, status: "PACKAGING" },
+  });
+
+  if (updated.shopperId) {
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: updated.shopperId } });
+    await escrow.createHold({
+      contextType: "SHOP_SESSION",
+      shopSessionId: updated.id,
+      payerId: updated.customerId,
+      payeeId: shopper.userId,
+      payeeRole: "SHOPPER",
+      amountKobo,
+    });
+  }
+  return updated;
+}
+
 async function confirmCommissionPayment(commissionPeriodId, reference) {
   const period = await prisma.commissionPeriod.findUnique({ where: { id: commissionPeriodId } });
   if (!period || period.status === "PAID") return period;
@@ -113,6 +143,7 @@ module.exports = {
   confirmBookingPayment,
   confirmShopSessionPayment,
   ensureShopperFeeHold,
+  confirmCallTopUp,
   confirmCommissionPayment,
   confirmFeatureBoostPayment,
   applyTransferWebhook,

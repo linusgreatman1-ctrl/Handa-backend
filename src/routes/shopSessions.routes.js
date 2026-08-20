@@ -18,6 +18,7 @@ router.post("/:id/pay", ctrl.paySession);
 router.post("/:id/match", ctrl.matchSession);
 router.post("/:id/start-call", ctrl.startCall);
 router.post("/:id/packaging", ctrl.startPackaging);
+router.post("/:id/pay-call-topup", ctrl.payCallTopUp);
 router.post("/:id/find-rider", ctrl.findRider);
 router.post("/:id/accept-delivery", ctrl.acceptDelivery);
 router.post("/:id/out-for-delivery", ctrl.markOutForDelivery);

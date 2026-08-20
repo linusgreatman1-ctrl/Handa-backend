@@ -82,6 +82,11 @@
     <button class="nav-item" data-tab="users" onclick="switchTab('users')">Users</button>
     <button class="nav-item" data-tab="vendors" onclick="switchTab('vendors')">Vendors</button>
     <button class="nav-item" data-tab="riders" data-elevated="1" onclick="switchTab('riders')">Riders</button>
+    <button class="nav-item" data-tab="shoppers" data-elevated="1" onclick="switchTab('shoppers')">Shoppers</button>
+    <button class="nav-item" data-tab="bookings" data-elevated="1" onclick="switchTab('bookings')">Bookings</button>
+    <button class="nav-item" data-tab="commissions" data-elevated="1" onclick="switchTab('commissions')">Commissions</button>
+    <button class="nav-item" data-tab="escrow" data-elevated="1" onclick="switchTab('escrow')">Escrow</button>
+    <button class="nav-item" data-tab="ratings" data-elevated="1" onclick="switchTab('ratings')">Ratings</button>
     <button class="nav-item" data-tab="payments" data-elevated="1" onclick="switchTab('payments')">Payments</button>
     <button class="nav-item" data-tab="subscriptions" data-elevated="1" onclick="switchTab('subscriptions')">Subscriptions</button>
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
@@ -124,6 +129,8 @@ async function api(path, opts = {}) {
 }
 
 function money(kobo) { return '₦' + ((kobo || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+const NG_STATES = ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
+function stateFilterOptions(selected) { return '<option value="">All states</option>' + NG_STATES.map(s => '<option' + (selected === s ? ' selected' : '') + '>' + s + '</option>').join(''); }
 
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
@@ -161,7 +168,7 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, aiconversations: renderAiConversations, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, aiconversations: renderAiConversations, admins: renderAdmins, auditlog: renderAuditLog };
   renderers[tab]();
 }
 
@@ -242,20 +249,31 @@ async function renderReports() {
   }
 }
 
+// Preserves the toolbar's current filter selections across re-renders —
+// renderUsers() rebuilds the whole toolbar HTML from scratch every call,
+// so without this the role/state <select>s used to visually reset to
+// "All" after every Filter click even though the fetch itself used the
+// value that was selected at click time.
+let _usersFilter = { role: '', state: '', q: '', page: 1 };
 async function renderUsers() {
   const main = document.getElementById('main');
+  const roleEl = document.getElementById('user-role'), stateEl = document.getElementById('user-state'), qEl = document.getElementById('user-q');
+  if (roleEl) _usersFilter.role = roleEl.value;
+  if (stateEl) _usersFilter.state = stateEl.value;
+  if (qEl) _usersFilter.q = qEl.value;
+  const f = _usersFilter;
+  const pageSize = 25;
   main.innerHTML =
     '<h2>Users</h2>' +
     '<div class="toolbar">' +
-      '<input id="user-q" placeholder="Search name/email/phone" onkeydown="if(event.key===\'Enter\')renderUsers()">' +
-      '<select id="user-role"><option value="">All roles</option><option>CUSTOMER</option><option>VENDOR</option><option>RIDER</option><option>SHOPPER</option><option>ADMIN</option></select>' +
-      '<button class="action-btn" onclick="renderUsers()">Filter</button>' +
+      '<input id="user-q" placeholder="Search name/email/phone" value="' + (f.q || '').replace(/"/g, '&quot;') + '" onkeydown="if(event.key===\'Enter\'){_usersFilter.page=1;renderUsers();}">' +
+      '<select id="user-role" onchange="_usersFilter.page=1;renderUsers()"><option value="">All roles</option>' + ['CUSTOMER', 'VENDOR', 'RIDER', 'SHOPPER', 'ADMIN'].map(r => '<option' + (f.role === r ? ' selected' : '') + '>' + r + '</option>').join('') + '</select>' +
+      '<select id="user-state" onchange="_usersFilter.page=1;renderUsers()">' + stateFilterOptions(f.state) + '</select>' +
+      '<button class="action-btn" onclick="_usersFilter.page=1;renderUsers()">Filter</button>' +
     '</div>' +
     '<div id="users-table" class="empty">Loading...</div>';
-  const role = document.getElementById('user-role') ? document.getElementById('user-role').value : '';
-  const q = document.getElementById('user-q') ? document.getElementById('user-q').value : '';
   try {
-    const params = new URLSearchParams({ ...(role && { role }), ...(q && { q }) });
+    const params = new URLSearchParams({ ...(f.role && { role: f.role }), ...(f.state && { state: f.state }), ...(f.q && { q: f.q }), page: f.page, pageSize });
     const data = await api('/admin/users?' + params.toString());
     const rows = data.users.map(u => {
       const extra = u.vendorProfile ? u.vendorProfile.bizName + (u.vendorProfile.isVerified ? ' ✓' : '') : (u.riderProfile ? 'Rider' : (u.shopperProfile ? 'Shopper' : ''));
@@ -265,13 +283,19 @@ async function renderUsers() {
       } else if (u.shopperProfile) {
         verifyBtn = '<button class="action-btn" onclick="setProfileVerified(\'shopper\',\'' + u.shopperProfile.id + '\',' + (!u.shopperProfile.isVerified) + ')">' + (u.shopperProfile.isVerified ? 'Unverify' : 'Verify') + '</button>';
       }
-      return '<tr><td>' + u.name + '</td><td>' + (u.email || u.phone || '—') + '</td><td>' + u.role + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
+      return '<tr><td>' + u.name + '</td><td>' + (u.email || u.phone || '—') + '</td><td>' + u.role + '</td><td>' + (u.state || '—') + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
         '<td>' + (u.status === 'ACTIVE'
           ? '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'SUSPENDED\')">Suspend</button>'
           : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + ' ' + verifyBtn + '</td></tr>';
     }).join('');
+    const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+    const pager = '<div class="toolbar" style="margin-top:12px">'
+      + '<button class="action-btn"' + (f.page <= 1 ? ' disabled' : '') + ' onclick="_usersFilter.page--;renderUsers()">&laquo; Prev</button>'
+      + '<span style="color:#9A9390;padding:0 10px">Page ' + f.page + ' of ' + totalPages + ' (' + data.total + ' users)</span>'
+      + '<button class="action-btn"' + (f.page >= totalPages ? ' disabled' : '') + ' onclick="_usersFilter.page++;renderUsers()">Next &raquo;</button>'
+      + '</div>';
     document.getElementById('users-table').outerHTML = data.users.length
-      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Detail</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>State</th><th>Detail</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' + pager
       : '<div class="empty">No users found.</div>';
   } catch (e) {
     document.getElementById('users-table').textContent = e.message;
@@ -288,16 +312,19 @@ async function setProfileVerified(kind, id, isVerified) {
 
 async function renderVendors() {
   const main = document.getElementById('main');
-  main.innerHTML = '<h2>Vendors</h2><div id="vendors-table" class="empty">Loading...</div>';
+  const state = document.getElementById('vendors-state-filter') ? document.getElementById('vendors-state-filter').value : '';
+  main.innerHTML = '<h2>Vendors</h2>'
+    + '<div class="toolbar"><select id="vendors-state-filter" onchange="renderVendors()">' + stateFilterOptions(state) + '</select></div>'
+    + '<div id="vendors-table" class="empty">Loading...</div>';
   try {
-    const data = await api('/admin/vendors');
+    const data = await api('/admin/vendors' + (state ? '?state=' + encodeURIComponent(state) : ''));
     const rows = data.vendors.map(v =>
-      '<tr><td>' + v.bizName + '</td><td>' + v.vtype + '</td><td>' + v.user.name + '</td><td>' + v.user.email + '</td>' +
+      '<tr><td>' + v.bizName + '</td><td>' + v.vtype + '</td><td>' + v.user.name + '</td><td>' + v.user.email + '</td><td>' + (v.user.state || '—') + '</td>' +
       '<td>' + (v.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
-      '<td><button class="action-btn" onclick="setVendorVerified(\'' + v.id + '\',' + (!v.isVerified) + ')">' + (v.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
+      '<td><button class="action-btn" onclick="renderVendorDetail(\'' + v.id + '\')">View</button> <button class="action-btn" onclick="setVendorVerified(\'' + v.id + '\',' + (!v.isVerified) + ')">' + (v.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
     ).join('');
     document.getElementById('vendors-table').outerHTML = data.vendors.length
-      ? '<table><thead><tr><th>Business</th><th>Type</th><th>Owner</th><th>Email</th><th>Verified</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      ? '<table><thead><tr><th>Business</th><th>Type</th><th>Owner</th><th>Email</th><th>State</th><th>Verified</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div class="empty">No vendors found.</div>';
   } catch (e) {
     document.getElementById('vendors-table').textContent = e.message;
@@ -306,6 +333,38 @@ async function renderVendors() {
 async function setVendorVerified(id, isVerified) {
   try { await api('/admin/vendors/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderVendors(); }
   catch (e) { alert(e.message); }
+}
+async function renderVendorDetail(id) {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Vendor Detail</h2><div class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/vendors/' + id);
+    const v = data.vendor, u = v.user, f = data.finance;
+    const kyc = (data.kycDocuments || []).map(d =>
+      '<tr><td>' + d.docType + '</td><td>' + pill(d.status) + '</td><td><a href="' + d.fileUrl + '" target="_blank">View</a></td></tr>'
+    ).join('');
+    const comm = (data.commissionPeriods || []).map(c =>
+      '<tr><td>' + new Date(c.periodStart).toLocaleDateString() + ' – ' + new Date(c.periodEnd).toLocaleDateString() + '</td><td>' + money(c.amountDueKobo) + '</td><td>' + money(c.amountPaidKobo) + '</td><td>' + pill(c.status) + '</td></tr>'
+    ).join('');
+    main.innerHTML =
+      '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'vendors\')">&larr; Back to list</button>' +
+      '<h2>' + v.bizName + '</h2>' +
+      '<div class="grid">' +
+        card('Owner', u.name, (u.email || '') + (u.phone ? ' · ' + u.phone : '')) +
+        card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
+        card('Verified', v.isVerified ? 'Yes' : 'Pending', '') +
+        card('Wallet Balance', money(f.balanceKobo), '') +
+      '</div>' +
+      '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
+        card('Paid Out', money(f.paidKobo), 'Released into wallet') +
+        card('Pending', money(f.pendingKobo), 'Held in escrow, awaiting release') +
+        card('Withdrawn', money(f.totalWithdrawnKobo), 'Sent to bank') +
+      '</div>' +
+      '<h2 style="margin-top:24px">KYC Documents</h2>' + (kyc ? '<table><thead><tr><th>Type</th><th>Status</th><th></th></tr></thead><tbody>' + kyc + '</tbody></table>' : '<div class="empty">No documents submitted yet.</div>') +
+      '<h2 style="margin-top:24px">Commission</h2>' + (comm ? '<table><thead><tr><th>Period</th><th>Due</th><th>Paid</th><th>Status</th></tr></thead><tbody>' + comm + '</tbody></table>' : '<div class="empty">No commission periods yet.</div>');
+  } catch (e) {
+    main.innerHTML = '<div class="empty">' + e.message + '</div>';
+  }
 }
 
 async function renderTickets() {
@@ -628,18 +687,21 @@ async function codesSave(confirmDrasticShrink) {
 
 async function renderRiders() {
   const main = document.getElementById('main');
-  main.innerHTML = '<h2>Riders</h2><div id="riders-table" class="empty">Loading...</div>';
+  const state = document.getElementById('riders-state-filter') ? document.getElementById('riders-state-filter').value : '';
+  main.innerHTML = '<h2>Riders</h2>'
+    + '<div class="toolbar"><select id="riders-state-filter" onchange="renderRiders()">' + stateFilterOptions(state) + '</select></div>'
+    + '<div id="riders-table" class="empty">Loading...</div>';
   try {
-    const data = await api('/admin/riders');
+    const data = await api('/admin/riders' + (state ? '?state=' + encodeURIComponent(state) : ''));
     const rows = data.riders.map(r =>
-      '<tr><td>' + r.user.name + '</td><td>' + (r.user.email || r.user.phone || '—') + '</td><td>' + (r.vehicleType || '—') + '</td>' +
+      '<tr><td>' + r.user.name + '</td><td>' + (r.user.email || r.user.phone || '—') + '</td><td>' + (r.vehicleType || '—') + '</td><td>' + (r.user.state || '—') + '</td>' +
       '<td>' + (r.isOnline ? pill('ONLINE') : '<span class="pill grey">Offline</span>') + '</td>' +
       '<td>' + (r.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
       '<td>' + r.deliveries + '</td><td>' + (r.ratingAvg || 0).toFixed(1) + '</td>' +
-      '<td><button class="action-btn" onclick="setRiderVerified(\'' + r.id + '\',' + (!r.isVerified) + ')">' + (r.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
+      '<td><button class="action-btn" onclick="renderRiderDetail(\'' + r.id + '\')">View</button> <button class="action-btn" onclick="setRiderVerified(\'' + r.id + '\',' + (!r.isVerified) + ')">' + (r.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
     ).join('');
     document.getElementById('riders-table').outerHTML = data.riders.length
-      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Vehicle</th><th>Online</th><th>Verified</th><th>Deliveries</th><th>Rating</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Vehicle</th><th>State</th><th>Online</th><th>Verified</th><th>Deliveries</th><th>Rating</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div class="empty">No riders found.</div>';
   } catch (e) {
     document.getElementById('riders-table').textContent = e.message;
@@ -648,6 +710,205 @@ async function renderRiders() {
 async function setRiderVerified(id, isVerified) {
   try { await api('/admin/riders/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderRiders(); }
   catch (e) { alert(e.message); }
+}
+async function renderRiderDetail(id) {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Rider Detail</h2><div class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/riders/' + id);
+    const r = data.rider, u = r.user, f = data.finance;
+    const kyc = (data.kycDocuments || []).map(d =>
+      '<tr><td>' + d.docType + '</td><td>' + pill(d.status) + '</td><td><a href="' + d.fileUrl + '" target="_blank">View</a></td></tr>'
+    ).join('');
+    main.innerHTML =
+      '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'riders\')">&larr; Back to list</button>' +
+      '<h2>' + u.name + '</h2>' +
+      '<div class="grid">' +
+        card('Contact', (u.email || '—'), u.phone || '') +
+        card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
+        card('Vehicle', (r.vehicleType || 'Not set') + (r.plateNumber ? ' · ' + r.plateNumber : ''), '') +
+        card('Deliveries', r.deliveries, 'Rating ' + (r.ratingAvg || 0).toFixed(1)) +
+      '</div>' +
+      '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
+        card('Wallet Balance', money(f.balanceKobo), '') +
+        card('Paid Out', money(f.paidKobo), 'Released into wallet') +
+        card('Pending', money(f.pendingKobo), 'Held in escrow, awaiting release') +
+        card('Withdrawn', money(f.totalWithdrawnKobo), 'Sent to bank') +
+      '</div>' +
+      '<h2 style="margin-top:24px">KYC Documents</h2>' + (kyc ? '<table><thead><tr><th>Type</th><th>Status</th><th></th></tr></thead><tbody>' + kyc + '</tbody></table>' : '<div class="empty">No documents submitted yet.</div>');
+  } catch (e) {
+    main.innerHTML = '<div class="empty">' + e.message + '</div>';
+  }
+}
+async function renderShoppers() {
+  const main = document.getElementById('main');
+  const state = document.getElementById('shoppers-state-filter') ? document.getElementById('shoppers-state-filter').value : '';
+  main.innerHTML = '<h2>Shoppers</h2>'
+    + '<div class="toolbar"><select id="shoppers-state-filter" onchange="renderShoppers()">' + stateFilterOptions(state) + '</select></div>'
+    + '<div id="shoppers-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/shoppers' + (state ? '?state=' + encodeURIComponent(state) : ''));
+    const rows = data.shoppers.map(s =>
+      '<tr><td>' + s.user.name + '</td><td>' + (s.user.email || s.user.phone || '—') + '</td><td>' + (s.market || '—') + '</td><td>' + (s.user.state || '—') + '</td>' +
+      '<td>' + (s.isOnline ? pill('ONLINE') : '<span class="pill grey">Offline</span>') + '</td>' +
+      '<td>' + (s.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td><td>' + (s.ratingAvg || 0).toFixed(1) + '</td>' +
+      '<td><button class="action-btn" onclick="renderShopperDetail(\'' + s.id + '\')">View</button> <button class="action-btn" onclick="setShopperVerified(\'' + s.id + '\',' + (!s.isVerified) + ')">' + (s.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
+    ).join('');
+    document.getElementById('shoppers-table').outerHTML = data.shoppers.length
+      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Market</th><th>State</th><th>Online</th><th>Verified</th><th>Rating</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No shoppers found.</div>';
+  } catch (e) {
+    document.getElementById('shoppers-table').textContent = e.message;
+  }
+}
+async function setShopperVerified(id, isVerified) {
+  try { await api('/admin/shoppers/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderShoppers(); }
+  catch (e) { alert(e.message); }
+}
+async function renderShopperDetail(id) {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Shopper Detail</h2><div class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/shoppers/' + id);
+    const s = data.shopper, u = s.user, f = data.finance;
+    const kyc = (data.kycDocuments || []).map(d =>
+      '<tr><td>' + d.docType + '</td><td>' + pill(d.status) + '</td><td><a href="' + d.fileUrl + '" target="_blank">View</a></td></tr>'
+    ).join('');
+    main.innerHTML =
+      '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'shoppers\')">&larr; Back to list</button>' +
+      '<h2>' + u.name + '</h2>' +
+      '<div class="grid">' +
+        card('Contact', (u.email || '—'), u.phone || '') +
+        card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
+        card('Market', s.market || 'Not set', '') +
+        card('Rating', (s.ratingAvg || 0).toFixed(1), s.ratingCount + ' ratings') +
+      '</div>' +
+      '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
+        card('Wallet Balance', money(f.balanceKobo), '') +
+        card('Paid Out', money(f.paidKobo), 'Released into wallet') +
+        card('Pending', money(f.pendingKobo), 'Held in escrow, awaiting release') +
+        card('Withdrawn', money(f.totalWithdrawnKobo), 'Sent to bank') +
+      '</div>' +
+      '<h2 style="margin-top:24px">KYC Documents</h2>' + (kyc ? '<table><thead><tr><th>Type</th><th>Status</th><th></th></tr></thead><tbody>' + kyc + '</tbody></table>' : '<div class="empty">No documents submitted yet.</div>');
+  } catch (e) {
+    main.innerHTML = '<div class="empty">' + e.message + '</div>';
+  }
+}
+
+async function renderBookings() {
+  const main = document.getElementById('main');
+  const status = document.getElementById('bookings-status-filter') ? document.getElementById('bookings-status-filter').value : '';
+  const statuses = ['', 'REQUESTED', 'ACCEPTED', 'DECLINED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'];
+  main.innerHTML = '<h2>Bookings</h2>'
+    + '<div class="toolbar"><select id="bookings-status-filter" onchange="renderBookings()">' + statuses.map(s => '<option value="' + s + '"' + (status === s ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>').join('') + '</select></div>'
+    + '<div id="bookings-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/bookings' + (status ? '?status=' + status : ''));
+    const rows = data.bookings.map(b =>
+      '<tr><td>' + b.bookingNumber + '</td><td>' + b.type.replace(/_/g, ' ') + '</td><td>' + b.customer.name + '</td><td>' + b.vendor.bizName + '</td><td>' + money(b.totalKobo) + '</td>' +
+      '<td>' + pill(b.status) + '</td><td>' + new Date(b.createdAt).toLocaleDateString() + '</td>' +
+      '<td><button class="action-btn" onclick="renderBookingDetail(\'' + b.id + '\')">View</button></td></tr>'
+    ).join('');
+    document.getElementById('bookings-table').outerHTML = data.bookings.length
+      ? '<table><thead><tr><th>Booking #</th><th>Type</th><th>Customer</th><th>Vendor</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No bookings found.</div>';
+  } catch (e) {
+    document.getElementById('bookings-table').textContent = e.message;
+  }
+}
+async function renderBookingDetail(id) {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Booking Detail</h2><div class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/bookings/' + id);
+    const b = data.booking;
+    const escrow = (b.escrowHolds || []).map(h =>
+      '<tr><td>' + h.payeeRole + '</td><td>' + money(h.amountKobo) + '</td><td>' + pill(h.status) + '</td></tr>'
+    ).join('');
+    const items = Array.isArray(b.selectedItems) ? b.selectedItems.map(it =>
+      '<tr><td>' + (it.name || '—') + '</td><td>' + (it.qty || 1) + '</td><td>' + (it.priceKobo != null ? money(it.priceKobo) : '—') + '</td></tr>'
+    ).join('') : '';
+    main.innerHTML =
+      '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'bookings\')">&larr; Back to list</button>' +
+      '<h2>Booking ' + b.bookingNumber + '</h2>' +
+      '<div class="grid">' +
+        card('Customer', b.customer.name, (b.customer.phone || '') + (b.customer.email ? ' · ' + b.customer.email : '')) +
+        card('Vendor', b.vendor.bizName, b.vendor.user ? b.vendor.user.name + (b.vendor.user.phone ? ' · ' + b.vendor.user.phone : '') : '') +
+        card('Total', money(b.totalKobo), b.paymentMethod) +
+        card('Status', b.status, b.venue || '') +
+      '</div>' +
+      (b.eventDate ? '<div class="grid" style="margin-top:12px">' + card('Event Date', new Date(b.eventDate).toLocaleDateString(), b.eventTime || '') + card('Guests', b.guestCount || '—', '') + '</div>' : '') +
+      '<h2 style="margin-top:24px">Items / Package</h2>' + (items ? '<table><thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead><tbody>' + items + '</tbody></table>' : (b.servicePackage ? '<div class="card"><div class="label">' + b.servicePackage.label + '</div><div class="value">' + money(b.servicePackage.priceKobo) + '</div></div>' : '<div class="empty">No itemized selection.</div>')) +
+      '<h2 style="margin-top:24px">Payment / Escrow</h2>' + (escrow ? '<table><thead><tr><th>Payee</th><th>Amount</th><th>Status</th></tr></thead><tbody>' + escrow + '</tbody></table>' : '<div class="empty">No escrow holds.</div>');
+  } catch (e) {
+    main.innerHTML = '<div class="empty">' + e.message + '</div>';
+  }
+}
+
+async function renderCommissions() {
+  const main = document.getElementById('main');
+  const status = document.getElementById('commissions-status-filter') ? document.getElementById('commissions-status-filter').value : '';
+  const statuses = ['', 'PENDING', 'OVERDUE', 'PAID'];
+  main.innerHTML = '<h2>Commissions</h2>'
+    + '<p style="color:#9A9390;margin:-8px 0 16px">Weekly commission owed by home cook / event planner vendors on their completed bookings.</p>'
+    + '<div class="toolbar"><select id="commissions-status-filter" onchange="renderCommissions()">' + statuses.map(s => '<option value="' + s + '"' + (status === s ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>').join('') + '</select></div>'
+    + '<div id="commissions-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/commissions' + (status ? '?status=' + status : ''));
+    const rows = data.periods.map(c =>
+      '<tr><td>' + c.vendor.bizName + '</td><td>' + (c.vendor.user ? c.vendor.user.name : '—') + '</td>' +
+      '<td>' + new Date(c.periodStart).toLocaleDateString() + ' – ' + new Date(c.periodEnd).toLocaleDateString() + '</td>' +
+      '<td>' + money(c.amountDueKobo) + '</td><td>' + money(c.amountPaidKobo) + '</td><td>' + pill(c.status) + '</td></tr>'
+    ).join('');
+    document.getElementById('commissions-table').outerHTML = data.periods.length
+      ? '<table><thead><tr><th>Vendor</th><th>Owner</th><th>Period</th><th>Due</th><th>Paid</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No commission periods found.</div>';
+  } catch (e) {
+    document.getElementById('commissions-table').textContent = e.message;
+  }
+}
+
+async function renderEscrow() {
+  const main = document.getElementById('main');
+  const status = document.getElementById('escrow-status-filter') ? document.getElementById('escrow-status-filter').value : '';
+  const statuses = ['', 'HELD', 'RELEASED', 'DISPUTED', 'REFUNDED'];
+  main.innerHTML = '<h2>Escrow</h2>'
+    + '<p style="color:#9A9390;margin:-8px 0 16px">Every escrow hold platform-wide — who paid, who it\'s owed to, and its current state.</p>'
+    + '<div class="toolbar"><select id="escrow-status-filter" onchange="renderEscrow()">' + statuses.map(s => '<option value="' + s + '"' + (status === s ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>').join('') + '</select></div>'
+    + '<div id="escrow-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/escrow' + (status ? '?status=' + status : ''));
+    const rows = data.holds.map(h =>
+      '<tr><td>' + h.label + '</td><td>' + h.payerName + '</td><td>' + h.payeeName + ' (' + h.payeeRole + ')</td><td>' + money(h.amountKobo) + '</td>' +
+      '<td>' + pill(h.status) + '</td><td>' + new Date(h.createdAt).toLocaleDateString() + '</td></tr>'
+    ).join('');
+    document.getElementById('escrow-table').outerHTML = data.holds.length
+      ? '<table><thead><tr><th>Context</th><th>Payer</th><th>Payee</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No escrow holds found.</div>';
+  } catch (e) {
+    document.getElementById('escrow-table').textContent = e.message;
+  }
+}
+
+async function renderRatings() {
+  const main = document.getElementById('main');
+  const role = document.getElementById('ratings-role-filter') ? document.getElementById('ratings-role-filter').value : '';
+  const roles = ['', 'VENDOR', 'RIDER', 'SHOPPER'];
+  main.innerHTML = '<h2>Ratings &amp; Reviews</h2>'
+    + '<div class="toolbar"><select id="ratings-role-filter" onchange="renderRatings()">' + roles.map(r => '<option value="' + r + '"' + (role === r ? ' selected' : '') + '>' + (r || 'All roles') + '</option>').join('') + '</select></div>'
+    + '<div id="ratings-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/ratings' + (role ? '?rateeRole=' + role : ''));
+    const rows = data.ratings.map(r =>
+      '<tr><td>' + '★'.repeat(r.score) + '</td><td>' + (r.rater ? r.rater.name : '—') + '</td><td>' + (r.ratee ? r.ratee.name : '—') + ' (' + r.rateeRole + ')</td>' +
+      '<td>' + (r.comment || '—') + '</td><td>' + r.contextType + '</td><td>' + new Date(r.createdAt).toLocaleDateString() + '</td></tr>'
+    ).join('');
+    document.getElementById('ratings-table').outerHTML = data.ratings.length
+      ? '<table><thead><tr><th>Score</th><th>From</th><th>For</th><th>Comment</th><th>Context</th><th>Date</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No ratings submitted yet.</div>';
+  } catch (e) {
+    document.getElementById('ratings-table').textContent = e.message;
+  }
 }
 
 async function renderPayments() {

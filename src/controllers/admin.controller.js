@@ -97,13 +97,14 @@ async function getReports(req, res, next) {
 
 async function listUsers(req, res, next) {
   try {
-    const { role, status, q } = req.query;
+    const { role, status, q, state } = req.query;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pageSize = Math.min(100, parseInt(req.query.pageSize) || 25);
 
     const where = {
       ...(role && { role }),
       ...(status && { status }),
+      ...(state && { state }),
       ...(q && { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }] }),
     };
 
@@ -111,7 +112,7 @@ async function listUsers(req, res, next) {
       prisma.user.findMany({
         where,
         select: {
-          id: true, name: true, email: true, phone: true, role: true, status: true, createdAt: true, lastLoginAt: true,
+          id: true, name: true, email: true, phone: true, role: true, status: true, state: true, lga: true, createdAt: true, lastLoginAt: true,
           vendorProfile: { select: { id: true, vtype: true, bizName: true, isVerified: true, isOnline: true } },
           riderProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true, deliveries: true } },
           shopperProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true } },
@@ -153,16 +154,91 @@ async function updateUserStatus(req, res, next) {
 
 async function listVendorsForAdmin(req, res, next) {
   try {
-    const { vtype, verified } = req.query;
+    const { vtype, verified, state } = req.query;
     const vendors = await prisma.vendorProfile.findMany({
       where: {
         ...(vtype && { vtype }),
         ...(verified !== undefined && { isVerified: verified === "true" }),
+        ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ vendors });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Real "paid vs pending" money breakdown for one user — reuses the same
+// aggregate shape wallet.controller.js's self-service getWallet computes
+// for req.user.id, just parameterized for an arbitrary admin-viewed user.
+// paidKobo = ever released into their wallet (Transaction type PAYOUT);
+// pendingKobo = still locked in escrow awaiting release (EscrowHold where
+// this user is the payee); totalWithdrawnKobo = already sent to their bank.
+async function financeBreakdownForUser(userId) {
+  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+  const walletId = wallet ? wallet.id : null;
+  const [paidAgg, withdrawnAgg, pendingAgg] = await Promise.all([
+    walletId ? prisma.transaction.aggregate({ where: { walletId, type: "PAYOUT" }, _sum: { amountKobo: true } }) : Promise.resolve({ _sum: { amountKobo: 0 } }),
+    walletId ? prisma.transaction.aggregate({ where: { walletId, type: "WITHDRAWAL" }, _sum: { amountKobo: true } }) : Promise.resolve({ _sum: { amountKobo: 0 } }),
+    prisma.escrowHold.aggregate({ where: { payeeId: userId, status: "HELD" }, _sum: { amountKobo: true } }),
+  ]);
+  return {
+    balanceKobo: wallet ? wallet.balanceKobo : 0,
+    paidKobo: paidAgg._sum.amountKobo || 0,
+    pendingKobo: pendingAgg._sum.amountKobo || 0,
+    totalWithdrawnKobo: Math.abs(withdrawnAgg._sum.amountKobo || 0),
+  };
+}
+
+async function getVendorDetailForAdmin(req, res, next) {
+  try {
+    const vendor = await prisma.vendorProfile.findUnique({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
+    });
+    if (!vendor) return res.status(404).json({ error: "Vendor not found." });
+    const [kycDocuments, commissionPeriods, finance] = await Promise.all([
+      prisma.kycDocument.findMany({ where: { userId: vendor.user.id }, orderBy: { createdAt: "desc" } }),
+      prisma.commissionPeriod.findMany({ where: { vendorId: vendor.id }, orderBy: { periodStart: "desc" } }),
+      financeBreakdownForUser(vendor.user.id),
+    ]);
+    res.json({ vendor, kycDocuments, commissionPeriods, finance });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getRiderDetailForAdmin(req, res, next) {
+  try {
+    const rider = await prisma.riderProfile.findUnique({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
+    });
+    if (!rider) return res.status(404).json({ error: "Rider not found." });
+    const [kycDocuments, finance] = await Promise.all([
+      prisma.kycDocument.findMany({ where: { userId: rider.user.id }, orderBy: { createdAt: "desc" } }),
+      financeBreakdownForUser(rider.user.id),
+    ]);
+    res.json({ rider, kycDocuments, finance });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getShopperDetailForAdmin(req, res, next) {
+  try {
+    const shopper = await prisma.shopperProfile.findUnique({
+      where: { id: req.params.id },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
+    });
+    if (!shopper) return res.status(404).json({ error: "Shopper not found." });
+    const [kycDocuments, finance] = await Promise.all([
+      prisma.kycDocument.findMany({ where: { userId: shopper.user.id }, orderBy: { createdAt: "desc" } }),
+      financeBreakdownForUser(shopper.user.id),
+    ]);
+    res.json({ shopper, kycDocuments, finance });
   } catch (err) {
     next(err);
   }
@@ -391,21 +467,173 @@ async function listPayments(req, res, next) {
   }
 }
 
+// ── Bookings: home cook / event planner bookings — previously had zero
+// admin visibility at all (only ShopSession did). No rider field here on
+// purpose: bookings are customer+vendor only, riders only ever attach to
+// ShopSession deliveries in this app's real data model. ──
+async function listBookingsForAdmin(req, res, next) {
+  try {
+    const { status, state } = req.query;
+    const bookings = await prisma.booking.findMany({
+      where: {
+        ...(status && { status }),
+        ...(state && { customer: { state } }),
+      },
+      include: {
+        customer: { select: { name: true, phone: true, state: true } },
+        vendor: { select: { bizName: true, vtype: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    res.json({ bookings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getBookingDetailForAdmin(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: {
+        customer: { select: { name: true, phone: true, email: true, state: true } },
+        vendor: { include: { user: { select: { name: true, phone: true } } } },
+        servicePackage: true,
+        escrowHolds: true,
+        ratings: true,
+      },
+    });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    res.json({ booking });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Commissions: flat per-vendor list — "which vendors owe how much" —
+// distinct from Reports' platform-wide PENDING/PAID/OVERDUE aggregate
+// cards, which can't answer "which specific vendor." ──
+async function listCommissionsForAdmin(req, res, next) {
+  try {
+    const { status } = req.query;
+    const periods = await prisma.commissionPeriod.findMany({
+      where: { ...(status && { status }) },
+      include: { vendor: { select: { bizName: true, vtype: true, user: { select: { name: true } } } } },
+      orderBy: [{ status: "asc" }, { periodEnd: "desc" }],
+      take: 200,
+    });
+    res.json({ periods });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Escrow: flat platform-wide list of every hold — mirrors listPayments'
+// ledger-table pattern exactly, just against EscrowHold instead of
+// Transaction. Nothing like this existed before; escrow was only ever
+// visible as an aggregate number (Dashboard) or nested inside one Shop
+// Session's own detail view. ──
+async function listEscrowHoldsForAdmin(req, res, next) {
+  try {
+    const { status, contextType, page = 1, pageSize = 50 } = req.query;
+    const take = Math.min(parseInt(pageSize, 10) || 50, 200);
+    const skip = (Math.max(parseInt(page, 10) || 1, 1) - 1) * take;
+    const where = { ...(status && { status }), ...(contextType && { contextType }) };
+    const [items, total] = await Promise.all([
+      prisma.escrowHold.findMany({
+        where,
+        include: {
+          booking: { include: { vendor: { select: { bizName: true } } } },
+          shopSession: true,
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.escrowHold.count({ where }),
+    ]);
+    const payerIds = [...new Set(items.map((h) => h.payerId))];
+    const payeeIds = [...new Set(items.map((h) => h.payeeId).filter(Boolean))];
+    const users = await prisma.user.findMany({ where: { id: { in: [...payerIds, ...payeeIds] } }, select: { id: true, name: true } });
+    const nameById = Object.fromEntries(users.map((u) => [u.id, u.name]));
+    res.json({
+      holds: items.map((h) => ({
+        id: h.id,
+        contextType: h.contextType,
+        label: h.contextType === "BOOKING" && h.booking ? h.booking.vendor.bizName : h.contextType === "SHOP_SESSION" ? "Shop-For-Me Session" : "—",
+        payerName: nameById[h.payerId] || "—",
+        payeeName: h.payeeRole === "PLATFORM" ? "Platform" : nameById[h.payeeId] || "—",
+        payeeRole: h.payeeRole,
+        amountKobo: h.amountKobo,
+        status: h.status,
+        autoReleaseAt: h.autoReleaseAt,
+        createdAt: h.createdAt,
+      })),
+      total,
+      page: Number(page),
+      pageSize: take,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Ratings/Reviews: no admin visibility existed at all before — an
+// individual Rating's score/comment could not be viewed anywhere. ──
+async function listRatingsForAdmin(req, res, next) {
+  try {
+    const { rateeRole, contextType } = req.query;
+    const ratings = await prisma.rating.findMany({
+      where: { ...(rateeRole && { rateeRole }), ...(contextType && { contextType }) },
+      include: {
+        rater: { select: { name: true } },
+        ratee: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.json({ ratings });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Riders: dedicated list, mirroring the Vendors admin tab. Verify
 // toggle already exists (PATCH /admin/riders/:id/verify), unchanged. ──
 async function listRidersForAdmin(req, res, next) {
   try {
-    const { online, verified } = req.query;
+    const { online, verified, state } = req.query;
     const riders = await prisma.riderProfile.findMany({
       where: {
         ...(online === "true" && { isOnline: true }),
         ...(verified === "true" && { isVerified: true }),
         ...(verified === "false" && { isVerified: false }),
+        ...(state && { user: { state } }),
       },
-      include: { user: { select: { name: true, email: true, phone: true, status: true } } },
+      include: { user: { select: { name: true, email: true, phone: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ riders });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listShoppersForAdmin(req, res, next) {
+  try {
+    const { online, verified, state } = req.query;
+    const shoppers = await prisma.shopperProfile.findMany({
+      where: {
+        ...(online === "true" && { isOnline: true }),
+        ...(verified === "true" && { isVerified: true }),
+        ...(verified === "false" && { isVerified: false }),
+        ...(state && { user: { state } }),
+      },
+      include: { user: { select: { name: true, email: true, phone: true, state: true, lga: true, status: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ shoppers });
   } catch (err) {
     next(err);
   }
@@ -586,11 +814,20 @@ module.exports = {
   listUsers,
   updateUserStatus,
   listVendorsForAdmin,
+  getVendorDetailForAdmin,
+  getRiderDetailForAdmin,
+  getShopperDetailForAdmin,
   setVendorVerified,
   setRiderVerified,
   setShopperVerified,
   listPayments,
   listRidersForAdmin,
+  listShoppersForAdmin,
+  listBookingsForAdmin,
+  getBookingDetailForAdmin,
+  listCommissionsForAdmin,
+  listEscrowHoldsForAdmin,
+  listRatingsForAdmin,
   listSubscriptionsForAdmin,
   extendSubscription,
   listAppSettings,

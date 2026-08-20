@@ -68,6 +68,12 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
      inline style values directly, no HTML/JS changes needed anywhere. */
   [style*="grid-template-columns:1fr 1fr 1fr"]{grid-template-columns:repeat(auto-fill,minmax(180px,1fr)) !important}
   [style*="grid-template-columns:1fr 1fr"]:not([style*="1fr 1fr 1fr"]){grid-template-columns:repeat(auto-fill,minmax(220px,1fr)) !important}
+  /* Back arrows render at the same fixed pixel size as mobile by default,
+     which reads as oversized against the ~820px desktop reading column
+     (vs. a 375-430px mobile viewport). Scale them down here rather than
+     changing the base rule, so mobile is untouched. */
+  .ibtn{width:36px !important;height:36px !important;font-size:15px !important}
+  .bkbtn{width:32px !important;height:32px !important;font-size:15px !important}
 }
 .screen{display:none;min-height:100vh;padding-bottom:84px;overflow-y:auto;-webkit-overflow-scrolling:touch}.screen.active{display:block;animation:fi .22s ease}.screen.active.flex-screen{display:flex !important;flex-direction:column;}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -296,7 +302,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
-.ibtn { width: 44px; height: 44px; background: #242424; border: 1.5px solid #2A2850; border-radius: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; transition: all 0.2s; }
 .online-pill { display: flex; align-items: center; gap: 7px; border-radius: 20px; padding: 9px 16px; cursor: pointer; transition: all 0.22s; border: 1.5px solid #2A2850; background: #242424; font-family: 'DM Sans',sans-serif; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .offline { background: #666; }
@@ -427,8 +432,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
       <button id="trb" onclick="setLTab('reg')" style="flex:1;padding:10px;border-radius:10px;border:none;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:14px;cursor:pointer">Register</button>
     </div>
     <div id="login-form">
-      <label class="il">Email Address</label>
-      <div class="ir"><span class="ii">✉️</span><input class="if ic" id="inp-email" type="email" placeholder="you@example.com"></div>
+      <label class="il">Phone or Email</label>
+      <div class="ir"><span class="ii">✉️</span><input class="if ic" id="inp-identifier" type="text" placeholder="+234 800 000 0000 or you@example.com"></div>
       <label class="il">Password</label>
       <div class="ir" style="margin-bottom:20px"><span class="ii">🔒</span><input class="if ic" id="inp-pass" type="password" placeholder="••••••••"></div>
     </div>
@@ -479,12 +484,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 </div>
 <div id="screen-ecooks" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 14px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">HOME COOKS 🧑‍🍳</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900">Find Your <span style="color:#9B59B6">Cook</span></h1></div><div class="pill-row" id="cook-pills"><button class="pill pon" onclick="filterCooks('all',this)">All</button><button class="pill" onclick="filterCooks('Nigerian',this)">🍛 Nigerian</button><button class="pill" onclick="filterCooks('Continental',this)">Continental</button><button class="pill" onclick="filterCooks('Pastry',this)">Pastry</button><button class="pill" onclick="filterCooks('Vegetarian',this)">Vegetarian</button></div><div style="background:#1C1C1C;border-top:1px solid #2A2850;padding:12px 16px"><div style="display:flex;gap:8px;margin-bottom:8px"><select id="loc-state-cooks" onchange="loadLGAs(this.value,'loc-lga-cooks')" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">📍 Select State</option><option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT (Abuja)</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option></select></div><div style="display:flex;gap:8px"><select id="loc-lga-cooks" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">Select LGA…</option></select><button onclick="filterByState(document.getElementById('loc-state-cooks').value,document.getElementById('loc-lga-cooks').value,'cooks')" style="padding:10px 16px;background:#9B59B6;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">Search</button></div></div><div id="cook-list" style="padding:14px 16px 80px"></div></div>
 <div id="screen-events" class="escreen"><div style="background:linear-gradient(160deg,#0d2d1a,#111);padding:44px 20px 14px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><p style="color:#2ECC71;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">EVENT PLANNERS 🎊</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900">Find Your <span style="color:#2ECC71">Planner</span></h1></div><div style="padding:12px 16px 0;display:flex;gap:8px"><button onclick="openPostEventRequestModal()" style="flex:1;padding:11px;background:#2ECC71;color:#111;border:none;border-radius:11px;font-weight:800;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">📢 Post an Event Request</button><button onclick="openMyEventRequestsModal()" style="flex:1;padding:11px;background:#1C1C1C;color:#F2EDE8;border:1.5px solid #2A2850;border-radius:11px;font-weight:800;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">📋 My Requests</button></div><div style="background:#1C1C1C;border-top:1px solid #2A2850;padding:12px 16px;margin-top:12px"><div style="display:flex;gap:8px;margin-bottom:8px"><select id="loc-state-events" onchange="loadLGAs(this.value,'loc-lga-events')" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">📍 Select State</option><option>Abia</option><option>Adamawa</option><option>Akwa Ibom</option><option>Anambra</option><option>Bauchi</option><option>Bayelsa</option><option>Benue</option><option>Borno</option><option>Cross River</option><option>Delta</option><option>Ebonyi</option><option>Edo</option><option>Ekiti</option><option>Enugu</option><option>FCT (Abuja)</option><option>Gombe</option><option>Imo</option><option>Jigawa</option><option>Kaduna</option><option>Kano</option><option>Katsina</option><option>Kebbi</option><option>Kogi</option><option>Kwara</option><option>Lagos</option><option>Nasarawa</option><option>Niger</option><option>Ogun</option><option>Ondo</option><option>Osun</option><option>Oyo</option><option>Plateau</option><option>Rivers</option><option>Sokoto</option><option>Taraba</option><option>Yobe</option><option>Zamfara</option></select></div><div style="display:flex;gap:8px"><select id="loc-lga-events" style="flex:1;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;padding:10px 12px;font-size:13px;outline:none"><option value="">Select LGA…</option></select><button onclick="filterByState(document.getElementById('loc-state-events').value,document.getElementById('loc-lga-events').value,'events')" style="padding:10px 16px;background:#2ECC71;color:#111;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">Search</button></div></div><div id="e-ep-list" style="padding:14px 16px 80px"></div></div>
-<div id="screen-aiplanner" class="escreen"><div style="background:linear-gradient(160deg,#0a1a0a,#111);padding:44px 20px 22px"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">←</button><p style="color:#2ECC71;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">AI MEAL PLANNER 🤖</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900;margin-bottom:4px">Plan Meals &amp; <span style="color:#2ECC71">Build Cart</span></h1><p style="color:#9A9390;font-size:13px;margin:0">AI-powered weekly meal plan &amp; grocery list</p></div><div style="padding:20px 16px"><p style="color:#9A9390;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Quick Plans</p><div style="display:flex;flex-wrap:wrap;margin-bottom:20px"><span class="plan-chip" onclick="fillEAIPrompt('Weekly family food plan for 4 people, 7 days under &#x20a6;40,000')">👨‍👩‍👧‍👦 Family · 7 days</span><span class="plan-chip" onclick="fillEAIPrompt('Keto diet meal plan for 1 person, 7 days')">🥩 Keto Diet</span><span class="plan-chip" onclick="fillEAIPrompt('Ramadan meal plan for a family of 4')">🌙 Ramadan</span><span class="plan-chip" onclick="fillEAIPrompt('Budget grocery shopping for 2 people under &#x20a6;15,000')">💰 Budget</span><span class="plan-chip" onclick="fillEAIPrompt('Healthy vegetarian meal plan 5 days')">🥗 Vegetarian</span><span class="plan-chip" onclick="fillEAIPrompt('High protein bodybuilding meal plan 7 days')">💪 High Protein</span></div><p style="color:#9A9390;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Describe your needs</p><textarea class="if" id="ai-prompt" rows="3" style="margin-bottom:12px" placeholder="e.g. Meals for family of 4, 7 days, under &#x20a6;40,000. Breakfast, lunch &amp; dinner."></textarea><button class="btn grn full" onclick="runAIPlan()" style="padding:14px;margin-bottom:20px">🤖 Generate Meal Plan &amp; Grocery List</button><div id="ai-result" style="display:none;padding-bottom:80px"></div></div></div>
+<div id="screen-aiplanner" class="escreen"><div style="background:linear-gradient(160deg,#0a1a0a,#111);padding:44px 20px 22px"><button onclick="eGo('home')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">←</button><p style="color:#2ECC71;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:2px">AI MEAL PLANNER 🤖</p><h1 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:900;margin-bottom:4px">Plan Meals &amp; <span style="color:#2ECC71">Build Cart</span></h1><p style="color:#9A9390;font-size:13px;margin:0">AI-powered weekly meal plan &amp; grocery list</p></div><div style="padding:20px 16px"><p style="color:#9A9390;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Quick Plans</p><div style="display:flex;flex-wrap:wrap;margin-bottom:20px"><span class="plan-chip" onclick="fillEAIPrompt('Weekly family food plan for 4 people, 7 days under &#x20a6;40,000')">👨‍👩‍👧‍👦 Family · 7 days</span><span class="plan-chip" onclick="fillEAIPrompt('Keto diet meal plan for 1 person, 7 days')">🥩 Keto Diet</span><span class="plan-chip" onclick="fillEAIPrompt('Ramadan meal plan for a family of 4')">🌙 Ramadan</span><span class="plan-chip" onclick="fillEAIPrompt('Budget grocery shopping for 2 people under &#x20a6;15,000')">💰 Budget</span><span class="plan-chip" onclick="fillEAIPrompt('Healthy vegetarian meal plan 5 days')">🥗 Vegetarian</span><span class="plan-chip" onclick="fillEAIPrompt('High protein bodybuilding meal plan 7 days')">💪 High Protein</span></div><p style="color:#9A9390;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Describe your needs</p><textarea class="if" id="ai-prompt" rows="3" style="margin-bottom:12px" placeholder="e.g. Meals for family of 4, 7 days, under &#x20a6;40,000. Breakfast, lunch &amp; dinner."></textarea><button class="btn grn full" onclick="runAIPlan()" style="padding:14px;margin-bottom:20px">🤖 Generate Meal Plan &amp; Grocery List</button><div id="ai-result" style="display:none;padding-bottom:80px"></div></div></div>
 <div id="screen-profile" class="escreen">
   <!-- Header -->
   <div style="background:linear-gradient(160deg,#B52D24,#111);padding:44px 18px 24px">
     <div style="display:flex;gap:16px;align-items:center;margin-bottom:20px">
-      <div onclick="uploadProfilePic()" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#F5A623,#E8392E);display:flex;align-items:center;justify-content:center;font-size:32px;border:3px solid rgba(255,255,255,.15);cursor:pointer;position:relative;"><img id="profile-pic-img" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;position:absolute;" /><span id="profile-pic-icon">👤</span><div style="position:absolute;bottom:0;right:0;background:#E8392E;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;border:2px solid #111;">📷</div></div><input id="profile-pic-inp" type="file" accept="image/*" style="display:none;" onchange="handleProfilePicUpload(this,'profile-pic-img','profile-pic-icon')">
+      <div onclick="uploadProfilePic()" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#F5A623,#E8392E);display:flex;align-items:center;justify-content:center;font-size:32px;border:3px solid rgba(255,255,255,.15);cursor:pointer;position:relative;"><img id="profile-pic-img" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;position:absolute;" /><span id="profile-pic-icon">👤</span><div style="position:absolute;bottom:0;right:0;background:#E8392E;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;border:2px solid #111;">📷</div></div><input id="profile-pic-inp" type="file" accept="image/*" style="display:none;" onchange="uploadAvatarReal(this,'profile-pic-img','profile-pic-icon')">
       <div>
         <h2 style="font-size:20px;font-weight:900;margin:0 0 2px" id="pname">Guest</h2>
         <p style="color:#9A9390;font-size:13px;margin:0 0 6px" id="pemail">Not signed in</p>
@@ -913,12 +918,14 @@ function connectSocket(){
 function mapApiUser(u){
   var mapped = {
     id: u.id, name: u.name, email: u.email, phone: u.phone, role: (u.role||'CUSTOMER').toLowerCase(),
-    address: u.address || '', bankName: u.bankName || '', bankAcct: u.bankAccountNumber || '',
+    address: u.address || '', state: u.state || '', lga: u.lga || '',
+    bankName: u.bankName || '', bankAcct: u.bankAccountNumber || '', bankAccountName: u.bankAccountName || '',
+    avatarUrl: u.avatarUrl || '',
     balance: u.wallet ? Math.round(u.wallet.balanceKobo/100) : 0,
   };
-  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; }
-  if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; }
-  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; }
+  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; }
+  if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; }
+  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.market = u.shopperProfile.market || ''; }
   return mapped;
 }
 
@@ -1602,7 +1609,7 @@ function openWithdraw(role){
   var bankInfo=(S.user&&S.user.bankName&&S.user.bankAcct)?(S.user.bankName+' &bull; '+S.user.bankAcct):'No bank account linked';
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Withdraw Earnings</div></div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:14px;margin-bottom:14px;">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">'+label+' Balance</div>'
@@ -1649,7 +1656,7 @@ function openAddMenu(itemId){
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(editing?'Edit':'Add')+' Menu Item</div></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Item Name *</label>'
@@ -2358,6 +2365,12 @@ function renderShopPhase(phase) {
         <div style="font-weight:700;font-size:13px;margin-bottom:9px;">📋 Your Shopping List (${shopItems.length} items)</div>
         ${shopItems.map((i,idx)=>`<div style="display:flex;gap:9px;align-items:center;padding:6px 0;${idx<shopItems.length-1?'border-bottom:1px solid #2A2850;':''}"><span style="font-size:14px;">•</span><span style="font-size:13px;color:#F2EDE8;">${i.text}</span></div>`).join('')}
       </div>
+      <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 15px;margin-bottom:14px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:9px;">⏱️ Call Rate Card</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:8px;">₦3,000 is already locked in escrow for your first 30 minutes. If your call runs longer, you'll be asked to pay the difference before packaging begins.</div>
+        ${[['1–30 minutes','₦3,000'],['31–60 minutes','₦5,000'],['61–90 minutes','₦7,000'],['91–120 minutes','₦9,000']].map(([t,p])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">${t}</span><span style="font-size:13px;font-weight:700;">${p}</span></div>`).join('')}
+        <div style="font-size:11px;color:#9A9390;margin-top:8px;">+₦2,000 per additional 30 minutes beyond that.</div>
+      </div>
       <div style="background:rgba(232,71,10,.07);border:1px solid rgba(232,71,10,.2);border-radius:12px;padding:11px 14px;margin-bottom:16px;font-size:13px;color:#9A9390;line-height:1.55;">
         📹 <strong>The live video call starts when you tap below.</strong> You must approve or reject each item during the call. Rejected items are not bought. Escrow is only released after the rider collects your items.
       </div>
@@ -2569,14 +2582,10 @@ function renderShopPhase(phase) {
   } else if (phase === 'delivered') {
     const riderNm = sfmRiderName();
     const shopperNm = sfmShopperName();
-    const itemsCost = shopItems.reduce((s,i)=>s+(i.price||450),0) || 2500;
-    const itemCount = shopItems.length;
-    const sessionFee = itemCount <= 5 ? 3000 : itemCount <= 10 ? 4000 : 5000;
-    const sessionFeeNet = Math.round(sessionFee * 0.8); // shopper keeps 80%
-    const sessionPlatform = sessionFee - sessionFeeNet;
-    const riderFee = 800;
-    const riderFeeNet = Math.round(riderFee * 0.8);
-    const riderPlatform = riderFee - riderFeeNet;
+    const sess = window._sfmSession || {};
+    const itemsCost = Math.round((sess.itemsTotalKobo || 0) / 100);
+    const sessionFee = Math.round((sess.sessionFeeKobo || 0) / 100);
+    const riderFee = Math.round((sess.riderFeeKobo || 0) / 100);
     const total = itemsCost + sessionFee + riderFee;
     body.innerHTML = `<div class="fi" style="padding:16px 0;">
       <div style="text-align:center;margin-bottom:18px;">
@@ -2606,27 +2615,21 @@ function renderShopPhase(phase) {
         </div>
       </div>
 
-      <div style="font-weight:800;font-size:14px;margin-bottom:10px;">🔒 Release Remaining Payments</div>
-      <div style="font-size:12px;color:#9A9390;margin-bottom:14px;">Confirm the session fee and rider fee now that items are delivered.</div>
+      <div style="font-weight:800;font-size:14px;margin-bottom:10px;">🔒 Remaining Payments</div>
+      <div style="font-size:12px;color:#9A9390;margin-bottom:14px;">Released together to ${shopperNm} and ${riderNm} when you tap "Complete Order" below (or automatically after the countdown).</div>
 
-      <!-- Payment 2: Shopper session fee → shopper app balance -->
       <div style="border:1.5px solid #2A2850;border-radius:16px;padding:15px;margin-bottom:11px;background:#242424;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-          <div><div style="font-weight:800;font-size:14px;">🧑‍💼 Shopper Session Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Credited to ${shopperNm}'s App Balance</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div><div style="font-weight:800;font-size:14px;">🧑‍💼 Shopper Session Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Goes to ${shopperNm}'s App Balance</div></div>
           <div style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;color:#E8392E;">₦${sessionFee.toLocaleString()}</div>
         </div>
-        <div style="background:#1C1C1C;border-radius:10px;padding:10px 12px;font-size:13px;color:#9A9390;margin-bottom:10px;">This is ${shopperNm}'s fee for shopping live for you.</div>
-        <button onclick="this.style.background='#2ECC71';this.style.color='white';this.textContent='✓ Session Fee Released';this.style.pointerEvents='none';showToast('Session fee released to '+shopperNm+' ✓','success');" style="width:100%;background:rgba(232,57,46,0.10);border:1.5px solid rgba(232,71,10,.3);border-radius:12px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#E8392E;font-family:\'DM Sans\',sans-serif;transition:all .2s;">🔓 Confirm &amp; Release ₦${sessionFee.toLocaleString()} Session Fee</button>
       </div>
 
-      <!-- Payment 3: Rider fee → rider app balance -->
       <div style="border:1.5px solid #2A2850;border-radius:16px;padding:15px;margin-bottom:16px;background:#242424;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-          <div><div style="font-weight:800;font-size:14px;">🏍️ Rider Delivery Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">${riderNm} delivered your items from the market</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div><div style="font-weight:800;font-size:14px;">🏍️ Rider Delivery Fee</div><div style="font-size:12px;color:#9A9390;margin-top:3px;">Goes to ${riderNm}'s App Balance</div></div>
           <div style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;color:#6430C8;">₦${riderFee.toLocaleString()}</div>
         </div>
-        <div style="background:#1C1C1C;border-radius:10px;padding:10px 12px;font-size:13px;color:#9A9390;margin-bottom:10px;">This pays ${riderNm} for picking up and delivering your shopping to you.</div>
-        <button onclick="this.style.background='#2ECC71';this.style.color='white';this.textContent='✓ Rider Fee Released';this.style.pointerEvents='none';showToast('Rider fee released to '+riderNm+' ✓','success');" style="width:100%;background:rgba(100,48,200,0.10);border:1.5px solid rgba(100,48,200,.3);border-radius:12px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;color:#6430C8;font-family:\'DM Sans\',sans-serif;transition:all .2s;">🔓 Confirm &amp; Release ₦${riderFee.toLocaleString()} Rider Fee</button>
       </div>
 
       <!-- 90s auto-release countdown -->
@@ -2733,6 +2736,35 @@ function sfmSocketListeners(){
     else{shopItems.push({id:real.id,text:real.text,approved:real.approved,price:Math.round(real.priceKobo/100)});}
     if(document.getElementById('approval-items'))renderApprovalItems();
   });
+  _socket.on('shop-session:call-topup-required',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    promptCallTopUp(p.topUpRequiredKobo);
+  });
+}
+
+// Your live call ran past the tier you already paid for — this is the
+// real per-minute fee (see sessionFeeForDuration in
+// shopSessions.controller.js), not a fixed fee, so the difference is only
+// knowable once the call actually ends. Reuses the same card/transfer/
+// USSD/wallet-debit selector as the initial deposit.
+function promptCallTopUp(topUpRequiredKobo){
+  showToast('Your call ran past the tier already paid — pay '+N(topUpRequiredKobo/100)+' more to continue','warning');
+  openEscrowModal(topUpRequiredKobo/100, async function(){
+    try{
+      var methodMap={card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
+      var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-call-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
+      if(res.session)window._sfmSession=res.session;
+      if(res.authorizationUrl){
+        window.open(res.authorizationUrl,'_blank');
+        showToast('Complete payment in the new tab to continue.','success');
+      }else{
+        showToast('Call fee top-up paid — continuing to packaging.','success');
+      }
+    }catch(err){
+      showToast(err.message||'Could not process the top-up payment','warning');
+    }
+  });
 }
 
 function sfmShopperName(){
@@ -2816,8 +2848,19 @@ async function depositAndFindShopper() {
       // reference item.id) hit the right row.
       shopItems=createRes.session.items.map(function(it){return {id:it.id,text:it.text,approved:it.approved,price:it.priceKobo?Math.round(it.priceKobo/100):null};});
 
-      var payRes=await api('/shop-sessions/'+window._sfmSession.id+'/pay',{method:'POST',body:JSON.stringify({budgetKobo:budgetKobo,paymentMethod:'WALLET'})});
+      var methodMap={card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
+      var payRes=await api('/shop-sessions/'+window._sfmSession.id+'/pay',{method:'POST',body:JSON.stringify({budgetKobo:budgetKobo,paymentMethod:paymentMethod})});
       if(payRes.session)window._sfmSession=payRes.session;
+
+      if(payRes.authorizationUrl){
+        window.open(payRes.authorizationUrl,'_blank');
+        showToast('Complete payment in the new tab, then return here.','success');
+        // Real Paystack redirect for card/transfer/USSD — the session isn't
+        // matched to a shopper until the deposit clears (webhook or the
+        // customer's own verify-poll below confirms it), so poll until the
+        // session leaves SEARCHING the same way the WALLET path already does.
+      }
 
       sfmSocketListeners();
       if(_socket)_socket.emit('shop-session:join',{sessionId:window._sfmSession.id});
@@ -3515,13 +3558,28 @@ function shopperBindStatusListener(){
         renderShopperPhase('riderFound');
       });
     }
+    // Customer just cleared a call-fee top-up while the shopper was
+    // waiting (see shopperEndCallAndPackage) — advance them now too.
+    if(p.status==='PACKAGING'&&window._shopperPhase==='liveCall'){
+      renderShopperPhase('packaging');
+    }
   });
 }
 
 async function shopperEndCallAndPackage(){
   sfmEndCall();
   if(window._shopperSession){
-    try{ await api('/shop-sessions/'+window._shopperSession.id+'/packaging',{method:'POST'}); }
+    try{
+      var res=await api('/shop-sessions/'+window._shopperSession.id+'/packaging',{method:'POST'});
+      if(res.topUpRequiredKobo>0){
+        // Real per-minute fee exceeded what the customer already paid —
+        // the session stays LIVE_CALL until they pay the difference
+        // (pushed to their screen via shop-session:call-topup-required).
+        // Don't advance the shopper's own screen to packaging yet either.
+        showToast('Call ran long — waiting for the customer to pay the extra '+N(res.topUpRequiredKobo/100),'warning');
+        return;
+      }
+    }
     catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
   }
   renderShopperPhase('packaging');
@@ -4017,7 +4075,6 @@ function setRating(type,val){
     sp.style.transform=i===val-1?'scale(1.2)':'scale(1)';
   });
 }
-function submitRating(){document.getElementById('rating-modal').style.display='none';toast('Rating submitted!');setTimeout(function(){go('home');},500);}
 function skipRating(){document.getElementById('rating-modal').style.display='none';go('home');}
 
 // ══════════════════════════════════════════════════════
@@ -4161,7 +4218,7 @@ function openEditPackage(pkgId){
   var pkg=(window._myPackages||[]).find(function(p){return p.id===pkgId;});
   if(!pkg)return;
   showProcedureModal('<div style="padding:0 0 20px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+pkg.label+'</div></div>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+pkg.label+'</div></div>'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;)</label>'
     +'<input id="pk-price" type="number" value="'+Math.round(pkg.priceKobo/100)+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'
     +'<button onclick="submitEditPackage(\''+pkgId+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px;">Save</button>'
@@ -4190,7 +4247,8 @@ async function renderVendorEarnings(){
     var e=res.earnings;
     if(S.user) S.user.balance=Math.round(res.balanceKobo/100);
     document.getElementById('vendor-earnings-inner').innerHTML=
-      '<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 16px;color:#F2EDE8;">Earnings</h2>'
+      '<button onclick="vendorNav(\'orders\')" class="ibtn" style="margin-bottom:12px;">&#x2190;</button>'
+      +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 16px;color:#F2EDE8;">Earnings</h2>'
       +'<div style="background:linear-gradient(135deg,#0d2a0d,#1a3a1a);border-radius:18px;padding:20px;margin-bottom:16px;">'
       +'<div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px;">TODAY</div>'
       +'<div style="font-family:\'Playfair Display\',serif;font-size:36px;font-weight:800;color:#fff;">'+N(Math.round(e.dailyKobo/100))+'</div>'
@@ -4212,6 +4270,7 @@ async function renderVendorEarnings(){
 function renderVendorMessages(){
   var body=vendorBodyEl();if(!body)return;
   body.innerHTML='<div style="padding:52px 16px 16px;">'
+    +'<button onclick="vendorNav(\'orders\')" class="ibtn" style="margin-bottom:12px;">&#x2190;</button>'
     +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 16px;color:#F2EDE8;">Messages</h2>'
     +'<div id="vendor-messages-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div></div>';
   loadVendorChatThreads();
@@ -4248,13 +4307,13 @@ function renderVendorProfile(){
   body.innerHTML='<div style="padding:52px 16px 24px;">'
     +'<div style="background:linear-gradient(135deg,#0d2a0d,#1a3a1a);border-radius:18px;padding:20px;margin-bottom:14px;">'
     +'<div style="display:flex;gap:14px;align-items:center;">'
-    +'<div style="width:58px;height:58px;border-radius:16px;background:rgba(46,204,113,.2);border:2px solid rgba(46,204,113,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">&#x1F37D;&#xFE0F;</div>'
+    +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(46,204,113,.2);border:2px solid rgba(46,204,113,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F37D;&#xFE0F;</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">'+vt+'</div></div></div></div>'
     +[['Business Name',bizName],['Address',addr],['Phone',phone],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
-        +'<button onclick="showEditProcedure(\'Profile\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
+        +'<button onclick="openEditProfileModal(\'vendor\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
     +renderKycSection('vendor')
     +renderRoleSwitcher()
@@ -4350,28 +4409,22 @@ function riderBindDispatchListeners(){
   _socket.on('dispatch:new-shop-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
 }
 
+// Re-tapping the Map tab used to always show a static fake "Mamas Kitchen,
+// Lekki / 1.4km / 5 min / ₦630" screen — even while a rider had a real
+// active delivery in progress (riderMapPhase1/2), since this never checked
+// window._riderActiveSession at all. Now it delegates to the real
+// in-progress map when one exists, or shows an honest empty state.
 function renderRiderMap(){
   var body=document.getElementById('rider-body');if(!body)return;
-  body.innerHTML='<div style="padding:52px 16px 14px;">'
-    +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 14px;color:#F2EDE8;">Live Navigation</h2></div>'
-    +'<div class="mapbox" style="margin:0 16px 14px;border-radius:18px;height:280px;">'
-    +'<div class="mgrid"></div><div class="mroad"></div>'
-    +'<div class="mpin" style="left:10%"><div class="mpc" style="width:40px;height:40px;background:#E8392E;">&#x1F37D;&#xFE0F;</div><div class="mpl">Pickup</div></div>'
-    +'<div class="mpin mrider" style="left:42%"><div class="mpc" style="width:48px;height:48px;background:#F5A623;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#F5A623;font-weight:800;">You</div></div>'
-    +'<div class="mpin" style="right:8%"><div class="mpc" style="width:40px;height:40px;background:#2ECC71;">&#x1F3E0;</div><div class="mpl">Deliver</div></div>'
-    +'<div class="mlive">&#x25CF; LIVE</div></div>'
-    +'<div style="padding:0 16px;">'
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:10px;">'
-    +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">Next Stop: Mamas Kitchen, Lekki</div>'
-    +'<div style="display:flex;gap:10px;">'
-    +'<div style="flex:1;text-align:center;"><div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Distance</div><div style="font-weight:800;color:#F5A623;">1.4 km</div></div>'
-    +'<div style="flex:1;text-align:center;"><div style="font-size:10px;color:#9A9390;margin-bottom:2px;">ETA</div><div style="font-weight:800;color:#2ECC71;">5 min</div></div>'
-    +'<div style="flex:1;text-align:center;"><div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Fee (90%)</div><div style="font-weight:800;color:#F2EDE8;">&#x20A6;630</div></div>'
-    +'</div></div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="openCallModal(\'Vendor\',\'08023456789\',\'Vendor\',\'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4DE; Call Vendor</button>'
-    +'<button onclick="openCallModal(\'Adaeze O.\',\'08012345678\',\'Customer\',\'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4DE; Call Customer</button>'
-    +'</div></div>';
+  var s=window._riderActiveSession;
+  if(s && s.status==='RIDER_ASSIGNED'){ riderMapPhase1(); return; }
+  if(s && s.status==='OUT_FOR_DELIVERY'){ riderMapPhase2(); return; }
+  body.innerHTML='<div style="padding:52px 16px 14px;text-align:center;">'
+    +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 30px;color:#F2EDE8;">Live Navigation</h2>'
+    +'<div style="font-size:52px;margin-bottom:16px;">🗺️</div>'
+    +'<p style="font-weight:700;font-size:16px;margin:0 0 8px;color:#F2EDE8;">No active delivery</p>'
+    +'<p style="color:#9A9390;font-size:13px;">Accept a delivery from the Deliveries tab to see live navigation here</p>'
+    +'</div>';
 }
 async function renderRiderEarnings(){
   var body=document.getElementById('rider-body');if(!body)return;
@@ -4381,7 +4434,8 @@ async function renderRiderEarnings(){
     var e=res.earnings;
     if(S.user) S.user.balance=Math.round(res.balanceKobo/100);
     document.getElementById('rider-earnings-inner').innerHTML=
-      '<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 16px;color:#F2EDE8;">Earnings</h2>'
+      '<button onclick="riderNav(\'deliveries\')" class="ibtn" style="margin-bottom:12px;">&#x2190;</button>'
+      +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0 0 16px;color:#F2EDE8;">Earnings</h2>'
       +'<div style="background:linear-gradient(135deg,#1a1a0d,#2a2a0d);border-radius:18px;padding:20px;margin-bottom:16px;">'
       +'<div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;text-transform:uppercase;margin-bottom:6px;">TODAY</div>'
       +'<div style="font-family:\'Playfair Display\',serif;font-size:36px;font-weight:800;color:#fff;">'+N(Math.round(e.dailyKobo/100))+'</div>'
@@ -4405,7 +4459,7 @@ function renderRiderProfile(){
   var u=S.user||{};
   var nm=u.name||'Rider Name';
   var phone=u.phone||'Not set';
-  var vehicle=(u.vehicleType&&u.plate)?(u.vehicleType+' \u2022 '+u.plate):(u.vehicleType||'Not set');
+  var vehicle=(u.vehicleType&&u.plateNumber)?(u.vehicleType+' \u2022 '+u.plateNumber):(u.vehicleType||'Not set');
   var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct):'Not linked';
   var deliveries=u.deliveries||0;
   var rating=u.rating||'New';
@@ -4413,7 +4467,7 @@ function renderRiderProfile(){
   body.innerHTML='<div style="padding:52px 16px 24px;">'
     +'<div style="background:linear-gradient(135deg,#1a1a0d,#2a2a0d);border-radius:18px;padding:20px;margin-bottom:14px;">'
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
-    +'<div style="width:58px;height:58px;border-radius:16px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">&#x1F6F5;</div>'
+    +'<div onclick="uploadRiderPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="rider-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="rider-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F6F5;</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider</div></div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
@@ -4424,7 +4478,7 @@ function renderRiderProfile(){
     +[['Full Name',nm],['Phone',phone],['Vehicle',vehicle],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
-        +'<button onclick="showEditProcedure(\''+r[0]+'\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
+        +'<button onclick="openEditProfileModal(\'rider\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
     +renderKycSection('rider')
     +renderRoleSwitcher()
@@ -4558,7 +4612,7 @@ async function _showNotifPanel(){
   }).join('');
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x1F514; Notifications</div></div>'
     +rows
     +'</div>');
@@ -4573,14 +4627,14 @@ function _showFavPanel(){
   }).join('');
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x2764;&#xFE0F; Favourites</div></div>'
     +rows+'</div>');
 }
 function _showHelpPanel(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x2753; Help & Support</div></div>'
     +'<p style="font-size:13px;color:#9A9390;margin-bottom:16px;">Support available Mon\u2013Sat, 8AM\u20138PM. Average response: 2 minutes.</p>'
     +'<button onclick="closeProcedureModal();setTimeout(openLiveChat,200)" style="width:100%;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:8px;">&#x1F4AC; Live Chat Now</button>'
@@ -4588,13 +4642,10 @@ function _showHelpPanel(){
     +'</div>');
 }
 
-function showShopperBankEdit(){showProcedureModal('<div style="padding:20px;"><div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#F2EDE8;margin-bottom:6px;">&#x1F3E6; Edit Bank Details</div><p style="font-size:12px;color:#9A9390;margin-bottom:14px;">Changes verified via SMS within 24 hours.</p><label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Bank</label><select style="width:100%;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;margin-bottom:11px;box-sizing:border-box;"><option>Opay</option><option>Palmpay</option><option>GTBank</option><option>Access Bank</option><option>First Bank</option></select><label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Account Number</label><input placeholder="10-digit" type="number" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;margin-bottom:11px;outline:none;box-sizing:border-box;"><label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Account Name</label><input placeholder="As on your bank" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;margin-bottom:14px;outline:none;box-sizing:border-box;"><button onclick="closeProcedureModal();toast(\'Bank update submitted!\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px;">Submit Update</button><button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button></div>');}
-
-function handleProfilePicUpload(inp,imgId,iconId){var file=inp.files[0];if(!file)return;var reader=new FileReader();reader.onload=function(ev){var img=document.getElementById(imgId);var ico=document.getElementById(iconId);if(img){img.src=ev.target.result;img.style.display='block';}if(ico)ico.style.display='none';toast('Profile photo updated!');};reader.readAsDataURL(file);}
 function uploadProfilePic(){document.getElementById('profile-pic-inp').click();}
-function uploadRiderPic(){var inp=document.getElementById('rider-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='rider-pp-inp';inp.style.display='none';inp.onchange=function(){handleProfilePicUpload(inp,'rider-pic-img','rider-pic-icon');};document.body.appendChild(inp);}inp.click();}
-function uploadVendorPic(){var inp=document.getElementById('vendor-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='vendor-pp-inp';inp.style.display='none';inp.onchange=function(){handleProfilePicUpload(inp,'vendor-pic-img','vendor-pic-icon');};document.body.appendChild(inp);}inp.click();}
-function uploadShopperPic(){var inp=document.getElementById('shopper-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='shopper-pp-inp';inp.style.display='none';inp.onchange=function(){handleProfilePicUpload(inp,'shopper-pic-img','shopper-pic-icon');};document.body.appendChild(inp);}inp.click();}
+function uploadRiderPic(){var inp=document.getElementById('rider-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='rider-pp-inp';inp.style.display='none';inp.onchange=function(){uploadAvatarReal(inp,'rider-pic-img','rider-pic-icon');};document.body.appendChild(inp);}inp.click();}
+function uploadVendorPic(){var inp=document.getElementById('vendor-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='vendor-pp-inp';inp.style.display='none';inp.onchange=function(){uploadAvatarReal(inp,'vendor-pic-img','vendor-pic-icon');};document.body.appendChild(inp);}inp.click();}
+function uploadShopperPic(){var inp=document.getElementById('shopper-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='shopper-pp-inp';inp.style.display='none';inp.onchange=function(){uploadAvatarReal(inp,'shopper-pic-img','shopper-pic-icon');};document.body.appendChild(inp);}inp.click();}
 
 var _orderData=[
   {type:'shopping',title:'Live Shopping',icon:'&#x1F6D2;',date:'Yesterday 10AM',
@@ -4674,7 +4725,7 @@ function showOrderDetail(typeOrIdx, idx){
   window._curOrderType=d.type;
   odb.innerHTML='<div style="padding:52px 16px 32px;">'
     +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">'
-    +'<button onclick="closeOrderDetail()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;padding:0;">&#x2190;</button>'
+    +'<button onclick="closeOrderDetail()" class="ibtn">&#x2190;</button>'
     +'<div><h2 style="font-size:19px;font-weight:900;margin:0;color:#F2EDE8;">'+d.title+'</h2>'
     +'<p style="font-size:12px;color:#9A9390;margin:3px 0 0;">'+d.date+'</p></div></div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
@@ -4715,10 +4766,36 @@ async function showVendorRideHistory(){
   }
 }
 
-function showRiderRideHistory(){var body=document.getElementById('rider-body');if(!body)return;var rides=[{id:'RD4821',customer:'Adaeze O.',vendor:"Mama\'s Kitchen",date:'Today 2:30PM',order:'Jollof Rice x2',earned:630},{id:'RD4810',customer:'Ngozi A.',vendor:'Rice Republic',date:'Yesterday 5PM',order:'Fried Rice x3',earned:740}];body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="riderNav(\'deliveries\')" style="background:none;border:none;color:#F2EDE8;font-size:22px;cursor:pointer;padding:0;">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Ride History</h2></div>'+rides.map(function(r){return '<div onclick="showRiderRideDetail(this)" data-rid="'+r.id+'" data-cust="'+r.customer+'" data-vendor="'+r.vendor+'" data-order="'+r.order+'" data-earned="'+r.earned+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;cursor:pointer;"><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+r.customer+' &#x2192; '+r.vendor+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px;">'+r.order+'</div></div><div style="text-align:right;"><div style="font-weight:700;color:#2ECC71;font-size:13px;">&#x20a6;'+r.earned+'</div><div style="font-size:10px;color:#9A9390;margin-top:2px;">'+r.date+'</div></div></div><div style="font-size:11px;color:#555;">Tap for details &#x203A;</div></div>';}).join('')+'</div>';}
-function showRiderRideDetail(el){var body=document.getElementById('rider-body');if(!body)return;body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="showRiderRideHistory()" style="background:none;border:none;color:#F2EDE8;font-size:22px;cursor:pointer;padding:0;">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Ride #'+el.dataset.rid+'</h2></div><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F464; Customer</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+el.dataset.cust+'</div><button onclick="showReportIssue(\'customer\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button></div><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F37D;&#xFE0F; Vendor</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:4px;">'+el.dataset.vendor+'</div><div style="font-size:11px;color:#9A9390;margin-bottom:10px;">'+el.dataset.order+' &#x2022; Earned: &#x20a6;'+el.dataset.earned+'</div><button onclick="showReportIssue(\'vendor\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Vendor</button></div></div>';}
-
-function showShopperSessionDetail(el){var body=document.getElementById('shopper-body');if(!body)return;body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="renderShopperHistory()" style="background:none;border:none;color:#F2EDE8;font-size:22px;cursor:pointer;padding:0;">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Session #'+el.dataset.sid+'</h2></div><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F464; Customer</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:4px;">'+el.dataset.cust+'</div><div style="font-size:11px;color:#9A9390;margin-bottom:10px;">'+el.dataset.market+' &#x2022; Items: '+el.dataset.items+'</div><div style="font-weight:700;color:#F5A623;margin-bottom:10px;">&#x20a6;'+el.dataset.total+'</div><button onclick="showReportIssue(\'customer\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button></div><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F6F5; Rider</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+el.dataset.rider+'</div><button onclick="openCallModal(\''+el.dataset.rider+'\',\''+el.dataset.rp+'\',\'Rider\',\'&#x1F6F5;\')" style="width:100%;margin-bottom:8px;padding:9px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x1F4DE; Call Rider</button><button onclick="showReportIssue(\'rider\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Rider</button></div></div>';}
+// Real ride history — the old version was two hardcoded fake rides
+// referencing vendors that don't exist in this app anymore (riders only
+// ever deliver Shop-For-Me sessions, never restaurant/vendor orders).
+async function showRiderRideHistory(){
+  var body=document.getElementById('rider-body');if(!body)return;
+  body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="riderNav(\'deliveries\')" class="ibtn">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Delivery History</h2></div><div id="rider-history-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div></div>';
+  try{
+    var res=await api('/shop-sessions?as=rider');
+    var past=(res.sessions||[]).filter(function(s){return ['DELIVERED','COMPLETED','CANCELLED'].indexOf(s.status)>=0;});
+    var listEl=document.getElementById('rider-history-list');if(!listEl)return;
+    listEl.innerHTML=past.length?past.map(function(s){
+      var earned=Math.round((s.riderFeeKobo||0)*0.8/100);
+      return '<div onclick="showRiderRideDetail(\''+s.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;cursor:pointer;"><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+((s.customer&&s.customer.name)||'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px;">'+s.status.replace(/_/g,' ')+'</div></div><div style="text-align:right;"><div style="font-weight:700;color:#2ECC71;font-size:13px;">'+N(earned)+'</div><div style="font-size:10px;color:#9A9390;margin-top:2px;">'+new Date(s.createdAt).toLocaleDateString()+'</div></div></div><div style="font-size:11px;color:#555;">Tap for details &#x203A;</div></div>';
+    }).join('') : '<div style="text-align:center;padding:30px;color:#9A9390">No past deliveries yet.</div>';
+  }catch(err){
+    var listEl2=document.getElementById('rider-history-list');
+    if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load history')+'</div>';
+  }
+}
+async function showRiderRideDetail(id){
+  var body=document.getElementById('rider-body');if(!body)return;
+  body.innerHTML='<div style="padding:52px 16px 24px;"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>';
+  var s;
+  try{ s=(await api('/shop-sessions/'+id)).session; }
+  catch(err){ body.innerHTML='<div style="padding:52px 16px 24px;"><div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load delivery')+'</div></div>'; return; }
+  var earned=Math.round((s.riderFeeKobo||0)*0.8/100);
+  body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="showRiderRideHistory()" class="ibtn">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Delivery #'+s.id.slice(0,8)+'</h2></div>'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F464; Customer</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+((s.customer&&s.customer.name)||'—')+'</div><button onclick="showReportIssue(\'customer\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button></div>'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F4E6; Delivery</div><div style="font-size:11px;color:#9A9390;margin-bottom:4px;">'+s.status.replace(/_/g,' ')+' &#x2022; Earned: '+N(earned)+'</div><div style="font-size:12px;color:#9A9390;">'+(s.deliveryAddress||'Address not recorded')+'</div></div>';
+}
 
 function openAddSellerToPayoutModal(){
   var origCb=window._afterSaveSellerCb;
@@ -5179,7 +5256,7 @@ function renderShopperHome() {
         <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Bank</span><span style="font-weight:700;">${bank.name}</span></div>
         <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#9A9390;">Account</span><span style="font-weight:700;">${bank.acct}</span></div>
         <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:13px;color:#9A9390;">Name</span><span style="font-weight:700;">${bank.holder}</span></div>
-        <button style="margin-top:10px;background:transparent;border:1.5px solid #3A3860;border-radius:10px;padding:9px 0;width:100%;color:#9A9390;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px;" onclick="openEditBankDetailsModal()">Edit Bank Details</button>
+        <button style="margin-top:10px;background:transparent;border:1.5px solid #3A3860;border-radius:10px;padding:9px 0;width:100%;color:#9A9390;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px;" onclick="openEditProfileModal('shopper')">Edit Bank Details</button>
       </div>
     </div>`;
 
@@ -5192,34 +5269,39 @@ function renderShopperHome() {
 }
 
 // ── Shopper session flow (mirrors customer phases exactly) ──────────────
-function openShopperSessionDetail(s) {
-  if(typeof s === 'string') { try { s=JSON.parse(s.replace(/'/g,'"')); } catch(e){} }
-  const riderName = s.rider || 'Chidi Okonkwo';
-  const riderPlate = s.riderPlate || 'LG-234-NK';
-  const riderRating = s.riderRating || '4.8';
+async function openShopperSessionDetail(id) {
+  showBottomSheet('Session Details', '<div style="text-align:center;padding:30px;color:#9A9390">Loading…</div>');
+  let s;
+  try{
+    const res = await api('/shop-sessions/'+id);
+    s = res.session;
+  }catch(err){
+    showBottomSheet('Session Details', '<div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load session')+'</div>');
+    return;
+  }
+  const hasRider = s.rider && s.rider.user;
+  const isDone = s.status==='COMPLETED';
   showBottomSheet('Session Details', `
     <div style="background:#1C1C1C;border-radius:13px;padding:14px;margin-bottom:14px;">
-      <div style="font-size:12px;color:#9A9390;margin-bottom:5px;">${s.date} &nbsp;•&nbsp; Ref: ${s.id}</div>
-      <div style="font-weight:800;font-size:16px;">🛒 ${s.market}</div>
-      <div style="font-size:12px;color:#9A9390;margin-top:4px;">${s.items} items &nbsp;•&nbsp; ${s.status==='completed'?'✓ Completed':'✗ Cancelled'}</div>
+      <div style="font-size:12px;color:#9A9390;margin-bottom:5px;">${new Date(s.createdAt).toLocaleString()} &nbsp;•&nbsp; Ref: ${s.id.slice(0,8)}</div>
+      <div style="font-weight:800;font-size:16px;">🛒 ${(s.items||[]).length} items</div>
+      <div style="font-size:12px;color:#9A9390;margin-top:4px;">${s.status.replace(/_/g,' ')}</div>
     </div>
     <div style="background:#242424;border:1.5px solid #2A2850;border-radius:13px;padding:14px;margin-bottom:10px;">
       <div style="font-weight:700;font-size:12px;color:#9A9390;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Customer</div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2A2850;">
         <div style="width:42px;height:42px;background:rgba(59,159,232,0.10);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">👤</div>
-        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">${s.customer}</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">Market: ${s.market}</div></div>
+        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">${(s.customer&&s.customer.name)||'Customer'}</div></div>
       </div>
       <div style="font-weight:700;font-size:12px;color:#9A9390;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Rider (Delivery)</div>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2A2850;">
+      ${hasRider ? `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2A2850;">
         <div style="width:42px;height:42px;background:rgba(100,48,200,0.10);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🏍️</div>
-        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">${riderName}</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">${riderPlate} &nbsp;•&nbsp; ★ ${riderRating}</div></div>
-      </div>
-      ${s.sellers&&s.sellers.length?`<div style="font-size:12px;color:#2ECC71;background:rgba(46,204,113,0.10);border-radius:9px;padding:8px 11px;margin-bottom:10px;">🏪 Sellers paid: <strong>${s.sellers.join(', ')}</strong></div>`:''}
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Items Cost</span><span style="font-weight:800;">₦${s.itemsCost.toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Your Session Fee</span><span style="font-weight:800;color:#F5A623;">₦${Math.round(s.sessionFee*0.8).toLocaleString()}</span></div>
-      ${s.rating?`<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Customer Rating</span><span style="color:#F5A623;">${'⭐'.repeat(s.rating)}</span></div>`:''}
+        <div style="flex:1;"><div style="font-weight:700;font-size:14px;">${s.rider.user.name}</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">${s.rider.vehicleType||''}${s.rider.plateNumber?' • '+s.rider.plateNumber:''}</div></div>
+      </div>` : `<div style="font-size:12px;color:#9A9390;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2A2850;">No rider assigned yet</div>`}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Items Cost</span><span style="font-weight:800;">₦${Math.round((s.itemsTotalKobo||0)/100).toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Your Session Fee</span><span style="font-weight:800;color:#F5A623;">₦${Math.round((s.sessionFeeKobo||0)*0.8/100).toLocaleString()}</span></div>
     </div>
-    ${s.status==='completed'?`
+    ${isDone?`
     <div style="display:flex;gap:9px;">
       <button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('shopper_session');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Customer</button>
       <button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('rider');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Rider</button>
@@ -5238,6 +5320,7 @@ async function renderShopperEarnings() {
     const e = res.earnings;
     if(S.user) S.user.balance=Math.round(res.balanceKobo/100);
     document.getElementById('shopper-earnings-inner').innerHTML = `
+    <button onclick="shopperNav('home')" class="ibtn" style="margin-bottom:12px;">←</button>
     <div style="font-weight:800;font-size:22px;margin-bottom:4px;">Earnings</div>
     <div style="font-size:13px;color:#9A9390;margin-bottom:18px;">Your income summary</div>
 
@@ -5273,26 +5356,6 @@ async function renderShopperEarnings() {
 }
 
 
-
-function openEditBankDetailsModal() {
-  showBottomSheet('🏦 Update Bank Details', `
-    <p style="font-size:13px;color:#9A9390;margin-bottom:14px;">Your bank account is used for automatic payouts. Changes are reviewed within 24 hours for security.</p>
-    <div class="inp-group" style="margin-bottom:12px;"><label class="inp-label">Bank Name</label>
-      <select class="inp" id="ebd-bank">
-        <option>GTBank</option><option>Access Bank</option><option>First Bank</option><option>UBA</option><option>Zenith Bank</option><option>Opay</option><option>Palmpay</option><option>Kuda Bank</option>
-      </select>
-    </div>
-    <div class="inp-group" style="margin-bottom:12px;"><label class="inp-label">Account Number</label>
-      <input class="inp" type="tel" id="ebd-acct" maxlength="10" placeholder="10-digit account number" oninput="verifyBankAccount(this)">
-    </div>
-    <div id="ebd-acctname-box" style="margin-bottom:12px;display:none;">
-      <div class="inp-group"><label class="inp-label">Account Name (auto-verified)</label>
-        <div class="inp" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.3);color:#2ECC71;font-weight:700;" id="ebd-acctname">Verifying...</div>
-      </div>
-    </div>
-    <div style="background:rgba(232,57,46,0.10);border:1px solid rgba(232,71,10,.2);border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:12px;color:#9A9390;">🔒 For security, you may be asked to verify this change via SMS OTP.</div>
-    <button onclick="submitBankDetailsUpdate()" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:white;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Submit Update Request</button>`);
-}
 
 function openProfilePhotoUpload(role) {
   showBottomSheet('📷 Update Profile Photo', `
@@ -5346,131 +5409,77 @@ async function toggleVendorOnline(){
   }
 }
 
-function renderShopperHistory() {
+async function renderShopperHistory() {
   const body = document.getElementById('shopper-body');
   if(!body) return;
-  const sessions = [
-    { id:'SH-0041', customer:'Amara Okonkwo', market:'Mile 12 Market', items:3, itemsCost:2500, sessionFee:3000, status:'completed', date:'Today, 2:14 PM', rating:5, sellers:['Mama Nkechi','Iya Tomato'] },
-    { id:'SH-0040', customer:'Bola Adeyemi', market:'Agege Market', items:6, itemsCost:4800, sessionFee:4000, status:'completed', date:'Today, 10:30 AM', rating:5, sellers:['Iya Tomato'] },
-    { id:'SH-0039', customer:'Chike Eze', market:'Oyingbo Market', items:2, itemsCost:1200, sessionFee:3000, status:'completed', date:'Yesterday, 4:45 PM', rating:4, sellers:['Mama Nkechi'] },
-    { id:'SH-0038', customer:'Ngozi Obi', market:'Mile 12 Market', items:8, itemsCost:6200, sessionFee:4000, status:'completed', date:'Yesterday, 1:10 PM', rating:5, sellers:['Mama Nkechi','Iya Tomato'] },
-    { id:'SH-0037', customer:'Tunde Balogun', market:'Agege Market', items:4, itemsCost:3100, sessionFee:3000, status:'cancelled', date:'Mon, 9:00 AM', rating:null, sellers:[] },
-    { id:'SH-0036', customer:'Fatima Sule', market:'Ketu Market', items:5, itemsCost:2900, sessionFee:3000, status:'completed', date:'Sun, 3:20 PM', rating:5, sellers:['Mama Nkechi'] },
-  ];
-  const totalEarned = sessions.filter(s=>s.status==='completed').reduce((sum,s)=>sum+Math.round(s.sessionFee*0.8),0);
-  const totalSessions = sessions.filter(s=>s.status==='completed').length;
+  body.innerHTML = `<div style="padding:52px 22px 20px;"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>`;
+  let sessions;
+  try{
+    const res = await api('/shop-sessions?as=shopper');
+    sessions = res.sessions || [];
+  }catch(err){
+    body.innerHTML = `<div style="padding:52px 22px 20px;"><div style="text-align:center;padding:30px;color:#E8392E">${err.message||'Could not load history'}</div></div>`;
+    return;
+  }
+  const completed = sessions.filter(s=>s.status==='COMPLETED');
+  const totalEarned = completed.reduce((sum,s)=>sum+Math.round((s.sessionFeeKobo||0)*0.8/100),0);
 
   body.innerHTML = `<div style="padding:52px 0 20px;">
-    <!-- Header -->
     <div style="padding:0 22px 16px;">
+      <button onclick="shopperNav('home')" class="ibtn" style="margin-bottom:12px;">←</button>
       <div style="font-weight:800;font-size:22px;margin-bottom:4px;">Session History</div>
       <div style="font-size:13px;color:#9A9390;">All your past shopping sessions</div>
     </div>
 
-    <!-- Summary strip -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 22px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px;margin-bottom:20px;">
       <div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:14px;padding:12px;text-align:center;">
-        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:4px;">Sessions</div>
-        <div style="font-weight:900;font-size:22px;color:white;">${totalSessions}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:4px;">Completed Sessions</div>
+        <div style="font-weight:900;font-size:22px;color:white;">${completed.length}</div>
       </div>
       <div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:14px;padding:12px;text-align:center;">
         <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:4px;">Earned</div>
         <div style="font-weight:900;font-size:16px;color:#F5A623;">₦${totalEarned.toLocaleString()}</div>
       </div>
-      <div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:14px;padding:12px;text-align:center;">
-        <div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:4px;">Rating</div>
-        <div style="font-weight:900;font-size:22px;color:#F5A623;">★4.9</div>
-      </div>
     </div>
 
-    <!-- Session cards -->
     <div style="padding:0 22px;">
-      ${sessions.map(s => `
-        <div onclick="openShopperSessionDetail(${JSON.stringify(s).replace(/"/g,"'")})" style="background:#242424;border:1.5px solid ${s.status==='cancelled'?'rgba(232,57,46,0.10)':'#2A2850'};border-radius:16px;padding:15px;margin-bottom:12px;cursor:pointer;" onmouseenter="this.style.borderColor='#F5A623'" onmouseleave="this.style.borderColor='#2A2850'">
+      ${sessions.length===0 ? '<div style="text-align:center;padding:30px;color:#9A9390;font-size:13px;">No sessions yet — accepted Shop-For-Me sessions will appear here.</div>' : sessions.map(s => {
+        const isDone=s.status==='COMPLETED', isCancelled=s.status==='CANCELLED';
+        return `
+        <div onclick="openShopperSessionDetail('${s.id}')" style="background:#242424;border:1.5px solid ${isCancelled?'rgba(232,57,46,0.10)':'#2A2850'};border-radius:16px;padding:15px;margin-bottom:12px;cursor:pointer;" onmouseenter="this.style.borderColor='#F5A623'" onmouseleave="this.style.borderColor='#2A2850'">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
             <div>
-              <div style="font-weight:800;font-size:14px;">${s.customer}</div>
-              <div style="font-size:12px;color:#9A9390;margin-top:2px;">📍 ${s.market} &nbsp;•&nbsp; ${s.date}</div>
+              <div style="font-weight:800;font-size:14px;">${(s.customer&&s.customer.name)||'Customer'}</div>
+              <div style="font-size:12px;color:#9A9390;margin-top:2px;">${new Date(s.createdAt).toLocaleString()}</div>
             </div>
-            <span style="background:${s.status==='completed'?'rgba(46,204,113,0.10)':'rgba(232,57,46,0.10)'};color:${s.status==='completed'?'#2ECC71':'#E8392E'};font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">${s.status==='completed'?'✓ Completed':'✗ Cancelled'}</span>
+            <span style="background:${isDone?'rgba(46,204,113,0.10)':isCancelled?'rgba(232,57,46,0.10)':'rgba(245,166,35,0.10)'};color:${isDone?'#2ECC71':isCancelled?'#E8392E':'#F5A623'};font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">${s.status.replace(/_/g,' ')}</span>
           </div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
             <div style="background:#1C1C1C;border-radius:10px;padding:8px;text-align:center;">
               <div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Items</div>
-              <div style="font-weight:800;font-size:15px;">${s.items}</div>
+              <div style="font-weight:800;font-size:15px;">${(s.items||[]).length}</div>
             </div>
             <div style="background:#1C1C1C;border-radius:10px;padding:8px;text-align:center;">
               <div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Items Cost</div>
-              <div style="font-weight:800;font-size:13px;color:#3B9FE8;">₦${s.itemsCost.toLocaleString()}</div>
+              <div style="font-weight:800;font-size:13px;color:#3B9FE8;">₦${Math.round((s.itemsTotalKobo||0)/100).toLocaleString()}</div>
             </div>
             <div style="background:#1C1C1C;border-radius:10px;padding:8px;text-align:center;">
               <div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Your Fee</div>
-              <div style="font-weight:800;font-size:13px;color:#F5A623;">₦${Math.round(s.sessionFee*0.8).toLocaleString()}</div>
+              <div style="font-weight:800;font-size:13px;color:#F5A623;">₦${Math.round((s.sessionFeeKobo||0)*0.8/100).toLocaleString()}</div>
             </div>
           </div>
-
-          ${s.sellers.length > 0 ? `
-          <div style="background:rgba(46,204,113,0.10);border-radius:10px;padding:8px 11px;margin-bottom:8px;font-size:12px;color:#2ECC71;">
-            🏪 Sellers paid directly: <strong>${s.sellers.join(', ')}</strong>
-          </div>` : ''}
-
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-size:11px;color:#9A9390;">Ref: ${s.id}</div>
-            ${s.rating ? `<div style="font-size:13px;color:#F5A623;">${'⭐'.repeat(s.rating)}</div>` : '<div style="font-size:11px;color:#9A9390;">No rating</div>'}
-          </div>
-        </div>`).join('')}
+          <div style="font-size:11px;color:#9A9390;margin-top:8px;">Ref: ${s.id.slice(0,8)}</div>
+        </div>`;
+      }).join('')}
     </div>
   </div>`;
 }
 
 
-function viewShopperSession(idx){
-  var sessions=window._shopperSessionsHistory||[];
-  var ss=sessions[idx];
-  if(!ss){toast('Session not found');return;}
-  showProcedureModal(
-    '<div style="padding:0 0 20px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
-    +'<div><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Session #'+ss.id+'</div>'
-    +'<div style="font-size:12px;color:#9A9390;">'+ss.date+'</div></div></div>'
-    +'<div style="background:#242424;border-radius:12px;padding:12px;margin-bottom:10px;">'
-    +'<div style="font-size:12px;color:#9A9390;">Customer</div><div style="font-weight:700;color:#F2EDE8;">'+ss.customer+'</div></div>'
-    +'<div style="background:#242424;border-radius:12px;padding:12px;margin-bottom:10px;">'
-    +'<div style="font-size:12px;color:#9A9390;">Items</div>'
-    +ss.items.map(function(it){return '<div style="color:#F2EDE8;font-size:13px;padding:3px 0;">'+it+'</div>';}).join('')
-    +'<div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;">'
-    +'<span style="color:#9A9390;">Total</span><span style="color:#E8392E;font-weight:800;">&#x20a6;'+ss.total.toLocaleString()+'</span></div>'
-    +'<div style="display:flex;justify-content:space-between;margin-top:6px;">'
-    +'<span style="color:#9A9390;">Your Fee</span><span style="color:#F5A623;font-weight:800;">&#x20a6;'+ss.fee.toLocaleString()+'</span></div></div>'
-    +'<div style="background:#242424;border-radius:12px;padding:12px;margin-bottom:16px;">'
-    +'<div style="font-size:12px;color:#9A9390;">Rider</div><div style="font-weight:700;color:#F2EDE8;">'+ss.rider+'</div></div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="closeProcedureModal();showReportIssue(\'rider\')" style="flex:1;padding:12px;border-radius:11px;border:1.5px solid rgba(232,57,46,.35);background:rgba(232,57,46,.08);color:#E8392E;font-size:13px;font-weight:700;cursor:pointer;">Report Rider</button>'
-    +'<button onclick="closeProcedureModal();showReportIssue(\'shopper_session\')" style="flex:1;padding:12px;border-radius:11px;border:1.5px solid rgba(232,57,46,.35);background:rgba(232,57,46,.08);color:#E8392E;font-size:13px;font-weight:700;cursor:pointer;">Report Customer</button>'
-    +'</div></div>'
-  );
-}
-
-function showEditProfileModal(){
-  showProcedureModal('<div style="padding:0 0 20px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
-    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit Profile</div></div>'
-    +'<div style="margin-bottom:12px;">'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Full Name</label>'
-    +'<input type="text" placeholder="Your full name" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
-    +'<div style="margin-bottom:12px;">'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Phone</label>'
-    +'<input type="tel" placeholder="+234..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
-    +'<button onclick="closeProcedureModal();toast(\'Profile updated!\')" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-top:4px;">Save Changes</button>'
-    +'</div>');
-}
 function showNotificationsModal(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Notifications</div></div>'
     +'<p style="color:#9A9390;font-size:13px;margin-bottom:16px;">You receive push alerts for:</p>'
     +["New session requests","Payment releases","Support messages","Rider updates"].map(function(item){
@@ -5483,7 +5492,7 @@ function showNotificationsModal(){
 function showSafetyModal(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Safety & Security</div></div>'
     +["Your location is only shared during active sessions","Customers cannot contact you outside the app","All payments go through escrow — no cash","Report any harassment immediately via in-app report"].map(function(tip){
       return '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;background:#242424;border-radius:12px;margin-bottom:8px;">'
@@ -5495,7 +5504,7 @@ function showSafetyModal(){
 function showHelpModal(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Help & Support</div></div>'
     +'<div style="background:#242424;border-radius:12px;padding:14px;margin-bottom:10px;">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Email</div>'
@@ -5508,29 +5517,125 @@ function showHelpModal(){
 }
 
 
-function showEditProcedure(field){
-  var configs={
-    'Personal Info':[['Full Name','text','Your full name'],['Email','email','Your email'],['Phone','tel','+234...'],['NIN','text','National ID number'],['State of Origin','text','e.g. Lagos State'],['Home Market','text','e.g. Mile 12, Lagos']],
-    'Bank Details':[['Bank Name','text','e.g. OPay, GTBank'],['Account Number','number','10-digit number'],['Account Name','text','As on your BVN']],
-    'Document':[['Document Type','text','e.g. National ID'],['Document Number','text','ID number']]
+var NG_STATES=['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
+
+// Real profile editing — replaces the old showEditProcedure/saveEditProcedure
+// pair, which never called any API (just closed the modal and showed a
+// canned toast). One shared form per role, pre-filled from S.user, saving
+// via the real endpoints that already existed and were simply unused:
+// PATCH /users/me, PATCH /users/me/<role>-profile, POST /users/me/bank-account.
+async function openEditProfileModal(role){
+  var u=S.user||{};
+  var banks=window._bankListCache;
+  if(!banks && role!=='customer'){
+    try{ var bRes0=await api('/users/banks'); banks=window._bankListCache=bRes0.banks||[]; }catch(e){ banks=[]; }
+  }
+  var f=function(label,id,val,type,ph){
+    return '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">'+label+'</label>'
+      +'<input id="'+id+'" type="'+(type||'text')+'" value="'+(val||'').toString().replace(/"/g,'&quot;')+'" placeholder="'+(ph||'')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></div>';
   };
-  var fields=configs[field]||[['Value','text','Enter new value']];
-  var form=fields.map(function(f,i){
-    return '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">'+f[0]+'</label>'
-      +'<input id="ep-inp-'+i+'" type="'+f[1]+'" placeholder="'+f[2]+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></div>';
-  }).join('');
-  window._epField=field;
-  showProcedureModal('<div style="padding:0 0 20px;">'
+  var stateSel='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">State</label>'
+    +'<select id="epf-state" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"><option value="">Select State</option>'
+    +NG_STATES.map(function(s){return '<option'+(u.state===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>';
+  var html='<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">'
-    +'<button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button>'
-    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+field+'</div></div>'
-    +form
-    +'<button onclick="saveEditProcedure()" style="width:100%;background:#E8392E;border:none;border-radius:13px;padding:13px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-top:6px;">Save Changes</button>'
-    +'</div>');
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:none;border:none;color:#F2EDE8;font-size:24px;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit Profile</div></div>'
+    +f('Full Name','epf-name',u.name,'text','Your full name')
+    +f('Phone','epf-phone',u.phone,'tel','+234...')
+    +f('Email','epf-email',u.email,'email','you@example.com')
+    +f('Address','epf-address',u.address,'text','Street address')
+    +stateSel
+    +f('LGA','epf-lga',u.lga,'text','Local government area');
+  if(role==='vendor'){
+    html+=f('Business Name','epf-bizname',u.bizName,'text','Business name')
+      +f('Description','epf-desc',u.vendorDescription,'text','What you offer');
+  }
+  if(role==='rider'){
+    html+=f('Vehicle Type','epf-vehicle',u.vehicleType,'text','e.g. Motorcycle')
+      +f('Plate Number','epf-plate',u.plateNumber,'text','e.g. ABC-123-XY');
+  }
+  if(role==='shopper'){
+    html+=f('Home Market','epf-market',u.market,'text','e.g. Mile 12, Lagos');
+  }
+  if(role!=='customer'){
+    var bankOpts='<option value="">Select Bank</option>'+(banks||[]).map(function(b){return '<option value="'+b.code+'"'+(u.bankName===b.name?' selected':'')+'>'+b.name+'</option>';}).join('');
+    html+='<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin:14px 0 8px;">&#x1F3E6; Bank Details</div>'
+      +'<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Bank Name</label>'
+      +'<select id="epf-bankname" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+bankOpts+'</select></div>'
+      +f('Account Number','epf-bankacct',u.bankAcct,'text','10-digit NUBAN');
+  }
+  html+='<button id="epf-save-btn" onclick="saveEditProfile(\''+role+'\')" style="width:100%;background:#E8392E;border:none;border-radius:13px;padding:13px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-top:6px;">Save Changes</button>'
+    +'</div>';
+  showProcedureModal(html);
 }
-function saveEditProcedure(){
-  closeProcedureModal();
-  toast((window._epField||'Info')+' updated successfully!');
+async function saveEditProfile(role){
+  var btn=document.getElementById('epf-save-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  var val=function(id){var el=document.getElementById(id);return el?el.value.trim():undefined;};
+  try{
+    var profileBody={
+      name:val('epf-name')||undefined, phone:val('epf-phone')||undefined, email:val('epf-email')||undefined,
+      address:val('epf-address')||undefined, state:val('epf-state')||undefined, lga:val('epf-lga')||undefined,
+    };
+    var res=await api('/users/me',{method:'PATCH',body:JSON.stringify(profileBody)});
+    S.user=Object.assign(S.user||{},mapApiUser(res.user));
+
+    if(role==='vendor'){
+      var vRes=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify({bizName:val('epf-bizname')||undefined,description:val('epf-desc')||undefined})});
+      if(vRes.vendorProfile){S.user.bizName=vRes.vendorProfile.bizName;S.user.vendorDescription=vRes.vendorProfile.description||'';}
+    }else if(role==='rider'){
+      var rRes=await api('/users/me/rider-profile',{method:'PATCH',body:JSON.stringify({vehicleType:val('epf-vehicle')||undefined,plateNumber:val('epf-plate')||undefined})});
+      if(rRes.riderProfile){S.user.vehicleType=rRes.riderProfile.vehicleType||'';S.user.plateNumber=rRes.riderProfile.plateNumber||'';}
+    }else if(role==='shopper'){
+      var sRes=await api('/users/me/shopper-profile',{method:'PATCH',body:JSON.stringify({market:val('epf-market')||undefined})});
+      if(sRes.shopperProfile){S.user.market=sRes.shopperProfile.market||'';}
+    }
+
+    var bankSel=document.getElementById('epf-bankname');
+    var bankCode=bankSel?bankSel.value:'';
+    var bankName=bankSel&&bankSel.selectedIndex>0?bankSel.options[bankSel.selectedIndex].textContent:'';
+    var bankAcct=val('epf-bankacct');
+    if(role!=='customer' && bankCode && bankAcct){
+      var bRes=await api('/users/me/bank-account',{method:'POST',body:JSON.stringify({bankName:bankName,accountNumber:bankAcct,bankCode:bankCode})});
+      S.user.bankName=bRes.bankName;S.user.bankAcct=bRes.bankAccountNumber;S.user.bankAccountName=bRes.bankAccountName;
+    }
+
+    closeProcedureModal();
+    toast('Profile updated successfully!');
+    if(role==='customer'){
+      var pn=document.getElementById('pname');if(pn)pn.textContent=S.user.name;
+      var pe=document.getElementById('pemail');if(pe)pe.textContent=S.user.email||'Guest user';
+    }
+    else if(role==='vendor'&&typeof renderVendorProfile==='function')renderVendorProfile();
+    else if(role==='rider'&&typeof renderRiderProfile==='function')renderRiderProfile();
+    else if(role==='shopper'&&typeof buildShopperProfile==='function')buildShopperProfile();
+  }catch(err){
+    toast(err.message||'Could not save changes');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Save Changes';}
+  }
+}
+
+// Real avatar upload — the old handleProfilePicUpload() only did a local
+// FileReader base64 preview, never actually uploaded anywhere, so nothing
+// persisted past the current page load. This posts to the real
+// POST /users/me/avatar (multer, already live on the backend) via raw
+// fetch (api() forces JSON content-type, wrong for multipart).
+async function uploadAvatarReal(inputEl,imgId,iconId){
+  var file=inputEl.files[0];if(!file)return;
+  try{
+    var fd=new FormData();fd.append('avatar',file);
+    var res=await fetch(API_BASE+'/users/me/avatar',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+    var data=await res.json();
+    if(!res.ok)throw new Error(data.error||'Upload failed');
+    if(S.user)S.user.avatarUrl=data.avatarUrl;
+    var img=document.getElementById(imgId);var ico=document.getElementById(iconId);
+    if(img){img.src=data.avatarUrl;img.style.display='block';}
+    if(ico)ico.style.display='none';
+    toast('Profile photo updated!');
+  }catch(err){
+    toast(err.message||'Could not upload photo');
+  }
 }
 
 function toggleNotif(i){
@@ -5563,11 +5668,11 @@ function buildShopperProfile(){
   if(!body)return;
   var nm=S.user?S.user.name:'Aisha Abdullahi';
   var em=S.user?(S.user.email||'aisha@email.com'):'aisha@email.com';
-  var prows=[['Full Name',nm],['Email',em],['Phone','+234 804 567 8901'],['NIN','***** 8901 (Verified)'],['State of Origin','Lagos State'],['Home Market','Mile 12, Lagos']];
+  var prows=[['Full Name',nm],['Email',em],['Phone',(S.user&&S.user.phone)||'Not set'],['State',(S.user&&S.user.state)||'Not set'],['Home Market',(S.user&&S.user.market)||'Not set']];
   var html=''
     +'<div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:20px;padding:20px;margin-bottom:16px;">'
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
-    +'<div onclick="uploadProfilePic()" style="width:64px;height:64px;border-radius:18px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;cursor:pointer;position:relative;">&#x1F6D2;'
+    +'<div onclick="uploadShopperPic()" style="width:64px;height:64px;border-radius:18px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="shopper-pic-img" style="display:'+(S.user&&S.user.avatarUrl?'block':'none')+';width:64px;height:64px;object-fit:cover;position:absolute;" src="'+((S.user&&S.user.avatarUrl)||'')+'" /><span id="shopper-pic-icon" style="display:'+(S.user&&S.user.avatarUrl?'none':'block')+';">&#x1F6D2;</span>'
     +'<div style="position:absolute;bottom:-4px;right:-4px;width:20px;height:20px;background:#F5A623;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid #18140C;">&#x1F4F7;</div></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Live Shopper &bull; Since 2024</div>'
@@ -5583,10 +5688,10 @@ function buildShopperProfile(){
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
     +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:12px;">&#x1F464; Personal Information</div>'
     +prows.map(function(row){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;flex-shrink:0;">'+row[0]+'</span><span style="font-size:12px;font-weight:700;color:#F2EDE8;max-width:60%;text-align:right;">'+row[1]+'</span></div>';}).join('')
-    +'<button onclick="showEditProcedure(\'Personal Info\')" style="margin-top:10px;width:100%;padding:9px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-size:12px;font-weight:700;cursor:pointer;">Edit Info</button>'
+    +'<button onclick="openEditProfileModal(\'shopper\')" style="margin-top:10px;width:100%;padding:9px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-size:12px;font-weight:700;cursor:pointer;">Edit Info</button>'
     +'</div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">&#x1F3E6; Payout Account</div><button onclick="showEditProcedure(\'Bank Details\')" style="background:rgba(232,57,46,.08);border:1px solid rgba(232,57,46,.3);border-radius:9px;padding:5px 11px;color:#E8392E;font-size:12px;font-weight:700;cursor:pointer;">Edit</button></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">&#x1F3E6; Payout Account</div><button onclick="openEditProfileModal(\'shopper\')" style="background:rgba(232,57,46,.08);border:1px solid rgba(232,57,46,.3);border-radius:9px;padding:5px 11px;color:#E8392E;font-size:12px;font-weight:700;cursor:pointer;">Edit</button></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Bank</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.bankName)||'Not linked')+'</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Account</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.bankAcct)?'&bull;&bull;&bull;&bull;&bull;&bull;'+S.user.bankAcct.slice(-4):'—')+'</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:12px;color:#9A9390;">Name</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.name)||'—')+'</span></div></div>'
@@ -5595,10 +5700,10 @@ function buildShopperProfile(){
     +'<div id="seller-registry-list" style="min-height:36px;font-size:12px;color:#9A9390;text-align:center;padding:8px 0;">No sellers added yet</div></div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
     +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:12px;">&#x1F4B0; Session Fee</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">Charged to the customer per session, tiered by list size — you keep 80% of it, released once the customer confirms delivery.</div>'
-    +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Up to 5 items</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">&#x20a6;3,000</span></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Up to 10 items</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">&#x20a6;4,000</span></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:12px;color:#9A9390;">More than 10 items</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">&#x20a6;5,000</span></div></div>'
+    +'<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">Charged to the customer per live call, billed by how long it runs — you keep 80% of it, released once the customer confirms delivery.</div>'
+    +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">1–30 minutes</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">&#x20a6;3,000</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">31–60 minutes</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">&#x20a6;5,000</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:12px;color:#9A9390;">Beyond 60 minutes</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">+&#x20a6;2,000 / 30 min</span></div></div>'
     +renderKycSection('shopper')
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;overflow:hidden;margin-bottom:14px;">'
     +'<div onclick="showNotificationsProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F514;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Notifications</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
@@ -5615,12 +5720,12 @@ function buildShopperProfile(){
 
 function showNotificationsProc(){
   var items=['New session requests','Payment releases','Rider updates','Support messages'];
-  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Notifications</div></div>'
+  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Notifications</div></div>'
     +items.map(function(n,i){return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #2A2850;"><span style="font-size:13px;color:#F2EDE8;">'+n+'</span><div id="sntog'+i+'" onclick="var el=this;var on=el.getAttribute(\'data-on\')!==\'0\';el.setAttribute(\'data-on\',on?\'0\':\'1\');el.style.background=on?\'#444\':\'#2ECC71\';el.querySelector(\'span\').style.left=on?\'2px\':\'22px\';" data-on="1" style="width:44px;height:24px;border-radius:12px;background:#2ECC71;cursor:pointer;position:relative;flex-shrink:0;"><span style="position:absolute;top:2px;left:22px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s;"></span></div></div>';}).join('')
     +'</div>');
 }
 function showSafetyProc(){
-  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Safety & Security</div></div>'
+  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Safety & Security</div></div>'
     +['Location shared only during active sessions','Customers cannot contact you outside app','All payments go through escrow','Report any issue immediately via in-app tools'].map(function(tip){return '<div style="display:flex;gap:10px;padding:12px;background:#242424;border-radius:12px;margin-bottom:8px;"><span style="color:#2ECC71;flex-shrink:0;">&#x1F6E1;&#xFE0F;</span><span style="color:#F2EDE8;font-size:13px;">'+tip+'</span></div>';}).join('')
     +'<button onclick="closeProcedureModal()" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;background:#242424;border:1.5px solid #2A2850;color:#9A9390;font-weight:700;cursor:pointer;">Got It</button></div>');
 }
@@ -5640,7 +5745,7 @@ function showHelpProc(){
 }
 
 function showAddFundsModal(){
-  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
+  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
     +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
     +'</div><div style="margin-bottom:12px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div><div style="background:#242424;border-radius:12px;padding:12px;margin-bottom:16px;"><div style="font-size:12px;color:#9A9390;">Paying via</div><div style="font-weight:700;color:#F2EDE8;">GTBank Debit &#x2022; &#x2022;&#x2022;&#x2022;&#x2022;5678</div></div><button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Add Funds</button></div>');
 }
@@ -5664,7 +5769,7 @@ function _showPaymentMethods(){
   var cardsHtml=cards.length?cards.map(function(c,idx){
     return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px;"><span style="font-size:20px;">&#x1F4B3;</span><div style="flex:1;"><div style="font-weight:700;color:#F2EDE8;">'+c.type+' Card</div><div style="font-size:11px;color:#9A9390;">'+c.num+'</div></div><span style="background:rgba(46,204,113,.15);color:#2ECC71;font-size:10px;font-weight:700;padding:3px 8px;border-radius:7px;">Active</span></div>';
   }).join(''):'<div style="text-align:center;padding:24px 10px;color:#9A9390"><div style="font-size:32px;margin-bottom:8px">&#x1F4B3;</div><p style="font-size:13px;margin:0">No cards saved yet</p></div>';
-  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" style="background:none;border:none;color:#F2EDE8;font-size:24px;cursor:pointer;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x1F4B3; Payment Methods</div></div>'+cardsHtml+'<button onclick="closeProcedureModal();setTimeout(addNewCard,200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:8px;">+ Add New Card</button><button onclick="closeProcedureModal();setTimeout(showAddFundsModal,200)" style="width:100%;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B0; Add Funds</button></div>');
+  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x1F4B3; Payment Methods</div></div>'+cardsHtml+'<button onclick="closeProcedureModal();setTimeout(addNewCard,200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:8px;">+ Add New Card</button><button onclick="closeProcedureModal();setTimeout(showAddFundsModal,200)" style="width:100%;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B0; Add Funds</button></div>');
 }
 
 function callOrderContact(idx){
@@ -5942,6 +6047,11 @@ function apiRoleToERole(u){
 function _finishLogin(nm){
   var pn=document.getElementById('pname');if(pn)pn.textContent=nm;
   var pe=document.getElementById('pemail');if(pe)pe.textContent=S.user.email||'Guest';
+  if(S.user&&S.user.avatarUrl){
+    var pImg=document.getElementById('profile-pic-img');var pIco=document.getElementById('profile-pic-icon');
+    if(pImg){pImg.src=S.user.avatarUrl;pImg.style.display='block';}
+    if(pIco)pIco.style.display='none';
+  }
   var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
   window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
   connectSocket();
@@ -5955,14 +6065,15 @@ function _finishLogin(nm){
 
 async function doAuth(){
   if(S.ltab==='reg'){doRegister();return;}
-  var em=(document.getElementById('inp-email')||{}).value||'';
+  var idf=(document.getElementById('inp-identifier')||{}).value||'';
   var pw=(document.getElementById('inp-pass')||{}).value||'';
-  em=em.trim();
-  if(!em){showToast&&showToast('Please enter your email','warning');return;}
+  idf=idf.trim();
+  if(!idf){showToast&&showToast('Please enter your phone or email','warning');return;}
   if(!pw){showToast&&showToast('Please enter your password','warning');return;}
   var btn=document.getElementById('auth-btn');if(btn)btn.disabled=true;
   try{
-    var data=await api('/auth/login',{method:'POST',body:JSON.stringify({email:em,password:pw})});
+    var loginBody=idf.indexOf('@')>-1?{email:idf,password:pw}:{phone:idf,password:pw};
+    var data=await api('/auth/login',{method:'POST',body:JSON.stringify(loginBody)});
     setAccessToken(data.accessToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
     _finishLogin(S.user.name);
@@ -6299,7 +6410,7 @@ function cookBkRender(phase){
     var totalSel=Object.values(_cb.selected).reduce(function(s,item){return s+(item?item.pr:0);},0);
     h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
-        +'<button onclick="closeCookBooking()" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer">&#x2190;</button>'
+        +'<button onclick="closeCookBooking()" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)">&#x2190;</button>'
         +favouriteHeartBtn('VENDOR',c.id)
       +'</div>'
       +'<div style="display:flex;gap:14px;align-items:center">'
@@ -6334,7 +6445,7 @@ function cookBkRender(phase){
     var total=_cb.total;
     var pkgs=Object.values(_cb.selected);
     h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
-      +'<button onclick="cookBkRender(\'packages\')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<button onclick="cookBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#9B59B6;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Payment</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0">Choose Payment Method</h2></div>'
       +'<div style="padding:16px 16px 80px">'
@@ -6361,7 +6472,7 @@ function cookBkRender(phase){
 
   }else if(phase==='details'){
     h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
-      +'<button onclick="cookBkRender(\'payment\')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<button onclick="cookBkRender(\'payment\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#9B59B6;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Booking Details</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0">Enter Your Details</h2></div>'
       +'<div style="padding:16px 16px 80px">'
@@ -6412,7 +6523,7 @@ function cookBkRender(phase){
   }else if(phase==='cancel_reasons'){
     var reasons=['Schedule conflict — I need to reschedule','Found another cook','Budget issues — cannot afford anymore','Cook did not respond to my messages','I made a mistake in the booking details','Emergency / Unforeseen circumstances','Other reason'];
     h='<div style="background:linear-gradient(160deg,#2d0900,#111);padding:44px 20px 20px">'
-      +'<button onclick="cookBkRender(\'confirmed\')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<button onclick="cookBkRender(\'confirmed\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#E8392E;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cancel Booking</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0 0 4px">Reason for Cancellation</h2>'
       +'<p style="color:#9A9390;font-size:13px;margin:0">Your escrowed funds will remain in your wallet for future use.</p></div>'
@@ -6470,7 +6581,7 @@ function cookBkRender(phase){
   }else if(phase==='report_issue'){
     var issues=['Cook arrived late','Cook did not show up','Food quality was poor','Cook was rude / unprofessional','Wrong dishes prepared','Cook left the kitchen dirty','Hygiene concerns','Other issue'];
     h='<div style="background:linear-gradient(160deg,#2d0900,#111);padding:44px 20px 20px">'
-      +'<button onclick="cookBkRender(\'rating\')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<button onclick="cookBkRender(\'rating\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#E8392E;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Report Issue</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0">What went wrong?</h2></div>'
       +'<div style="padding:16px 16px 80px">'
@@ -6659,7 +6770,7 @@ function epBkRender(phase){
   if(phase==='packages'){
     h='<div style="background:linear-gradient(160deg,#0d2d1a,#111);padding:44px 20px 20px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
-        +'<button onclick="closeEPBooking()" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer">&#x2190;</button>'
+        +'<button onclick="closeEPBooking()" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)">&#x2190;</button>'
         +favouriteHeartBtn('VENDOR',ep.id)
       +'</div>'
       +'<div style="display:flex;gap:14px;align-items:center">'
@@ -6700,7 +6811,7 @@ function epBkRender(phase){
 
   }else if(phase==='details'){
     h='<div style="background:linear-gradient(160deg,#0d2d1a,#111);padding:44px 20px 20px">'
-      +'<button onclick="epBkRender(\'packages\')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<button onclick="epBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#2ECC71;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Event Details</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0">Enter Your Details</h2></div>'
       +'<div style="padding:16px 16px 80px">'
@@ -6758,7 +6869,7 @@ function epBkRender(phase){
   }else if(phase==='cancel_reasons'){
     var reasons=['Schedule conflict - event date changed','Found another planner','Budget issues - cannot afford anymore','Planner did not respond','Made a mistake in booking','Event has been called off','Other reason'];
     h='<div style="background:linear-gradient(160deg,#2d0900,#111);padding:44px 20px 20px">'
-      +'<button onclick="epBkRender(\'confirmed\')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:14px">&#x2190;</button>'
+      +'<button onclick="epBkRender(\'confirmed\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#E8392E;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cancel Booking</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0 0 4px">Reason for Cancellation</h2>'
       +'<p style="color:#9A9390;font-size:13px;margin:0">Funds will remain in your escrow wallet.</p></div>'
@@ -7082,22 +7193,6 @@ function previewProfilePhoto(input, role){
     window._profilePhotos[role] = e.target.result;
   };
   reader.readAsDataURL(file);
-}
-function verifyBankAccount(input){
-  var val = input.value.replace(/[^0-9]/g,'');
-  input.value = val.slice(0,10);
-  var box = document.getElementById('ebd-acctname-box');
-  var nameEl = document.getElementById('ebd-acctname');
-  if(val.length < 10){
-    if(box) box.style.display = 'none';
-    return;
-  }
-  if(box) box.style.display = 'block';
-  if(nameEl) nameEl.textContent = 'Verifying...';
-  setTimeout(function(){
-    var nm = (S.user && S.user.name) ? S.user.name.toUpperCase() : 'ACCOUNT HOLDER';
-    if(nameEl) nameEl.textContent = nm;
-  }, 900);
 }
 </script>
 </body>

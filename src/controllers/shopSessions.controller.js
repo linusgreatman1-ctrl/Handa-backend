@@ -8,12 +8,17 @@ const { generateOtpCode } = require("../utils/otp");
 
 const DEFAULT_RIDER_FEE_KOBO = 40000; // ₦400, matches the order flow's base delivery fee
 
-// Session fee is tiered by how many items the customer starts with —
-// exact tiers from the frontend: <=5 items ₦3,000 / <=10 ₦4,000 / else ₦5,000.
-function sessionFeeForItemCount(count) {
-  if (count <= 5) return 300000;
-  if (count <= 10) return 400000;
-  return 500000;
+// Session fee is billed by real live-call duration, not item count —
+// 1-30min ₦3,000 / 31-60min ₦5,000 / +₦2,000 per additional 30 minutes
+// beyond that. The exact minute of the call isn't known until it ends, so
+// this is only ever called once (in startPackaging) after callEndedAt is
+// stamped — createSession always starts every session at the minimum
+// tier as the up-front deposit estimate.
+const MIN_SESSION_FEE_KOBO = 300000; // ₦3,000 — first tier, also the up-front deposit estimate.
+function sessionFeeForDuration(minutes) {
+  if (minutes <= 30) return 300000;
+  if (minutes <= 60) return 500000;
+  return 500000 + Math.ceil((minutes - 60) / 30) * 200000;
 }
 
 async function createSession(req, res, next) {
@@ -28,7 +33,7 @@ async function createSession(req, res, next) {
         deliveryAddress,
         deliveryLat,
         deliveryLng,
-        sessionFeeKobo: sessionFeeForItemCount(items.length),
+        sessionFeeKobo: MIN_SESSION_FEE_KOBO,
         riderFeeKobo: DEFAULT_RIDER_FEE_KOBO,
         pickupCode: generateOtpCode(),
         deliveryCode: generateOtpCode(),
@@ -280,8 +285,94 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRide
   };
 }
 
-const startCall = transitionHandler(["MATCHED"], "LIVE_CALL", { requireShopper: true });
-const startPackaging = transitionHandler(["LIVE_CALL"], "PACKAGING", { requireShopper: true });
+async function startCall(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    if (!req.user.shopperProfile || session.shopperId !== req.user.shopperProfile.id) {
+      return res.status(403).json({ error: "You are not the shopper on this session." });
+    }
+    if (session.status !== "MATCHED") return res.status(409).json({ error: `Session must be MATCHED (currently ${session.status}).` });
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "LIVE_CALL", callStartedAt: new Date() } });
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "LIVE_CALL" });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The real duration-based fee is only knowable once the call ends — if it
+// exceeds the minimum tier already collected up front (see createSession),
+// the session stays in LIVE_CALL and the customer must pay the difference
+// via POST /:id/pay-call-topup before packaging can begin. A call that
+// never exceeds 30 minutes needs no top-up (30min is both the floor tier
+// and what was already charged), so this transitions straight through.
+async function startPackaging(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    if (!req.user.shopperProfile || session.shopperId !== req.user.shopperProfile.id) {
+      return res.status(403).json({ error: "You are not the shopper on this session." });
+    }
+    if (session.status !== "LIVE_CALL") return res.status(409).json({ error: `Session must be LIVE_CALL (currently ${session.status}).` });
+
+    const callEndedAt = session.callEndedAt || new Date();
+    const durationMinutes = Math.max(1, Math.ceil((callEndedAt - session.callStartedAt) / 60000));
+    const realFeeKobo = sessionFeeForDuration(durationMinutes);
+    const topUpRequiredKobo = Math.max(0, realFeeKobo - session.sessionFeeKobo);
+
+    if (topUpRequiredKobo > 0) {
+      const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { callEndedAt } });
+      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:call-topup-required", { sessionId: session.id, topUpRequiredKobo });
+      return res.json({ session: updated, topUpRequiredKobo });
+    }
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "PACKAGING", callEndedAt } });
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "PACKAGING" });
+    res.json({ session: updated, topUpRequiredKobo: 0 });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Charges exactly what's still owed for the real call duration, computed
+// fresh from the persisted callStartedAt/callEndedAt (never trusts a
+// client-supplied amount) — mirrors paySession's WALLET-vs-Paystack
+// branching exactly. On success the session moves LIVE_CALL → PACKAGING.
+async function payCallTopUp(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
+    if (session.status !== "LIVE_CALL" || !session.callEndedAt) return res.status(409).json({ error: "No call top-up is currently due." });
+
+    const durationMinutes = Math.max(1, Math.ceil((session.callEndedAt - session.callStartedAt) / 60000));
+    const realFeeKobo = sessionFeeForDuration(durationMinutes);
+    const topUpKobo = realFeeKobo - session.sessionFeeKobo;
+    if (topUpKobo <= 0) return res.status(409).json({ error: "No call top-up is currently due." });
+
+    if (req.body.paymentMethod === "WALLET") {
+      await prisma.$transaction(async (tx) => {
+        await walletSvc.debitWallet(req.user.id, topUpKobo, "ESCROW_HOLD", { contextType: "SHOP_SESSION", contextId: session.id, description: "Shop-For-Me call fee top-up" }, tx);
+      });
+      const updated = await orderFlow.confirmCallTopUp(session.id, topUpKobo);
+      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "PACKAGING" });
+      return res.json({ session: updated, paid: true });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/transfer/USSD." });
+    const reference = generateReference("TOPUP");
+    const payment = await paystack.initializeTransaction({
+      email: req.user.email,
+      amountKobo: topUpKobo,
+      reference,
+      metadata: { purpose: "SHOP_SESSION_CALL_TOPUP", sessionId: session.id },
+    });
+    res.json({ paid: false, authorizationUrl: payment.authorization_url, reference });
+  } catch (err) {
+    next(err);
+  }
+}
 const findRider = (req, res, next) => {
   req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
   return transitionHandler(["PACKAGING"], "FINDING_RIDER", { requireShopper: true })(req, res, next);
@@ -424,6 +515,7 @@ module.exports = {
   matchSession,
   startCall,
   startPackaging,
+  payCallTopUp,
   findRider,
   acceptDelivery,
   markOutForDelivery,

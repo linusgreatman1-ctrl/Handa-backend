@@ -8,11 +8,23 @@ function publicUser(user) {
 
 async function updateProfile(req, res, next) {
   try {
-    const { name, address, state, lga, lat, lng } = req.body;
+    const { name, phone, email, address, state, lga, lat, lng } = req.body;
+
+    if (phone !== undefined && phone) {
+      const existing = await prisma.user.findUnique({ where: { phone } });
+      if (existing && existing.id !== req.user.id) return res.status(409).json({ error: "This phone number is already linked to another account." });
+    }
+    if (email !== undefined && email) {
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing && existing.id !== req.user.id) return res.status(409).json({ error: "This email is already linked to another account." });
+    }
+
     const user = await prisma.user.update({
       where: { id: req.user.id },
       data: {
         ...(name !== undefined && { name }),
+        ...(phone !== undefined && { phone: phone || null }),
+        ...(email !== undefined && { email: email || null }),
         ...(address !== undefined && { address }),
         ...(state !== undefined && { state }),
         ...(lga !== undefined && { lga }),
