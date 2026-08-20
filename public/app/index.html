@@ -2948,6 +2948,13 @@ var SFM_STATUS_PHASE = { LIVE_CALL:'liveCall', PACKAGING:'packaging', FINDING_RI
 var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packaging','riderArrived','customerTracking','delivered','done'];
 function onSfmStatus(status){
   if(!(S.curScreen==='liveshop'||S.curScreen==='sfm')||!window._sfmSession)return;
+  if(status==='CANCELLED'){
+    clearInterval(window._sfmPollIv);
+    showToast&&showToast("No shopper accepted in time — you've been refunded. Please search again.",'warning');
+    window._sfmSession=null;window._sfmPhase=null;
+    renderShopPhase('buildList');
+    return;
+  }
   if(status==='MATCHED'){
     clearInterval(window._sfmPollIv);
     api('/shop-sessions/'+window._sfmSession.id).then(function(res){
@@ -4469,7 +4476,7 @@ function renderVendorProfile(){
   var bizName=u.bizName||u.name||'Not set';
   var addr=u.address||'Not set';
   var phone=u.phone||'Not set';
-  var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct):'Not linked';
+  var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct+(u.bankAccountName?' \u2022 '+u.bankAccountName:'')):'Not linked';
   body.innerHTML='<div style="padding:52px 16px 24px;">'
     +'<div style="background:linear-gradient(135deg,#0d2a0d,#1a3a1a);border-radius:18px;padding:20px;margin-bottom:14px;">'
     +'<div style="display:flex;gap:14px;align-items:center;">'
@@ -4482,6 +4489,13 @@ function renderVendorProfile(){
         +'<button onclick="openEditProfileModal(\'vendor\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
     +renderKycSection('vendor')
+    +'<h3 style="font-size:15px;font-weight:800;margin:16px 0 10px;color:#F2EDE8;">Settings</h3>'
+    +'<div class="card" style="overflow:hidden;margin-bottom:14px;padding:0;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;">'
+    +'<button onclick="showProfileSection(\'notifications\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<span style="font-size:18px;">\ud83d\udd14</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Notifications</div></div><span style="color:#666">\u203a</span></button>'
+    +'<button onclick="showProfileSection(\'help-support\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<span style="font-size:18px;">\u2753</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Help &amp; Support</div></div><span style="color:#666">\u203a</span></button>'
+    +'</div>'
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
@@ -4627,7 +4641,7 @@ function renderRiderProfile(){
   var nm=u.name||'Rider Name';
   var phone=u.phone||'Not set';
   var vehicle=(u.vehicleType&&u.plateNumber)?(u.vehicleType+' \u2022 '+u.plateNumber):(u.vehicleType||'Not set');
-  var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct):'Not linked';
+  var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct+(u.bankAccountName?' \u2022 '+u.bankAccountName:'')):'Not linked';
   var deliveries=u.deliveries||0;
   var rating=u.rating||'New';
   var acceptRate=u.acceptRate!=null?u.acceptRate+'%':'\u2014';
@@ -4648,6 +4662,13 @@ function renderRiderProfile(){
         +'<button onclick="openEditProfileModal(\'rider\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
     +renderKycSection('rider')
+    +'<h3 style="font-size:15px;font-weight:800;margin:16px 0 10px;color:#F2EDE8;">Settings</h3>'
+    +'<div class="card" style="overflow:hidden;margin-bottom:14px;padding:0;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;">'
+    +'<button onclick="showProfileSection(\'notifications\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<span style="font-size:18px;">🔔</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Notifications</div></div><span style="color:#666">›</span></button>'
+    +'<button onclick="showProfileSection(\'help-support\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<span style="font-size:18px;">❓</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Help &amp; Support</div></div><span style="color:#666">›</span></button>'
+    +'</div>'
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
@@ -5305,6 +5326,7 @@ async function toggleShopperOnline() {
     pill.style.borderColor='#2ECC71'; pill.style.background='rgba(46,204,113,0.10)';
     if(inc) inc.style.display='block';
     showToast("You're online! Watching for sessions 🛒",'success');
+    shopperBindAvailableSessionsListener();
     loadShopperAvailableSessions();
   } else {
     dot.className='status-dot offline'; label.textContent='Go Online'; label.style.color='#9A9390';
@@ -5314,15 +5336,31 @@ async function toggleShopperOnline() {
   }
 }
 
+// Real-time refresh for the shopper's available-sessions list — without
+// this, a session another shopper just accepted (or one that expired)
+// kept showing as acceptable until the page was manually reloaded, and a
+// brand new request never appeared until then either.
+function shopperBindAvailableSessionsListener(){
+  if(!_socket||_socket._shopperAvailBound)return;
+  _socket._shopperAvailBound=true;
+  _socket.on('shop-session:new',function(){ if(isShopperOnline)loadShopperAvailableSessions(); });
+  _socket.on('shop-session:taken',function(p){
+    var card=document.getElementById('sfm-avail-'+p.sessionId);
+    if(card)card.remove();
+    var list=document.getElementById('shopper-sessions-list');
+    if(list&&!list.children.length)list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';
+  });
+}
 async function loadShopperAvailableSessions(){
   var list=document.getElementById('shopper-sessions-list');
   if(!list)return;
+  shopperBindAvailableSessionsListener();
   list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">Looking for requests…</div>';
   try{
     var res=await api('/shop-sessions?as=available');
     if(!res.sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';return;}
     list.innerHTML=res.sessions.map(function(s){
-      return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;margin-bottom:12px;">'
+      return '<div id="sfm-avail-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;margin-bottom:12px;">'
         +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:28px;">🛒</span><div style="flex:1;"><div style="font-weight:800;font-size:16px;color:#2ECC71;">🔔 New Session Request!</div><div style="font-size:13px;color:#F2EDE8;margin-top:2px;">'+(s.customer?s.customer.name:'Customer')+' wants to shop live</div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:900;font-family:\'Playfair Display\',serif;color:#F5A623;">₦'+Number(Math.round(s.sessionFeeKobo/100)).toLocaleString()+'</div><div style="font-size:10px;color:#9A9390;">session fee</div></div></div>'
         +'<div style="background:rgba(184,120,0,.09);border-radius:11px;padding:11px;margin-bottom:12px;"><div style="font-weight:700;font-size:12px;margin-bottom:7px;">📋 Shopping List ('+s.items.length+' items)</div>'
         +s.items.map(function(i){return '<div style="font-size:12px;color:#F2EDE8;padding:3px 0;">• '+i.text+'</div>';}).join('')
@@ -5726,11 +5764,18 @@ async function openEditProfileModal(role){
     html+=f('Home Market','epf-market',u.market,'text','e.g. Mile 12, Lagos');
   }
   if(role!=='customer'){
-    var bankOpts='<option value="">Select Bank</option>'+(banks||[]).map(function(b){return '<option value="'+b.code+'"'+(u.bankName===b.name?' selected':'')+'>'+b.name+'</option>';}).join('');
-    html+='<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin:14px 0 8px;">&#x1F3E6; Bank Details</div>'
-      +'<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Bank Name</label>'
-      +'<select id="epf-bankname" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+bankOpts+'</select></div>'
-      +f('Account Number','epf-bankacct',u.bankAcct,'text','10-digit NUBAN');
+    html+='<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin:14px 0 8px;">&#x1F3E6; Bank Details</div>';
+    if(u.bankName&&u.bankAcct){
+      html+='<div style="background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;margin-bottom:10px;font-size:12px;color:#9A9390;">Currently linked: <span style="color:#F2EDE8;font-weight:700;">'+u.bankName+' • '+u.bankAcct+(u.bankAccountName?' • '+u.bankAccountName:'')+'</span></div>';
+    }
+    if(!banks||!banks.length){
+      html+='<div style="background:rgba(232,57,46,.08);border:1px solid rgba(232,57,46,.25);border-radius:11px;padding:11px;margin-bottom:10px;font-size:12px;color:#E8392E;">Bank list is unavailable right now — try again later to change your bank details.</div>';
+    }else{
+      var bankOpts='<option value="">Select Bank</option>'+(banks||[]).map(function(b){return '<option value="'+b.code+'"'+(u.bankName===b.name?' selected':'')+'>'+b.name+'</option>';}).join('');
+      html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Bank Name</label>'
+        +'<select id="epf-bankname" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+bankOpts+'</select></div>'
+        +f('Account Number','epf-bankacct',u.bankAcct,'text','10-digit NUBAN');
+    }
   }
   html+='<button id="epf-save-btn" onclick="saveEditProfile(\''+role+'\')" style="width:100%;background:#E8392E;border:none;border-radius:13px;padding:13px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-top:6px;">Save Changes</button>'
     +'</div>';
@@ -5861,7 +5906,7 @@ function buildShopperProfile(){
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">&#x1F3E6; Payout Account</div><button onclick="openEditProfileModal(\'shopper\')" style="background:rgba(232,57,46,.08);border:1px solid rgba(232,57,46,.3);border-radius:9px;padding:5px 11px;color:#E8392E;font-size:12px;font-weight:700;cursor:pointer;">Edit</button></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Bank</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.bankName)||'Not linked')+'</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Account</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.bankAcct)?'&bull;&bull;&bull;&bull;&bull;&bull;'+S.user.bankAcct.slice(-4):'—')+'</span></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:12px;color:#9A9390;">Name</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.name)||'—')+'</span></div></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:12px;color:#9A9390;">Account Name</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((S.user&&S.user.bankAccountName)||'—')+'</span></div></div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">&#x1F6D2; My Market Sellers</div><button onclick="openAddSellerModal(null)" style="background:#E8392E;border:none;border-radius:9px;padding:5px 11px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">+ Add Seller</button></div>'
     +'<div id="seller-registry-list" style="min-height:36px;font-size:12px;color:#9A9390;text-align:center;padding:8px 0;">No sellers added yet</div></div>'

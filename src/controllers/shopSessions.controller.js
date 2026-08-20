@@ -5,6 +5,29 @@ const escrow = require("../services/escrow.service");
 const orderFlow = require("../services/orderFlow.service");
 const { generateReference } = require("../utils/reference");
 const { generateOtpCode } = require("../utils/otp");
+const { notify } = require("../services/notifications.service");
+
+const SEARCHING_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+// Off-request-path sweep (same pattern as escrow's auto-release sweep) —
+// a SEARCHING session that no shopper ever accepts isn't something any
+// single request naturally revisits, so it needs its own periodic check.
+// Refunds the customer's deposit and cancels the session so they know to
+// search again, rather than leaving it silently stuck forever.
+async function expireStaleSearchingSessions(io) {
+  const cutoff = new Date(Date.now() - SEARCHING_TIMEOUT_MS);
+  const stale = await prisma.shopSession.findMany({
+    where: { status: "SEARCHING", shopperId: null, createdAt: { lte: cutoff } },
+  });
+  for (const session of stale) {
+    await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "No shopper accepted within 30 minutes — auto-cancelled and refunded." });
+    await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+    io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
+    io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Session expired", "No shopper accepted your Shop-For-Me request within 30 minutes. You've been refunded — please search again.", { sessionId: session.id });
+  }
+  return stale.length;
+}
 
 const DEFAULT_RIDER_FEE_KOBO = 40000; // ₦400, matches the order flow's base delivery fee
 
@@ -252,6 +275,10 @@ async function matchSession(req, res, next) {
     await orderFlow.ensureShopperFeeHold(updated);
 
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "MATCHED", shopperId: req.user.shopperProfile.id });
+    // Every other online shopper was also shown this session as available
+    // — tell them it's gone so it doesn't sit in their list implying they
+    // could still accept it.
+    req.app.get("io")?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
     res.json({ session: updated });
   } catch (err) {
     next(err);
@@ -523,4 +550,5 @@ module.exports = {
   confirmSession,
   cancelSession,
   confirmSellerPayouts,
+  expireStaleSearchingSessions,
 };

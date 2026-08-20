@@ -3,6 +3,7 @@ const prisma = require("../config/db");
 const { verifyAccessToken } = require("../utils/jwt");
 const escrowSvc = require("../services/escrow.service");
 const commissionSvc = require("../services/commission.service");
+const shopSessionsCtrl = require("../controllers/shopSessions.controller");
 
 // Replaces every client-side setTimeout/setInterval "simulation" in the
 // frontend prototype (rider map animation, live-call approval sync,
@@ -178,6 +179,13 @@ function attachLiveSocket(httpServer) {
   // request naturally triggers, so it needs its own periodic check.
   setInterval(() => {
     commissionSvc.markOverduePeriods().catch((err) => console.error("[commission] overdue sweep failed:", err));
+  }, sweepMs);
+
+  // A Shop-For-Me session no shopper ever accepts shouldn't sit in
+  // SEARCHING forever — refund and cancel it after 30 minutes so the
+  // customer knows to search again, same off-request-path pattern.
+  setInterval(() => {
+    shopSessionsCtrl.expireStaleSearchingSessions(io).catch((err) => console.error("[shop-session] expiry sweep failed:", err));
   }, sweepMs);
 
   return io;
