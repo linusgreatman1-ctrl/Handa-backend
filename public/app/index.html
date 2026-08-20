@@ -5926,11 +5926,13 @@ function pickRole(r){
 // Only VENDOR sub-types HOME_COOK and EVENT_PLANNER have a dedicated
 // dashboard in this UI; other vendor vtypes (restaurant/grocery/caterer/
 // cake) are catalog listings customers browse, not login roles here.
+// Takes the mapped user (mapApiUser output — role/vtype already lowercased),
+// not the raw API user, since raw API vtype lives nested under
+// vendorProfile.vtype and uppercase, which silently never matched here.
 function apiRoleToERole(u){
-  if(u.role==='RIDER')return 'rider';
-  if(u.role==='SHOPPER')return 'shopper';
-  if(u.role==='VENDOR'){
-    if(u.vtype==='home_cook')return 'cook';
+  if(u.role==='rider')return 'rider';
+  if(u.role==='shopper')return 'shopper';
+  if(u.role==='vendor'){
     if(u.vtype==='event_planner')return 'event_planner';
     return 'cook';
   }
@@ -5962,7 +5964,7 @@ async function doAuth(){
   try{
     var data=await api('/auth/login',{method:'POST',body:JSON.stringify({email:em,password:pw})});
     setAccessToken(data.accessToken);
-    S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(data.user);
+    S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
     _finishLogin(S.user.name);
   }catch(err){
     showToast&&showToast(err.message||'Login failed','warning');
@@ -6019,7 +6021,7 @@ async function tryRestoreSession(){
   if(!_accessToken)return false;
   try{
     var data=await api('/auth/me');
-    S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(data.user);
+    S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
     connectSocket();
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
     var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
