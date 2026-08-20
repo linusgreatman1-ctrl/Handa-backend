@@ -199,12 +199,38 @@ async function getVendorDetailForAdmin(req, res, next) {
       include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
     });
     if (!vendor) return res.status(404).json({ error: "Vendor not found." });
-    const [kycDocuments, commissionPeriods, finance] = await Promise.all([
+    const [kycDocuments, commissionPeriods, finance, menuItems, servicePackages] = await Promise.all([
       prisma.kycDocument.findMany({ where: { userId: vendor.user.id }, orderBy: { createdAt: "desc" } }),
       prisma.commissionPeriod.findMany({ where: { vendorId: vendor.id }, orderBy: { periodStart: "desc" } }),
       financeBreakdownForUser(vendor.user.id),
+      prisma.menuItem.findMany({ where: { vendorId: vendor.id }, orderBy: { name: "asc" } }),
+      prisma.servicePackage.findMany({ where: { vendorId: vendor.id }, orderBy: { label: "asc" } }),
     ]);
-    res.json({ vendor, kycDocuments, commissionPeriods, finance });
+    res.json({ vendor, kycDocuments, commissionPeriods, finance, menuItems, servicePackages });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteMenuItemForAdmin(req, res, next) {
+  try {
+    const item = await prisma.menuItem.findUnique({ where: { id: req.params.id } });
+    if (!item) return res.status(404).json({ error: "Menu item not found." });
+    await prisma.menuItem.delete({ where: { id: req.params.id } });
+    logAdminAction(req.user, "MENU_ITEM_DELETED", "MenuItem", req.params.id, item.name);
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteServicePackageForAdmin(req, res, next) {
+  try {
+    const pkg = await prisma.servicePackage.findUnique({ where: { id: req.params.id } });
+    if (!pkg) return res.status(404).json({ error: "Package not found." });
+    await prisma.servicePackage.delete({ where: { id: req.params.id } });
+    logAdminAction(req.user, "SERVICE_PACKAGE_DELETED", "ServicePackage", req.params.id, pkg.label);
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -815,6 +841,8 @@ module.exports = {
   updateUserStatus,
   listVendorsForAdmin,
   getVendorDetailForAdmin,
+  deleteMenuItemForAdmin,
+  deleteServicePackageForAdmin,
   getRiderDetailForAdmin,
   getShopperDetailForAdmin,
   setVendorVerified,

@@ -131,6 +131,19 @@ async function updateMenuItem(req, res, next) {
   }
 }
 
+async function uploadMenuItemPhoto(req, res, next) {
+  try {
+    const item = await prisma.menuItem.findUnique({ where: { id: req.params.itemId } });
+    if (!item || item.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Menu item not found." });
+    if (!req.file) return res.status(400).json({ error: "No image uploaded." });
+    const imageUrl = `/uploads/${req.file.filename}`;
+    const updated = await prisma.menuItem.update({ where: { id: req.params.itemId }, data: { imageUrl } });
+    res.json({ item: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteMenuItem(req, res, next) {
   try {
     const item = await prisma.menuItem.findUnique({ where: { id: req.params.itemId } });
@@ -207,6 +220,7 @@ module.exports = {
   listMenuItems,
   createMenuItem,
   updateMenuItem,
+  uploadMenuItemPhoto,
   deleteMenuItem,
   createServicePackage,
   updateServicePackage,

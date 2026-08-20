@@ -74,6 +74,7 @@ async function listRatingsForUser(req, res, next) {
   try {
     const ratings = await prisma.rating.findMany({
       where: { rateeId: req.params.userId },
+      include: { rater: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
       take: 50,
     });

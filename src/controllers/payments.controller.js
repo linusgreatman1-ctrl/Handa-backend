@@ -4,6 +4,7 @@ const paystack = require("../services/paystack.service");
 const wallet = require("../services/wallet.service");
 const { generateReference } = require("../utils/reference");
 const orderFlow = require("../services/orderFlow.service");
+const walletSvc = require("../services/wallet.service");
 
 // Wallet top-up ("+ Add Funds" on the escrow wallet card).
 async function initializeWalletDeposit(req, res, next) {
@@ -116,10 +117,21 @@ async function initializeCommissionPayment(req, res, next) {
     if (!period || period.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Commission period not found." });
     if (period.status === "PAID") return res.status(409).json({ error: "This commission period is already paid." });
 
+    const amountKobo = period.amountDueKobo - period.amountPaidKobo;
     const reference = generateReference("COM");
+
+    if (req.body.paymentMethod === "WALLET") {
+      await walletSvc.debitWallet(req.user.id, amountKobo, "COMMISSION_PAYMENT", {
+        reference,
+        description: "Commission payment via wallet",
+      });
+      await orderFlow.confirmCommissionPayment(period.id, reference);
+      return res.json({ paid: true });
+    }
+
     const data = await paystack.initializeTransaction({
       email: req.user.email,
-      amountKobo: period.amountDueKobo - period.amountPaidKobo,
+      amountKobo,
       reference,
       metadata: { purpose: "COMMISSION_PAYMENT", commissionPeriodId: period.id },
     });
@@ -133,6 +145,16 @@ async function initializeFeatureBoostPayment(req, res, next) {
   try {
     const weeklyFee = Number(process.env.FEATURE_BOOST_WEEKLY_NGN || 5000) * 100;
     const reference = generateReference("BST");
+
+    if (req.body.paymentMethod === "WALLET") {
+      await walletSvc.debitWallet(req.user.id, weeklyFee, "FEATURE_BOOST_PAYMENT", {
+        reference,
+        description: "Feature boost payment via wallet",
+      });
+      await orderFlow.confirmFeatureBoostPayment(req.user.vendorProfile.id, weeklyFee, reference);
+      return res.json({ paid: true });
+    }
+
     const data = await paystack.initializeTransaction({
       email: req.user.email,
       amountKobo: weeklyFee,

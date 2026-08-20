@@ -1,5 +1,6 @@
 const express = require("express");
 const { requireAuth, requireVendorProfile } = require("../middleware/auth");
+const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/vendors.controller");
 
 const router = express.Router();
@@ -13,6 +14,7 @@ router.get("/:id/menu", ctrl.listMenuItems);
 router.use(requireAuth, requireVendorProfile);
 router.post("/me/menu", ctrl.createMenuItem);
 router.put("/me/menu/:itemId", ctrl.updateMenuItem);
+router.post("/me/menu/:itemId/photo", upload.single("photo"), ctrl.uploadMenuItemPhoto);
 router.delete("/me/menu/:itemId", ctrl.deleteMenuItem);
 
 router.post("/me/packages", ctrl.createServicePackage);

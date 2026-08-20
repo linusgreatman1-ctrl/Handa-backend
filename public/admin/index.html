@@ -346,6 +346,12 @@ async function renderVendorDetail(id) {
     const comm = (data.commissionPeriods || []).map(c =>
       '<tr><td>' + new Date(c.periodStart).toLocaleDateString() + ' – ' + new Date(c.periodEnd).toLocaleDateString() + '</td><td>' + money(c.amountDueKobo) + '</td><td>' + money(c.amountPaidKobo) + '</td><td>' + pill(c.status) + '</td></tr>'
     ).join('');
+    const menuItems = (data.menuItems || []).map(m =>
+      '<tr><td>' + (m.emoji || '') + ' ' + m.name + '</td><td>' + money(m.priceKobo) + '</td><td>' + (m.inStock === false ? pill('OUT OF STOCK') : pill('ACTIVE')) + '</td><td><button class="action-btn" onclick="deleteVendorMenuItem(\'' + m.id + '\',\'' + id + '\')">Delete</button></td></tr>'
+    ).join('');
+    const servicePackages = (data.servicePackages || []).map(p =>
+      '<tr><td>' + p.label + '</td><td>' + money(p.priceKobo) + '</td><td><button class="action-btn" onclick="deleteVendorServicePackage(\'' + p.id + '\',\'' + id + '\')">Delete</button></td></tr>'
+    ).join('');
     main.innerHTML =
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'vendors\')">&larr; Back to list</button>' +
       '<h2>' + v.bizName + '</h2>' +
@@ -361,10 +367,23 @@ async function renderVendorDetail(id) {
         card('Withdrawn', money(f.totalWithdrawnKobo), 'Sent to bank') +
       '</div>' +
       '<h2 style="margin-top:24px">KYC Documents</h2>' + (kyc ? '<table><thead><tr><th>Type</th><th>Status</th><th></th></tr></thead><tbody>' + kyc + '</tbody></table>' : '<div class="empty">No documents submitted yet.</div>') +
-      '<h2 style="margin-top:24px">Commission</h2>' + (comm ? '<table><thead><tr><th>Period</th><th>Due</th><th>Paid</th><th>Status</th></tr></thead><tbody>' + comm + '</tbody></table>' : '<div class="empty">No commission periods yet.</div>');
+      '<h2 style="margin-top:24px">Commission</h2>' + (comm ? '<table><thead><tr><th>Period</th><th>Due</th><th>Paid</th><th>Status</th></tr></thead><tbody>' + comm + '</tbody></table>' : '<div class="empty">No commission periods yet.</div>') +
+      '<h2 style="margin-top:24px">Menu Items</h2>' + (menuItems ? '<table><thead><tr><th>Item</th><th>Price</th><th>Stock</th><th></th></tr></thead><tbody>' + menuItems + '</tbody></table>' : '<div class="empty">No menu items.</div>') +
+      '<h2 style="margin-top:24px">Packages</h2>' + (servicePackages ? '<table><thead><tr><th>Package</th><th>Price</th><th></th></tr></thead><tbody>' + servicePackages + '</tbody></table>' : '<div class="empty">No packages.</div>');
   } catch (e) {
     main.innerHTML = '<div class="empty">' + e.message + '</div>';
   }
+}
+
+async function deleteVendorMenuItem(itemId, vendorId) {
+  if (!confirm('Delete this menu item?')) return;
+  try { await api('/admin/menu-items/' + itemId, { method: 'DELETE' }); renderVendorDetail(vendorId); }
+  catch (e) { alert(e.message); }
+}
+async function deleteVendorServicePackage(pkgId, vendorId) {
+  if (!confirm('Delete this package?')) return;
+  try { await api('/admin/service-packages/' + pkgId, { method: 'DELETE' }); renderVendorDetail(vendorId); }
+  catch (e) { alert(e.message); }
 }
 
 async function renderTickets() {
