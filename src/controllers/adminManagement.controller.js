@@ -9,7 +9,7 @@ async function listAdmins(req, res, next) {
   try {
     const admins = await prisma.user.findMany({
       where: { role: "ADMIN" },
-      select: { id: true, name: true, email: true, phone: true, isSuperAdmin: true, status: true, createdAt: true, lastLoginAt: true },
+      select: { id: true, name: true, email: true, phone: true, isSuperAdmin: true, isContentAdmin: true, status: true, createdAt: true, lastLoginAt: true },
       orderBy: { createdAt: "asc" },
     });
     res.json({ admins });
@@ -20,9 +20,10 @@ async function listAdmins(req, res, next) {
 
 async function createAdmin(req, res, next) {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, tier } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: "name, email, and password are required." });
     if (!isStrongPassword(password)) return res.status(400).json({ error: "Password must be at least 6 characters." });
+    if (tier !== undefined && !["ORDINARY", "CONTENT"].includes(tier)) return res.status(400).json({ error: "tier must be ORDINARY or CONTENT." });
 
     const existing = await prisma.user.findFirst({ where: { email } });
     if (existing) return res.status(409).json({ error: "An account with this email already exists." });
@@ -31,11 +32,11 @@ async function createAdmin(req, res, next) {
     // Never super — promoting an admin to super-admin isn't exposed
     // through the API, only via the one-time migration backfill.
     const admin = await prisma.user.create({
-      data: { name, email, passwordHash, role: "ADMIN", isSuperAdmin: false, wallet: { create: {} }, notificationPref: { create: {} } },
-      select: { id: true, name: true, email: true, phone: true, isSuperAdmin: true, status: true, createdAt: true },
+      data: { name, email, passwordHash, role: "ADMIN", isSuperAdmin: false, isContentAdmin: tier === "CONTENT", wallet: { create: {} }, notificationPref: { create: {} } },
+      select: { id: true, name: true, email: true, phone: true, isSuperAdmin: true, isContentAdmin: true, status: true, createdAt: true },
     });
 
-    await logAdminAction(req.user, "ADMIN_CREATED", "User", admin.id, `Created admin ${admin.name} (${admin.email})`);
+    await logAdminAction(req.user, "ADMIN_CREATED", "User", admin.id, `Created ${admin.isContentAdmin ? "content " : ""}admin ${admin.name} (${admin.email})`);
     res.status(201).json({ admin });
   } catch (err) {
     next(err);

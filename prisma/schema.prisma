@@ -51,6 +51,15 @@ model User {
   // Provisioned once via migration backfill, not settable through the API.
   isSuperAdmin Boolean @default(false)
 
+  // Only meaningful when role=ADMIN — a middle tier (set via super admin's
+  // "Add Admin" form, see adminManagement.controller.js) that can view the
+  // same analytics/monitoring/settings screens as a super admin but can't
+  // perform the sensitive write actions (manage other admins, view the
+  // audit log, save Code Editor/Codes changes, send announcements, edit
+  // app settings or subscriptions). isSuperAdmin always implies full access
+  // regardless of this flag.
+  isContentAdmin Boolean @default(false)
+
   address String?
   state   String?
   lga     String?
@@ -88,6 +97,8 @@ model User {
   kycDocuments           KycDocument[]
   eventRequests          EventRequest[]
   favourites             Favourite[]
+  appSettingsUpdated     AppSetting[]
+  aiConversations        AiConversationLog[]
 
   @@index([role])
 }
@@ -843,6 +854,7 @@ enum NotificationType {
   NEW_FEATURE
   CHAT
   SYSTEM
+  ANNOUNCEMENT
 }
 
 model Notification {
@@ -951,5 +963,55 @@ model AdminAuditLog {
   details    String?
   createdAt  DateTime @default(now())
 
+  @@index([createdAt])
+}
+
+// A summary row per platform-wide announcement sent (super-admin only) —
+// the fan-out itself lands as one Notification per targeted user (type
+// ANNOUNCEMENT); this table is just the admin-facing "what did we send
+// and to how many people" history, not the delivery mechanism.
+model Announcement {
+  id             String   @id @default(uuid())
+  title          String
+  body           String
+  targetRoles    String[] @default([])
+  sentById       String
+  sentByName     String
+  recipientCount Int
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Generic key/value config store for the admin "App Settings" screen.
+// Nothing in the running app reads from this yet — it exists so a super
+// admin has somewhere to record/adjust platform config (feature flags,
+// thresholds, copy) without needing a code change, ready for real code
+// to start consulting it later.
+model AppSetting {
+  key         String   @id
+  value       String // JSON-encoded — string/number/boolean/object
+  category    String?
+  description String?
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
+}
+
+// Question/answer log for the AI Meal Planner. Nothing produces rows here
+// yet — the meal planner is still the frontend's hardcoded demo (no real
+// AI provider wired up). This is the infrastructure so the admin viewer
+// and a real AI-backed endpoint can both start working the moment an AI
+// provider API key is available, without another schema change.
+model AiConversationLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt    String
+  response  String
+  provider  String? // e.g. "GEMINI" | "OPENAI" | "CLAUDE"
+  createdAt DateTime @default(now())
+
+  @@index([userId])
   @@index([createdAt])
 }

@@ -78,16 +78,22 @@
   <nav>
     <div class="brand">Handa <span>Admin</span></div>
     <button class="nav-item" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
-    <button class="nav-item" data-tab="reports" data-super="1" onclick="switchTab('reports')">Reports</button>
+    <button class="nav-item" data-tab="reports" data-elevated="1" onclick="switchTab('reports')">Reports</button>
     <button class="nav-item" data-tab="users" onclick="switchTab('users')">Users</button>
     <button class="nav-item" data-tab="vendors" onclick="switchTab('vendors')">Vendors</button>
+    <button class="nav-item" data-tab="riders" data-elevated="1" onclick="switchTab('riders')">Riders</button>
+    <button class="nav-item" data-tab="payments" data-elevated="1" onclick="switchTab('payments')">Payments</button>
+    <button class="nav-item" data-tab="subscriptions" data-elevated="1" onclick="switchTab('subscriptions')">Subscriptions</button>
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
-    <button class="nav-item" data-tab="shopsessions" data-super="1" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
-    <button class="nav-item" data-tab="activecodes" data-super="1" onclick="switchTab('activecodes')">Active Codes</button>
-    <button class="nav-item" data-tab="codeeditor" data-super="1" onclick="switchTab('codeeditor')">Code Editor</button>
-    <button class="nav-item" data-tab="codes" data-super="1" onclick="switchTab('codes')">Codes</button>
+    <button class="nav-item" data-tab="shopsessions" data-elevated="1" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
+    <button class="nav-item" data-tab="activecodes" data-elevated="1" onclick="switchTab('activecodes')">Active Codes</button>
+    <button class="nav-item" data-tab="codeeditor" data-elevated="1" onclick="switchTab('codeeditor')">Code Editor</button>
+    <button class="nav-item" data-tab="codes" data-elevated="1" onclick="switchTab('codes')">Codes</button>
     <button class="nav-item" data-tab="kyc" onclick="switchTab('kyc')">KYC Documents</button>
+    <button class="nav-item" data-tab="appsettings" data-elevated="1" onclick="switchTab('appsettings')">App Settings</button>
+    <button class="nav-item" data-tab="announcements" data-elevated="1" onclick="switchTab('announcements')">Announcements</button>
+    <button class="nav-item" data-tab="aiconversations" data-elevated="1" onclick="switchTab('aiconversations')">AI Conversations</button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
     <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
     <div class="spacer"></div>
@@ -134,9 +140,10 @@ async function doLogin() {
     currentUser = data.user;
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-screen').classList.remove('hidden');
-    document.getElementById('who-name').textContent = currentUser.name + (currentUser.isSuperAdmin ? ' (Super Admin)' : '');
+    document.getElementById('who-name').textContent = currentUser.name + (currentUser.isSuperAdmin ? ' (Super Admin)' : currentUser.isContentAdmin ? ' (Content Admin)' : '');
     document.getElementById('who-email').textContent = currentUser.email || currentUser.phone || '';
     document.querySelectorAll('.nav-item[data-super]').forEach(b => b.classList.toggle('hidden', !currentUser.isSuperAdmin));
+    document.querySelectorAll('.nav-item[data-elevated]').forEach(b => b.classList.toggle('hidden', !(currentUser.isSuperAdmin || currentUser.isContentAdmin)));
     switchTab('dashboard');
   } catch (e) {
     err.textContent = e.message;
@@ -154,11 +161,11 @@ function logout() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, kyc: renderKycDocuments, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, aiconversations: renderAiConversations, admins: renderAdmins, auditlog: renderAuditLog };
   renderers[tab]();
 }
 
-const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red' };
+const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red', EXPIRED: 'grey' };
 function pill(status) { return '<span class="pill ' + (STATUS_PILL[status] || 'grey') + '">' + status + '</span>'; }
 
 async function renderDashboard() {
@@ -473,8 +480,9 @@ async function ceSearch() {
       data.matches.map(m =>
         '<div class="match-row code-mono">#' + m.occurrenceIndex + '&nbsp; ' + escHtml(m.before) + '<mark>' + escHtml(m.match) + '</mark>' + escHtml(m.after) + '</div>'
       ).join('');
-    document.getElementById('ce-replace-form').innerHTML =
-      '<div class="card" style="margin-top:14px">' +
+    document.getElementById('ce-replace-form').innerHTML = !currentUser.isSuperAdmin
+      ? '<p class="warn-box">View only — only the Super Admin can save changes here.</p>'
+      : '<div class="card" style="margin-top:14px">' +
       '<div class="field"><label>Find (must match the text above exactly)</label><input id="ce-find" class="code-mono" value="' + escHtml(query) + '" style="width:100%"></div>' +
       '<div class="field"><label>Replace with</label><textarea id="ce-replacewith" class="code-mono" style="width:100%;min-height:80px"></textarea></div>' +
       '<div class="toolbar">' +
@@ -517,7 +525,7 @@ async function ceLoadBackups() {
     el.outerHTML = '<table><thead><tr><th>Backup</th><th>Size</th><th>Created</th><th></th></tr></thead><tbody>' +
       data.backups.map(b =>
         '<tr><td class="code-mono" style="font-size:11px">' + b.name + '</td><td>' + Math.round(b.sizeBytes / 1024) + ' KB</td><td>' + new Date(b.createdAt).toLocaleString() + '</td>' +
-        '<td><button class="action-btn" onclick="ceRestore(\'' + b.name + '\')">Restore</button></td></tr>'
+        '<td>' + (currentUser.isSuperAdmin ? '<button class="action-btn" onclick="ceRestore(\'' + b.name + '\')">Restore</button>' : '') + '</td></tr>'
       ).join('') + '</tbody></table>';
   } catch (e) {
     el.className = 'empty'; el.textContent = e.message;
@@ -540,18 +548,20 @@ let _codesFile = 'app/index.html';
 let _codesOriginalLength = 0;
 async function renderCodes() {
   const main = document.getElementById('main');
+  const canSave = currentUser.isSuperAdmin;
   main.innerHTML =
     '<h2>Codes</h2>' +
     '<p style="color:#9A9390;margin:-8px 0 16px">Load a live frontend file\'s full raw source, edit it, and save. A backup is taken before every save, and the save is rejected if the new content fails a script syntax check.</p>' +
+    (canSave ? '' : '<p class="warn-box">View only — only the Super Admin can save changes to live code.</p>') +
     '<div class="toolbar">' +
       '<select id="codes-file"><option value="app/index.html">app/index.html</option><option value="admin/index.html">admin/index.html</option></select>' +
       '<button class="action-btn" onclick="codesLoad()">Load</button>' +
       '<input id="codes-find" placeholder="Find in loaded text..." style="min-width:200px">' +
       '<button class="action-btn" onclick="codesFind()">Find next</button>' +
-      '<button class="btn" style="width:auto;padding:8px 16px" onclick="codesSave()">Save</button>' +
+      (canSave ? '<button class="btn" style="width:auto;padding:8px 16px" onclick="codesSave()">Save</button>' : '') +
     '</div>' +
     '<div class="err" id="codes-err"></div>' +
-    '<textarea id="codes-textarea" class="code-textarea code-mono" placeholder="Click Load to fetch the file&#39;s current contents..."></textarea>';
+    '<textarea id="codes-textarea" class="code-textarea code-mono" ' + (canSave ? '' : 'readonly') + ' placeholder="Click Load to fetch the file&#39;s current contents..."></textarea>';
   document.getElementById('codes-file').value = _codesFile;
 }
 
@@ -616,6 +626,209 @@ async function codesSave(confirmDrasticShrink) {
   }
 }
 
+async function renderRiders() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Riders</h2><div id="riders-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/riders');
+    const rows = data.riders.map(r =>
+      '<tr><td>' + r.user.name + '</td><td>' + (r.user.email || r.user.phone || '—') + '</td><td>' + (r.vehicleType || '—') + '</td>' +
+      '<td>' + (r.isOnline ? pill('ONLINE') : '<span class="pill grey">Offline</span>') + '</td>' +
+      '<td>' + (r.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
+      '<td>' + r.deliveries + '</td><td>' + (r.ratingAvg || 0).toFixed(1) + '</td>' +
+      '<td><button class="action-btn" onclick="setRiderVerified(\'' + r.id + '\',' + (!r.isVerified) + ')">' + (r.isVerified ? 'Unverify' : 'Verify') + '</button></td></tr>'
+    ).join('');
+    document.getElementById('riders-table').outerHTML = data.riders.length
+      ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Vehicle</th><th>Online</th><th>Verified</th><th>Deliveries</th><th>Rating</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No riders found.</div>';
+  } catch (e) {
+    document.getElementById('riders-table').textContent = e.message;
+  }
+}
+async function setRiderVerified(id, isVerified) {
+  try { await api('/admin/riders/' + id + '/verify', { method: 'PATCH', body: JSON.stringify({ isVerified }) }); renderRiders(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderPayments() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Payments</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Every real money movement — deposits, escrow holds/releases/refunds, payouts, commission, feature-boost payments.</p>' +
+    '<div class="toolbar"><select id="pay-type-filter" onchange="renderPayments()"><option value="">All types</option>' +
+    ['DEPOSIT', 'WITHDRAWAL', 'ESCROW_HOLD', 'ESCROW_RELEASE', 'ESCROW_REFUND', 'PAYOUT', 'COMMISSION_PAYMENT', 'FEATURE_BOOST_PAYMENT', 'ADJUSTMENT']
+      .map(t => '<option value="' + t + '">' + t + '</option>').join('') + '</select></div>' +
+    '<div id="payments-table" class="empty">Loading...</div>';
+  const type = document.getElementById('pay-type-filter') ? document.getElementById('pay-type-filter').value : '';
+  if (type) document.getElementById('pay-type-filter').value = type;
+  try {
+    const data = await api('/admin/payments' + (type ? '?type=' + type : ''));
+    const rows = data.payments.map(p =>
+      '<tr><td>' + new Date(p.createdAt).toLocaleString() + '</td><td>' + p.payerName + '<br><span style="color:#9A9390;font-size:11px">' + p.payerRole + '</span></td>' +
+      '<td>' + p.type + '</td><td style="color:' + (p.amountKobo < 0 ? '#E8392E' : '#2ECC71') + '">' + money(p.amountKobo) + '</td>' +
+      '<td>' + (p.description || p.reference || '—') + '</td></tr>'
+    ).join('');
+    document.getElementById('payments-table').outerHTML = data.payments.length
+      ? '<table><thead><tr><th>When</th><th>User</th><th>Type</th><th>Amount</th><th>Detail</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No payments found.</div>';
+  } catch (e) {
+    document.getElementById('payments-table').textContent = e.message;
+  }
+}
+
+async function renderSubscriptions() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Subscriptions</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Vendors\' paid "featured listing" boosts — Handa\'s recurring-payment concept.</p>' +
+    '<div id="subscriptions-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/subscriptions');
+    const rows = data.subscriptions.map(s =>
+      '<tr><td>' + s.vendorName + '</td><td>' + money(s.amountPaidKobo) + '</td><td>' + new Date(s.startAt).toLocaleDateString() + '</td>' +
+      '<td>' + new Date(s.endAt).toLocaleDateString() + '</td><td>' + pill(s.status) + '</td>' +
+      '<td>' + (currentUser.isSuperAdmin ? '<button class="action-btn" onclick="extendSubscription(\'' + s.id + '\')">Extend</button>' : '') + '</td></tr>'
+    ).join('');
+    document.getElementById('subscriptions-table').outerHTML = data.subscriptions.length
+      ? '<table><thead><tr><th>Vendor</th><th>Paid</th><th>Started</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No featured-listing boosts yet.</div>';
+  } catch (e) {
+    document.getElementById('subscriptions-table').textContent = e.message;
+  }
+}
+async function extendSubscription(id) {
+  const days = prompt('Extend by how many days from today?', '30');
+  if (!days || isNaN(parseInt(days))) return;
+  const newEndAt = new Date(Date.now() + parseInt(days) * 86400000).toISOString();
+  try { await api('/admin/subscriptions/' + id, { method: 'PATCH', body: JSON.stringify({ endAt: newEndAt }) }); renderSubscriptions(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderAppSettings() {
+  const main = document.getElementById('main');
+  const canWrite = currentUser.isSuperAdmin;
+  main.innerHTML =
+    '<h2>App Settings</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Generic config store — nothing in the running app reads from these yet, but they\'re recorded here for when it does.</p>' +
+    (canWrite ? '<div class="toolbar"><button class="action-btn" onclick="openAppSettingForm()">+ Add Setting</button></div><div id="app-setting-form"></div>' : '') +
+    '<div id="appsettings-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/app-settings');
+    const rows = data.settings.map(s =>
+      '<tr><td class="code-mono">' + s.key + '</td><td class="code-mono" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(JSON.stringify(s.value)) + '</td>' +
+      '<td>' + (s.category || '—') + '</td><td>' + (s.updatedByName || '—') + '</td>' +
+      '<td>' + (canWrite ? '<button class="action-btn" onclick="openAppSettingForm(\'' + s.key + '\')">Edit</button> <button class="action-btn" onclick="deleteAppSetting(\'' + s.key + '\')">Delete</button>' : '') + '</td></tr>'
+    ).join('');
+    document.getElementById('appsettings-table').outerHTML = data.settings.length
+      ? '<table><thead><tr><th>Key</th><th>Value</th><th>Category</th><th>Updated By</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No settings recorded yet.</div>';
+  } catch (e) {
+    document.getElementById('appsettings-table').textContent = e.message;
+  }
+}
+function openAppSettingForm(key) {
+  const el = document.getElementById('app-setting-form');
+  if (!el) return;
+  el.innerHTML =
+    '<div class="card" style="margin-bottom:14px">' +
+    '<div class="field"><label>Key</label><input id="as-key" ' + (key ? 'value="' + escHtml(key) + '" readonly' : '') + '></div>' +
+    '<div class="field"><label>Value (JSON — e.g. "text", 42, true, {"a":1})</label><input id="as-value"></div>' +
+    '<div class="field"><label>Category (optional)</label><input id="as-category"></div>' +
+    '<button class="btn" style="width:auto;padding:8px 16px" onclick="saveAppSetting()">Save</button>' +
+    '<div class="err" id="as-err"></div></div>';
+}
+async function saveAppSetting() {
+  const key = document.getElementById('as-key').value.trim();
+  const rawValue = document.getElementById('as-value').value;
+  const category = document.getElementById('as-category').value.trim();
+  const errEl = document.getElementById('as-err');
+  errEl.textContent = '';
+  if (!key) { errEl.textContent = 'Key is required.'; return; }
+  let value;
+  try { value = JSON.parse(rawValue); } catch (e) { value = rawValue; } // plain strings don't need quoting
+  try {
+    await api('/admin/app-settings/' + encodeURIComponent(key), { method: 'PUT', body: JSON.stringify({ value, category: category || undefined }) });
+    document.getElementById('app-setting-form').innerHTML = '';
+    renderAppSettings();
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+async function deleteAppSetting(key) {
+  if (!confirm('Delete setting "' + key + '"?')) return;
+  try { await api('/admin/app-settings/' + encodeURIComponent(key), { method: 'DELETE' }); renderAppSettings(); }
+  catch (e) { alert(e.message); }
+}
+
+async function renderAnnouncements() {
+  const main = document.getElementById('main');
+  const canSend = currentUser.isSuperAdmin;
+  main.innerHTML =
+    '<h2>Announcements</h2>' +
+    (canSend ?
+      '<div class="card" style="margin-bottom:20px">' +
+      '<div class="field"><label>Title</label><input id="ann-title"></div>' +
+      '<div class="field"><label>Body</label><textarea id="ann-body" style="width:100%;min-height:70px;background:#2D2D2D;border:2px solid #333;border-radius:10px;padding:11px 13px;color:#F2EDE8;font-size:14px"></textarea></div>' +
+      '<div class="field"><label>Target roles (none checked = all)</label><div style="display:flex;gap:14px;flex-wrap:wrap">' +
+      ['CUSTOMER', 'VENDOR', 'RIDER', 'SHOPPER'].map(r => '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" class="ann-role" value="' + r + '"> ' + r + '</label>').join('') +
+      '</div></div>' +
+      '<button class="btn" style="width:auto;padding:8px 16px" onclick="sendAnnouncement()">Send</button>' +
+      '<div class="err" id="ann-err"></div></div>'
+      : '') +
+    '<h2>History</h2><div id="announcements-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/announcements');
+    const rows = data.announcements.map(a =>
+      '<tr><td>' + a.title + '</td><td style="max-width:320px">' + a.body + '</td>' +
+      '<td>' + (a.targetRoles.length ? a.targetRoles.join(', ') : 'All') + '</td><td>' + a.recipientCount + '</td>' +
+      '<td>' + a.sentByName + '</td><td>' + new Date(a.createdAt).toLocaleString() + '</td></tr>'
+    ).join('');
+    document.getElementById('announcements-table').outerHTML = data.announcements.length
+      ? '<table><thead><tr><th>Title</th><th>Body</th><th>Roles</th><th>Recipients</th><th>Sent By</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No announcements sent yet.</div>';
+  } catch (e) {
+    document.getElementById('announcements-table').textContent = e.message;
+  }
+}
+async function sendAnnouncement() {
+  const title = document.getElementById('ann-title').value.trim();
+  const body = document.getElementById('ann-body').value.trim();
+  const roles = [...document.querySelectorAll('.ann-role:checked')].map(el => el.value);
+  const errEl = document.getElementById('ann-err');
+  errEl.textContent = '';
+  if (!title || !body) { errEl.textContent = 'Title and body are required.'; return; }
+  if (!confirm('Send this announcement to ' + (roles.length ? roles.join(', ') : 'ALL users') + '?')) return;
+  try {
+    const data = await api('/admin/announcements', { method: 'POST', body: JSON.stringify({ title, body, roles }) });
+    alert('Sent to ' + data.announcement.recipientCount + ' user(s).');
+    document.getElementById('ann-title').value = '';
+    document.getElementById('ann-body').value = '';
+    renderAnnouncements();
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+
+async function renderAiConversations() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>AI Conversations</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">AI Meal Planner question/answer log. Empty until a real AI provider is wired up — the meal planner is still a frontend demo today.</p>' +
+    '<div id="aiconv-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/ai-conversations');
+    const rows = data.conversations.map(c =>
+      '<tr><td>' + (c.user ? c.user.name : '—') + '</td><td style="max-width:280px">' + c.prompt + '</td><td style="max-width:280px">' + c.response + '</td>' +
+      '<td>' + (c.provider || '—') + '</td><td>' + new Date(c.createdAt).toLocaleString() + '</td></tr>'
+    ).join('');
+    document.getElementById('aiconv-table').outerHTML = data.conversations.length
+      ? '<table><thead><tr><th>User</th><th>Prompt</th><th>Response</th><th>Provider</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No AI conversations logged yet — the meal planner isn\'t wired to a real AI provider.</div>';
+  } catch (e) {
+    document.getElementById('aiconv-table').textContent = e.message;
+  }
+}
+
 async function renderAdmins() {
   const main = document.getElementById('main');
   main.innerHTML =
@@ -638,7 +851,7 @@ async function renderAdmins() {
           : '<button class="action-btn" onclick="reactivateAdmin(\'' + a.id + '\')">Reactivate</button>') +
           ' <button class="action-btn" onclick="removeAdmin(\'' + a.id + '\',\'' + a.name.replace(/'/g, "\\'") + '\')">Remove</button>';
       }
-      return '<tr><td>' + a.name + (a.isSuperAdmin ? ' <span class="pill amber">Super</span>' : '') + '</td><td>' + (a.email || a.phone || '—') + '</td>' +
+      return '<tr><td>' + a.name + (a.isSuperAdmin ? ' <span class="pill amber">Super</span>' : a.isContentAdmin ? ' <span class="pill green">Content</span>' : '') + '</td><td>' + (a.email || a.phone || '—') + '</td>' +
         '<td>' + pill(a.status) + '</td><td>' + (a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : 'Never') + '</td><td>' + actions + '</td></tr>';
     }).join('');
     document.getElementById('admins-table').outerHTML = data.admins.length
@@ -654,6 +867,7 @@ function openAddAdminForm() {
     '<div class="field"><label>Name</label><input id="na-name"></div>' +
     '<div class="field"><label>Email</label><input id="na-email" type="email"></div>' +
     '<div class="field"><label>Password</label><input id="na-password" type="password"></div>' +
+    '<div class="field"><label>Tier</label><select id="na-tier"><option value="ORDINARY">Ordinary Admin</option><option value="CONTENT">Content Admin</option></select></div>' +
     '<div style="display:flex;gap:8px"><button class="btn" style="width:auto;padding:10px 16px" onclick="submitAddAdmin()">Create</button>' +
     '<button class="action-btn" onclick="document.getElementById(\'add-admin-form\').innerHTML=\'\'">Cancel</button></div>' +
     '<div class="err" id="na-err"></div></div>';
@@ -662,10 +876,11 @@ async function submitAddAdmin() {
   const name = document.getElementById('na-name').value.trim();
   const email = document.getElementById('na-email').value.trim();
   const password = document.getElementById('na-password').value;
+  const tier = document.getElementById('na-tier').value;
   const err = document.getElementById('na-err');
   err.textContent = '';
   try {
-    await api('/admin/admins', { method: 'POST', body: JSON.stringify({ name, email, password }) });
+    await api('/admin/admins', { method: 'POST', body: JSON.stringify({ name, email, password, tier }) });
     document.getElementById('add-admin-form').innerHTML = '';
     renderAdmins();
   } catch (e) {

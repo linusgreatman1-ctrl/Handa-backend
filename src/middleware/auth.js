@@ -30,6 +30,7 @@ async function requireAuth(req, res, next) {
         email: true,
         phone: true,
         isSuperAdmin: true,
+        isContentAdmin: true,
         vendorProfile: { select: { id: true, vtype: true, isVerified: true } },
         riderProfile: { select: { id: true, isVerified: true } },
         shopperProfile: { select: { id: true, isVerified: true } },
@@ -93,6 +94,17 @@ function requireSuperAdmin(req, res, next) {
   next();
 }
 
+// Content admins are a view-mostly middle tier (see User.isContentAdmin) —
+// this gates the same screens a super admin sees (analytics, monitoring,
+// settings lists) but never the sensitive write actions, which keep using
+// requireSuperAdmin directly.
+function requireContentOrSuperAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "ADMIN" || !(req.user.isSuperAdmin || req.user.isContentAdmin)) {
+    return res.status(403).json({ error: "Admin access required." });
+  }
+  next();
+}
+
 module.exports = {
   requireAuth,
   requireRole,
@@ -100,4 +112,5 @@ module.exports = {
   requireRiderProfile,
   requireShopperProfile,
   requireSuperAdmin,
+  requireContentOrSuperAdmin,
 };

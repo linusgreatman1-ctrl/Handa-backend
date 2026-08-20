@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAuth, requireRole, requireSuperAdmin } = require("../middleware/auth");
+const { requireAuth, requireRole, requireSuperAdmin, requireContentOrSuperAdmin } = require("../middleware/auth");
 const ctrl = require("../controllers/admin.controller");
 const adminMgmt = require("../controllers/adminManagement.controller");
 const adminFiles = require("../controllers/adminFiles.controller");
@@ -8,14 +8,15 @@ const router = express.Router();
 router.use(requireAuth, requireRole("ADMIN"));
 
 router.get("/dashboard", ctrl.dashboardStats);
-// Analytics — super-admin only.
-router.get("/reports", requireSuperAdmin, ctrl.getReports);
+// Analytics — content admin or super admin.
+router.get("/reports", requireContentOrSuperAdmin, ctrl.getReports);
 
 router.get("/users", ctrl.listUsers);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
 
 router.get("/vendors", ctrl.listVendorsForAdmin);
 router.patch("/vendors/:id/verify", ctrl.setVendorVerified);
+router.get("/riders", requireContentOrSuperAdmin, ctrl.listRidersForAdmin);
 router.patch("/riders/:id/verify", ctrl.setRiderVerified);
 router.patch("/shoppers/:id/verify", ctrl.setShopperVerified);
 
@@ -23,13 +24,35 @@ router.get("/kyc-documents", ctrl.listKycDocumentsForAdmin);
 router.patch("/kyc-documents/:id", ctrl.reviewKycDocument);
 
 router.get("/withdrawals", ctrl.listWithdrawalsForAdmin);
+router.get("/payments", requireContentOrSuperAdmin, ctrl.listPayments);
 
-// Rider-session monitoring — super-admin only.
-router.get("/shop-sessions", requireSuperAdmin, ctrl.listShopSessionsForAdmin);
-router.get("/shop-sessions/:id", requireSuperAdmin, ctrl.getShopSessionTimeline);
+// Rider-session monitoring — content admin or super admin.
+router.get("/shop-sessions", requireContentOrSuperAdmin, ctrl.listShopSessionsForAdmin);
+router.get("/shop-sessions/:id", requireContentOrSuperAdmin, ctrl.getShopSessionTimeline);
 
-// Handover code lookup (support-desk use) — super-admin only.
-router.get("/active-codes", requireSuperAdmin, ctrl.lookupActiveCodes);
+// Handover code lookup (support-desk use) — content admin or super admin.
+router.get("/active-codes", requireContentOrSuperAdmin, ctrl.lookupActiveCodes);
+
+// Vendor "featured listing" boosts — Handa's real subscription-like
+// concept. Viewing is content-admin-or-super; manually extending one
+// (overriding billing) is super-admin only.
+router.get("/subscriptions", requireContentOrSuperAdmin, ctrl.listSubscriptionsForAdmin);
+router.patch("/subscriptions/:id", requireSuperAdmin, ctrl.extendSubscription);
+
+// Generic config store — viewing is content-admin-or-super; writing is
+// super-admin only.
+router.get("/app-settings", requireContentOrSuperAdmin, ctrl.listAppSettings);
+router.put("/app-settings/:key", requireSuperAdmin, ctrl.upsertAppSetting);
+router.delete("/app-settings/:key", requireSuperAdmin, ctrl.deleteAppSetting);
+
+// Platform-wide announcements — viewing the sent history is content-admin-
+// or-super; sending a new one is super-admin only.
+router.get("/announcements", requireContentOrSuperAdmin, ctrl.listAnnouncements);
+router.post("/announcements", requireSuperAdmin, ctrl.sendAnnouncement);
+
+// AI Meal Planner conversation log — content admin or super admin. Empty
+// until a real AI provider is wired up (see AiConversationLog comment).
+router.get("/ai-conversations", requireContentOrSuperAdmin, ctrl.listAiConversations);
 
 // Admin management + audit trail — super-admin only.
 router.get("/admins", requireSuperAdmin, adminMgmt.listAdmins);
@@ -40,17 +63,16 @@ router.patch("/admins/:id/remove", requireSuperAdmin, adminMgmt.removeAdmin);
 router.get("/audit-log", requireSuperAdmin, adminMgmt.listAuditLog);
 
 // Code Editor (targeted find/replace) + Codes (full raw-file editor) —
-// live-patch public/app/index.html and public/admin/index.html. Both are
-// super-admin-only; Handa has no middle admin tier to grant view-only
-// access to like PassNow's CONTENT_ADMIN, so ordinary admins get none of
-// this, matching the original "no code editor, codes... in the backend
-// [for ordinary admins]" requirement.
-router.get("/files", requireSuperAdmin, adminFiles.listFiles);
-router.post("/files/search", requireSuperAdmin, adminFiles.searchInFile);
+// live-patch public/app/index.html and public/admin/index.html. Viewing
+// (list/search/backups/content) is content-admin-or-super; every write
+// (replace/restore/save) is super-admin only — a content admin can look
+// but never touch the live files, mirroring PassNow's CONTENT_ADMIN split.
+router.get("/files", requireContentOrSuperAdmin, adminFiles.listFiles);
+router.post("/files/search", requireContentOrSuperAdmin, adminFiles.searchInFile);
 router.post("/files/replace", requireSuperAdmin, adminFiles.replaceInFile);
-router.get("/files/backups", requireSuperAdmin, adminFiles.listBackups);
+router.get("/files/backups", requireContentOrSuperAdmin, adminFiles.listBackups);
 router.post("/files/restore", requireSuperAdmin, adminFiles.restoreBackup);
-router.get("/files/content", requireSuperAdmin, adminFiles.getContent);
+router.get("/files/content", requireContentOrSuperAdmin, adminFiles.getContent);
 router.post("/files/save", requireSuperAdmin, express.text({ type: "*/*", limit: "5mb" }), adminFiles.saveContent);
 
 module.exports = router;
