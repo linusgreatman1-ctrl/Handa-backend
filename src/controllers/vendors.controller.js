@@ -159,10 +159,17 @@ async function deleteMenuItem(req, res, next) {
 
 async function createServicePackage(req, res, next) {
   try {
-    const { key, label, priceKobo, includes } = req.body;
+    const { key, label, priceKobo, includes, guestCount } = req.body;
     if (!key || !label || priceKobo === undefined) return res.status(400).json({ error: "key, label, and priceKobo are required." });
     const pkg = await prisma.servicePackage.create({
-      data: { vendorId: req.user.vendorProfile.id, key, label, priceKobo, includes: Array.isArray(includes) ? includes : [] },
+      data: {
+        vendorId: req.user.vendorProfile.id,
+        key,
+        label,
+        priceKobo,
+        includes: Array.isArray(includes) ? includes : [],
+        guestCount: guestCount !== undefined && guestCount !== null && guestCount !== "" ? parseInt(guestCount) : null,
+      },
     });
     res.status(201).json({ package: pkg });
   } catch (err) {
@@ -174,13 +181,14 @@ async function updateServicePackage(req, res, next) {
   try {
     const pkg = await prisma.servicePackage.findUnique({ where: { id: req.params.pkgId } });
     if (!pkg || pkg.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Package not found." });
-    const { label, priceKobo, includes } = req.body;
+    const { label, priceKobo, includes, guestCount } = req.body;
     const updated = await prisma.servicePackage.update({
       where: { id: req.params.pkgId },
       data: {
         ...(label !== undefined && { label }),
         ...(priceKobo !== undefined && { priceKobo }),
         ...(includes !== undefined && { includes }),
+        ...(guestCount !== undefined && { guestCount: guestCount === null || guestCount === "" ? null : parseInt(guestCount) }),
       },
     });
     res.json({ package: updated });

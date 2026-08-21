@@ -12,6 +12,7 @@ router.get("/dashboard", ctrl.dashboardStats);
 router.get("/reports", requireContentOrSuperAdmin, ctrl.getReports);
 
 router.get("/users", ctrl.listUsers);
+router.get("/users/:id", requireContentOrSuperAdmin, ctrl.getCustomerDetailForAdmin);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
 
 router.get("/vendors", ctrl.listVendorsForAdmin);

@@ -19,6 +19,8 @@ const BACKUP_DIR = path.join(ROOT, "backups");
 const EDITABLE_FILES = {
   "app/index.html": path.join(ROOT, "public", "app", "index.html"),
   "admin/index.html": path.join(ROOT, "public", "admin", "index.html"),
+  "app-dev/index.html": path.join(ROOT, "public", "app-dev", "index.html"),
+  "admin-dev/index.html": path.join(ROOT, "public", "admin-dev", "index.html"),
 };
 
 function resolveFile(key) {

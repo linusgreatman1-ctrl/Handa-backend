@@ -102,6 +102,11 @@ app.use("/api", globalLimiter);
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 app.use("/admin", express.static(path.join(__dirname, "..", "public", "admin")));
 app.use("/app", express.static(path.join(__dirname, "..", "public", "app")));
+// Dev-staging copies of the two live files — a safe place for the admin
+// Code Editor to test edits (or preview the Live Preview tab) before an
+// admin manually applies the same change to the real live file.
+app.use("/app-dev", express.static(path.join(__dirname, "..", "public", "app-dev")));
+app.use("/admin-dev", express.static(path.join(__dirname, "..", "public", "admin-dev")));
 
 app.get("/health", (req, res) => res.json({ status: "ok", service: "handa-backend" }));
 app.use("/internal-seed", require("./routes/internalSeed.routes"));

@@ -323,18 +323,20 @@ enum PackageKey {
   BIRTHDAY
   BURIAL
   NAMING
+  CUSTOM // a vendor-defined package outside the fixed template set
 }
 
-// Fixed-tier service packages sold by event planners.
+// Fixed-tier (or CUSTOM) service packages sold by vendors.
 model ServicePackage {
-  id        String        @id @default(uuid())
-  vendorId  String
-  vendor    VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  key       PackageKey
-  label     String
-  priceKobo Int
-  includes  String[]      @default([])
-  createdAt DateTime      @default(now())
+  id         String        @id @default(uuid())
+  vendorId   String
+  vendor     VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  key        PackageKey
+  label      String
+  priceKobo  Int
+  includes   String[]      @default([])
+  guestCount Int?
+  createdAt  DateTime      @default(now())
 
   bookings Booking[]
 
@@ -400,6 +402,11 @@ model Booking {
   confirmedAt DateTime?
   completedAt DateTime?
   cancelledAt DateTime?
+
+  // Stamped once each reminder actually goes out, so the sweep never
+  // double-sends — null means "not sent yet", not "not due yet".
+  reminder24SentAt DateTime?
+  reminder2SentAt  DateTime?
 
   escrowHolds EscrowHold[]
   ratings     Rating[]

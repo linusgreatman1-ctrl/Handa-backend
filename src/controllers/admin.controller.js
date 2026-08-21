@@ -213,6 +213,57 @@ async function getVendorDetailForAdmin(req, res, next) {
   }
 }
 
+// Real detail view for a plain CUSTOMER-role user — no equivalent existed
+// before (only vendor/rider/shopper had one). financeBreakdownForUser is
+// deliberately NOT reused here: it computes payee-side earnings (money the
+// user received), which is meaningless for a customer, who only ever
+// spends. Real total spend is computed directly from their own completed
+// bookings + shop sessions instead, mirroring the exact GMV math already
+// used in dashboardStats/getReports.
+async function getCustomerDetailForAdmin(req, res, next) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, avatarUrl: true, createdAt: true, lastLoginAt: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    const [bookings, shopSessions, kycDocuments] = await Promise.all([
+      prisma.booking.findMany({
+        where: { customerId: user.id },
+        include: { vendor: { select: { bizName: true, vtype: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.shopSession.findMany({
+        where: { customerId: user.id },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.kycDocument.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
+    ]);
+
+    const completedBookings = bookings.filter((b) => b.status === "COMPLETED");
+    const completedSessions = shopSessions.filter((s) => s.status === "COMPLETED");
+    const totalSpendKobo =
+      completedBookings.reduce((sum, b) => sum + b.totalKobo, 0) +
+      completedSessions.reduce((sum, s) => sum + s.itemsTotalKobo + s.sessionFeeKobo, 0);
+
+    res.json({
+      user,
+      bookings,
+      shopSessions,
+      kycDocuments,
+      activity: {
+        totalBookings: bookings.length,
+        totalShopSessions: shopSessions.length,
+        completedOrders: completedBookings.length + completedSessions.length,
+        totalSpendKobo,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Ad-hoc outreach to any user's real phone number (customer, vendor,
 // rider, or shopper — every role's User row carries `phone`) from the
 // admin panel. Both actions require Africa's Talking credentials to be
@@ -270,6 +321,19 @@ async function deleteServicePackageForAdmin(req, res, next) {
   }
 }
 
+// Riders/shoppers have no CommissionPeriod-style debt concept (that's
+// vendor-only — a weekly amount they owe the platform). What they have
+// instead is a real per-delivery/per-session payout history: EscrowHold
+// rows where they're the payee. This is the itemized list underneath
+// financeBreakdownForUser's aggregate totals.
+async function payoutHistoryForUser(userId) {
+  return prisma.escrowHold.findMany({
+    where: { payeeId: userId },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+}
+
 async function getRiderDetailForAdmin(req, res, next) {
   try {
     const rider = await prisma.riderProfile.findUnique({
@@ -277,11 +341,12 @@ async function getRiderDetailForAdmin(req, res, next) {
       include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
     });
     if (!rider) return res.status(404).json({ error: "Rider not found." });
-    const [kycDocuments, finance] = await Promise.all([
+    const [kycDocuments, finance, payoutHistory] = await Promise.all([
       prisma.kycDocument.findMany({ where: { userId: rider.user.id }, orderBy: { createdAt: "desc" } }),
       financeBreakdownForUser(rider.user.id),
+      payoutHistoryForUser(rider.user.id),
     ]);
-    res.json({ rider, kycDocuments, finance });
+    res.json({ rider, kycDocuments, finance, payoutHistory });
   } catch (err) {
     next(err);
   }
@@ -294,11 +359,12 @@ async function getShopperDetailForAdmin(req, res, next) {
       include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
     });
     if (!shopper) return res.status(404).json({ error: "Shopper not found." });
-    const [kycDocuments, finance] = await Promise.all([
+    const [kycDocuments, finance, payoutHistory] = await Promise.all([
       prisma.kycDocument.findMany({ where: { userId: shopper.user.id }, orderBy: { createdAt: "desc" } }),
       financeBreakdownForUser(shopper.user.id),
+      payoutHistoryForUser(shopper.user.id),
     ]);
-    res.json({ shopper, kycDocuments, finance });
+    res.json({ shopper, kycDocuments, finance, payoutHistory });
   } catch (err) {
     next(err);
   }
@@ -671,7 +737,7 @@ async function listRidersForAdmin(req, res, next) {
         ...(verified === "false" && { isVerified: false }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { name: true, email: true, phone: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ riders });
@@ -690,7 +756,7 @@ async function listShoppersForAdmin(req, res, next) {
         ...(verified === "false" && { isVerified: false }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { name: true, email: true, phone: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ shoppers });
@@ -875,6 +941,7 @@ module.exports = {
   updateUserStatus,
   listVendorsForAdmin,
   getVendorDetailForAdmin,
+  getCustomerDetailForAdmin,
   deleteMenuItemForAdmin,
   deleteServicePackageForAdmin,
   smsUserForAdmin,

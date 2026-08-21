@@ -4,6 +4,7 @@ const { verifyAccessToken } = require("../utils/jwt");
 const escrowSvc = require("../services/escrow.service");
 const commissionSvc = require("../services/commission.service");
 const shopSessionsCtrl = require("../controllers/shopSessions.controller");
+const bookingRemindersSvc = require("../services/bookingReminders.service");
 
 // Replaces every client-side setTimeout/setInterval "simulation" in the
 // frontend prototype (rider map animation, live-call approval sync,
@@ -186,6 +187,13 @@ function attachLiveSocket(httpServer) {
   // customer knows to search again, same off-request-path pattern.
   setInterval(() => {
     shopSessionsCtrl.expireStaleSearchingSessions(io).catch((err) => console.error("[shop-session] expiry sweep failed:", err));
+  }, sweepMs);
+
+  // Reminds a vendor (home cook / event planner) ~24h and ~2h before an
+  // accepted/confirmed booking's event time — same off-request-path
+  // pattern as the sweeps above.
+  setInterval(() => {
+    bookingRemindersSvc.sendUpcomingReminders(io).catch((err) => console.error("[booking] reminder sweep failed:", err));
   }, sweepMs);
 
   return io;

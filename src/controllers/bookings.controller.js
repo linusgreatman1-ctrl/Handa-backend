@@ -80,7 +80,11 @@ async function listBookings(req, res, next) {
 
     const bookings = await prisma.booking.findMany({
       where,
-      include: { vendor: { include: { user: { select: { name: true, phone: true } } } }, servicePackage: true },
+      include: {
+        vendor: { include: { user: { select: { name: true, phone: true } } } },
+        servicePackage: true,
+        customer: { select: { name: true, phone: true, address: true, state: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
     res.json({ bookings });
@@ -93,7 +97,12 @@ async function getBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({
       where: { id: req.params.id },
-      include: { vendor: { include: { user: { select: { name: true, phone: true, address: true } } } }, servicePackage: true, ratings: true },
+      include: {
+        vendor: { include: { user: { select: { name: true, phone: true, address: true } } } },
+        servicePackage: true,
+        ratings: true,
+        customer: { select: { name: true, phone: true, address: true, state: true } },
+      },
     });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
 
