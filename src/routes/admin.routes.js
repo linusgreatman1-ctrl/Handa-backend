@@ -65,6 +65,12 @@ router.delete("/app-settings/:key", requireSuperAdmin, ctrl.deleteAppSetting);
 router.get("/announcements", requireContentOrSuperAdmin, ctrl.listAnnouncements);
 router.post("/announcements", requireSuperAdmin, ctrl.sendAnnouncement);
 
+// Real SMTP bulk email (all users / a hand-picked list / a single user) —
+// same super-admin-only gating as announcements, since this reaches real
+// inboxes and can't be un-sent.
+router.get("/bulk-email", requireContentOrSuperAdmin, ctrl.listBulkEmails);
+router.post("/bulk-email", requireSuperAdmin, ctrl.sendBulkEmail);
+
 // AI Meal Planner conversation log — content admin or super admin. Empty
 // until a real AI provider is wired up (see AiConversationLog comment).
 router.get("/ai-conversations", requireContentOrSuperAdmin, ctrl.listAiConversations);

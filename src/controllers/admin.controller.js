@@ -1,6 +1,7 @@
 const prisma = require("../config/db");
 const { logAdminAction } = require("../services/auditLog.service");
 const africastalking = require("../services/africastalking.service");
+const emailSvc = require("../services/email.service");
 
 // Headline numbers for the admin panel's landing dashboard — cheap
 // aggregate counts, not full row dumps.
@@ -113,7 +114,7 @@ async function listUsers(req, res, next) {
       prisma.user.findMany({
         where,
         select: {
-          id: true, name: true, email: true, phone: true, role: true, status: true, state: true, lga: true, createdAt: true, lastLoginAt: true,
+          id: true, name: true, email: true, phone: true, address: true, role: true, status: true, state: true, lga: true, createdAt: true, lastLoginAt: true,
           vendorProfile: { select: { id: true, vtype: true, bizName: true, isVerified: true, isOnline: true } },
           riderProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true, deliveries: true } },
           shopperProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true } },
@@ -162,7 +163,7 @@ async function listVendorsForAdmin(req, res, next) {
         ...(verified !== undefined && { isVerified: verified === "true" }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ vendors });
@@ -623,7 +624,7 @@ async function getBookingDetailForAdmin(req, res, next) {
     const booking = await prisma.booking.findUnique({
       where: { id: req.params.id },
       include: {
-        customer: { select: { name: true, phone: true, email: true, state: true } },
+        customer: { select: { name: true, phone: true, email: true, address: true, state: true } },
         vendor: { include: { user: { select: { name: true, phone: true } } } },
         servicePackage: true,
         escrowHolds: true,
@@ -737,7 +738,7 @@ async function listRidersForAdmin(req, res, next) {
         ...(verified === "false" && { isVerified: false }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ riders });
@@ -756,7 +757,7 @@ async function listShoppersForAdmin(req, res, next) {
         ...(verified === "false" && { isVerified: false }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ shoppers });
@@ -908,6 +909,58 @@ async function sendAnnouncement(req, res, next) {
   }
 }
 
+// ── Bulk email: unlike sendAnnouncement above (which only ever creates
+// in-app Notification rows), this sends a real SMTP email. `userIds`
+// covers all three asked-for cases with one parameter: omitted/empty ->
+// every ACTIVE user with a real email on file; one id -> a single user;
+// several ids -> a hand-picked list. ──
+async function listBulkEmails(req, res, next) {
+  try {
+    const emails = await prisma.bulkEmail.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+    res.json({ emails });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function sendBulkEmail(req, res, next) {
+  try {
+    emailSvc.requireConfig(); // throws a clear 503 immediately if SMTP isn't set up, before doing any DB work
+    const { subject, body, userIds } = req.body;
+    if (!subject || !subject.trim()) return res.status(400).json({ error: "subject is required." });
+    if (!body || !body.trim()) return res.status(400).json({ error: "body is required." });
+
+    const recipients = Array.isArray(userIds) && userIds.length
+      ? await prisma.user.findMany({ where: { id: { in: userIds }, email: { not: null } }, select: { id: true, email: true, name: true } })
+      : await prisma.user.findMany({ where: { status: "ACTIVE", email: { not: null } }, select: { id: true, email: true, name: true } });
+    if (!recipients.length) return res.status(400).json({ error: "No recipients with a real email address found." });
+
+    const subjectTrim = subject.trim();
+    const bodyTrim = body.trim();
+    const html = `<p>Hi {{name}},</p><div>${bodyTrim.replace(/\n/g, "<br>")}</div>`;
+    let sentCount = 0;
+    let failedCount = 0;
+    const sentEmails = [];
+    for (const r of recipients) {
+      try {
+        await emailSvc.sendEmail(r.email, subjectTrim, html.replace("{{name}}", r.name || "there"), bodyTrim);
+        sentCount++;
+        sentEmails.push(r.email);
+      } catch (err) {
+        failedCount++;
+      }
+    }
+
+    const record = await prisma.bulkEmail.create({
+      data: { subject: subjectTrim, body: bodyTrim, recipientEmails: sentEmails, sentCount, failedCount, sentById: req.user.id, sentByName: req.user.name },
+    });
+    await logAdminAction(req.user, "BULK_EMAIL_SENT", "BulkEmail", record.id, `"${subjectTrim}" to ${sentCount} recipient(s)${failedCount ? `, ${failedCount} failed` : ""}`);
+    res.status(201).json({ bulkEmail: record });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── AI Conversations: viewer for the AI Meal Planner's question/answer
 // log. Empty today — the meal planner is still the frontend's hardcoded
 // demo, nothing writes to AiConversationLog yet. Ready the moment a real
@@ -966,6 +1019,8 @@ module.exports = {
   deleteAppSetting,
   listAnnouncements,
   sendAnnouncement,
+  listBulkEmails,
+  sendBulkEmail,
   listAiConversations,
   listKycDocumentsForAdmin,
   reviewKycDocument,

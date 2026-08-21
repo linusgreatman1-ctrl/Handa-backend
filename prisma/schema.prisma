@@ -997,6 +997,25 @@ model Announcement {
   @@index([createdAt])
 }
 
+// Real SMTP email sent from the admin panel (as opposed to Announcement,
+// which only ever creates in-app Notification rows). Recipients can be
+// "every active user with an email", an explicit list of user ids, or a
+// single user id — recipientEmails records exactly who it went to since
+// User rows can later change/lose their email.
+model BulkEmail {
+  id              String   @id @default(uuid())
+  subject         String
+  body            String
+  recipientEmails String[] @default([])
+  sentCount       Int
+  failedCount     Int      @default(0)
+  sentById        String
+  sentByName      String
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // Generic key/value config store for the admin "App Settings" screen.
 // Nothing in the running app reads from this yet — it exists so a super
 // admin has somewhere to record/adjust platform config (feature flags,

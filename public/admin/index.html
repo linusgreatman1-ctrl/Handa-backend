@@ -101,6 +101,7 @@
     <button class="nav-item" data-tab="kyc" onclick="switchTab('kyc')">KYC Documents</button>
     <button class="nav-item" data-tab="appsettings" data-elevated="1" onclick="switchTab('appsettings')">App Settings</button>
     <button class="nav-item" data-tab="announcements" data-elevated="1" onclick="switchTab('announcements')">Announcements</button>
+    <button class="nav-item" data-tab="bulkemail" data-elevated="1" onclick="switchTab('bulkemail')">Bulk Email</button>
     <button class="nav-item" data-tab="aiconversations" data-elevated="1" onclick="switchTab('aiconversations')">AI Conversations</button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
     <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
@@ -139,6 +140,15 @@ function togglePwVisibility(id, btn) {
   btn.textContent = show ? '🙈' : '👁️';
 }
 function money(kobo) { return '₦' + ((kobo || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+// Compact multi-line Contact cell: email, phone, address — used everywhere
+// a table row or detail card shows "who to reach and where", not just email.
+function contactCell(email, phone, address) {
+  const extra = [phone, address].filter(Boolean);
+  return (email || '—') + (extra.length ? '<br><span style="color:#9A9390;font-size:11px">' + extra.join('<br>') + '</span>' : '');
+}
+function contactBreakdown(phone, address) {
+  return [phone, address].filter(Boolean).join(' · ') || 'No phone/address on file';
+}
 const NG_STATES = ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
 function stateFilterOptions(selected) { return '<option value="">All states</option>' + NG_STATES.map(s => '<option' + (selected === s ? ' selected' : '') + '>' + s + '</option>').join(''); }
 
@@ -180,7 +190,7 @@ function switchTab(tab) {
   if (window._codesDirty && !confirm('You have unsaved edits in the Codes tab. Leave without saving?')) return;
   window._codesDirty = false;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, aiconversations: renderAiConversations, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, aiconversations: renderAiConversations, admins: renderAdmins, auditlog: renderAuditLog };
   renderers[tab]();
 }
 
@@ -299,7 +309,7 @@ async function renderUsers() {
         ? ' <button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call</button>'
         : '';
       const viewBtn = '<button class="action-btn" onclick="renderCustomerDetail(\'' + u.id + '\')">View</button> ';
-      return '<tr><td>' + u.name + '</td><td>' + (u.email || u.phone || '—') + '</td><td>' + u.role + '</td><td>' + (u.state || '—') + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
+      return '<tr><td>' + u.name + '</td><td>' + contactCell(u.email, u.phone, u.address) + '</td><td>' + u.role + '</td><td>' + (u.state || '—') + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
         '<td>' + viewBtn + (u.status === 'ACTIVE'
           ? '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'SUSPENDED\')">Suspend</button>'
           : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + ' ' + verifyBtn + outreachBtns + '</td></tr>';
@@ -340,7 +350,7 @@ async function renderCustomerDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'users\')">&larr; Back to list</button>' +
       '<h2>' + u.name + '</h2>' +
       '<div class="grid">' +
-        card('Contact', (u.email || '—'), u.phone || '') +
+        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address)) +
         card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
         card('Total Spend', money(a.totalSpendKobo), a.completedOrders + ' completed order(s)') +
         card('Account Status', pill(u.status), 'Joined ' + new Date(u.createdAt).toLocaleDateString()) +
@@ -394,7 +404,7 @@ async function renderVendors() {
   try {
     const data = await api('/admin/vendors' + (state ? '?state=' + encodeURIComponent(state) : ''));
     const rows = data.vendors.map(v =>
-      '<tr><td>' + v.bizName + '</td><td>' + v.vtype + '</td><td>' + v.user.name + '</td><td>' + v.user.email + '</td><td>' + (v.user.state || '—') + '</td>' +
+      '<tr><td>' + v.bizName + '</td><td>' + v.vtype + '</td><td>' + v.user.name + '</td><td>' + contactCell(v.user.email, v.user.phone, v.user.address) + '</td><td>' + (v.user.state || '—') + '</td>' +
       '<td>' + (v.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
       '<td><button class="action-btn" onclick="renderVendorDetail(\'' + v.id + '\')">View</button> <button class="action-btn" onclick="setVendorVerified(\'' + v.id + '\',' + (!v.isVerified) + ')">' + (v.isVerified ? 'Unverify' : 'Verify') + '</button> ' +
       (v.user.status === 'ACTIVE'
@@ -402,7 +412,7 @@ async function renderVendors() {
         : '<button class="action-btn" onclick="setUserStatus(\'' + v.user.id + '\',\'ACTIVE\');setTimeout(renderVendors,300)">Activate</button>') + '</td></tr>'
     ).join('');
     document.getElementById('vendors-table').outerHTML = data.vendors.length
-      ? '<table><thead><tr><th>Business</th><th>Type</th><th>Owner</th><th>Email</th><th>State</th><th>Verified</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      ? '<table><thead><tr><th>Business</th><th>Type</th><th>Owner</th><th>Contact</th><th>State</th><th>Verified</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div class="empty">No vendors found.</div>';
   } catch (e) {
     document.getElementById('vendors-table').textContent = e.message;
@@ -925,7 +935,7 @@ async function renderRiders() {
   try {
     const data = await api('/admin/riders' + (state ? '?state=' + encodeURIComponent(state) : ''));
     const rows = data.riders.map(r =>
-      '<tr><td>' + r.user.name + '</td><td>' + (r.user.email || r.user.phone || '—') + '</td><td>' + (r.vehicleType || '—') + '</td><td>' + (r.user.state || '—') + '</td>' +
+      '<tr><td>' + r.user.name + '</td><td>' + contactCell(r.user.email, r.user.phone, r.user.address) + '</td><td>' + (r.vehicleType || '—') + '</td><td>' + (r.user.state || '—') + '</td>' +
       '<td>' + (r.isOnline ? pill('ONLINE') : '<span class="pill grey">Offline</span>') + '</td>' +
       '<td>' + (r.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
       '<td>' + r.deliveries + '</td><td>' + (r.ratingAvg || 0).toFixed(1) + '</td>' +
@@ -961,7 +971,7 @@ async function renderRiderDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'riders\')">&larr; Back to list</button>' +
       '<h2>' + u.name + '</h2>' +
       '<div class="grid">' +
-        card('Contact', (u.email || '—'), u.phone || '') +
+        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address)) +
         card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
         card('Vehicle', (r.vehicleType || 'Not set') + (r.plateNumber ? ' · ' + r.plateNumber : ''), '') +
         card('Deliveries', r.deliveries, 'Rating ' + (r.ratingAvg || 0).toFixed(1)) +
@@ -992,7 +1002,7 @@ async function renderShoppers() {
   try {
     const data = await api('/admin/shoppers' + (state ? '?state=' + encodeURIComponent(state) : ''));
     const rows = data.shoppers.map(s =>
-      '<tr><td>' + s.user.name + '</td><td>' + (s.user.email || s.user.phone || '—') + '</td><td>' + (s.market || '—') + '</td><td>' + (s.user.state || '—') + '</td>' +
+      '<tr><td>' + s.user.name + '</td><td>' + contactCell(s.user.email, s.user.phone, s.user.address) + '</td><td>' + (s.market || '—') + '</td><td>' + (s.user.state || '—') + '</td>' +
       '<td>' + (s.isOnline ? pill('ONLINE') : '<span class="pill grey">Offline</span>') + '</td>' +
       '<td>' + (s.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td><td>' + (s.ratingAvg || 0).toFixed(1) + '</td>' +
       '<td><button class="action-btn" onclick="renderShopperDetail(\'' + s.id + '\')">View</button> <button class="action-btn" onclick="setShopperVerified(\'' + s.id + '\',' + (!s.isVerified) + ')">' + (s.isVerified ? 'Unverify' : 'Verify') + '</button> ' +
@@ -1027,7 +1037,7 @@ async function renderShopperDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'shoppers\')">&larr; Back to list</button>' +
       '<h2>' + u.name + '</h2>' +
       '<div class="grid">' +
-        card('Contact', (u.email || '—'), u.phone || '') +
+        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address)) +
         card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
         card('Market', s.market || 'Not set', '') +
         card('Rating', (s.ratingAvg || 0).toFixed(1), s.ratingCount + ' ratings') +
@@ -1087,7 +1097,7 @@ async function renderBookingDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'bookings\')">&larr; Back to list</button>' +
       '<h2>Booking ' + b.bookingNumber + '</h2>' +
       '<div class="grid">' +
-        card('Customer', b.customer.name, (b.customer.phone || '') + (b.customer.email ? ' · ' + b.customer.email : '')) +
+        card('Customer', b.customer.name, contactCell(b.customer.email, b.customer.phone, b.customer.address)) +
         card('Vendor', b.vendor.bizName, b.vendor.user ? b.vendor.user.name + (b.vendor.user.phone ? ' · ' + b.vendor.user.phone : '') : '') +
         card('Total', money(b.totalKobo), b.paymentMethod) +
         card('Status', b.status, b.venue || '') +
@@ -1325,6 +1335,114 @@ async function sendAnnouncement() {
   }
 }
 
+// ── Bulk Email: real SMTP email, unlike Announcements above (in-app
+// notifications only). Recipients: "All active users" or a hand-picked
+// list built by searching /admin/users and checking rows — a single user
+// is just that list with one entry, no separate mode needed. ──
+let _beSelected = {}; // id -> {id, name, email} — order-preserving via insertion
+function renderBulkEmail() {
+  const main = document.getElementById('main');
+  const canSend = currentUser.isSuperAdmin;
+  _beSelected = {};
+  main.innerHTML =
+    '<h2>Bulk Email</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Sends a real email (not just an in-app notification) to all active users, a hand-picked list, or a single user. Requires SMTP to be configured on the server.</p>' +
+    (canSend ?
+      '<div class="card" style="margin-bottom:20px">' +
+      '<div class="field"><label>Subject</label><input id="be-subject"></div>' +
+      '<div class="field"><label>Message</label><textarea id="be-body" style="width:100%;min-height:90px;background:#2D2D2D;border:2px solid #333;border-radius:10px;padding:11px 13px;color:#F2EDE8;font-size:14px"></textarea></div>' +
+      '<div class="field"><label>Recipients</label>' +
+      '<div style="display:flex;gap:14px;margin-bottom:10px">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="radio" name="be-scope" value="all" checked onchange="beToggleScope()"> All active users</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="radio" name="be-scope" value="pick" onchange="beToggleScope()"> Specific user(s)</label>' +
+      '</div>' +
+      '<div id="be-picker" style="display:none">' +
+      '<input id="be-search" placeholder="Search users by name/email/phone…" style="width:100%;box-sizing:border-box;margin-bottom:8px" oninput="beSearchUsers(this.value)">' +
+      '<div id="be-search-results" style="max-height:160px;overflow-y:auto;margin-bottom:10px"></div>' +
+      '<div style="font-size:12px;color:#9A9390;margin-bottom:4px">Selected:</div>' +
+      '<div id="be-selected-chips" style="display:flex;flex-wrap:wrap;gap:6px">' + '<span style="color:#6B6560;font-size:12px">None yet — search above.</span>' + '</div>' +
+      '</div>' +
+      '</div>' +
+      '<button class="btn" style="width:auto;padding:8px 16px" onclick="sendBulkEmail()">Send</button>' +
+      '<div class="err" id="be-err"></div></div>'
+      : '') +
+    '<h2>History</h2><div id="bulkemail-table" class="empty">Loading...</div>';
+  loadBulkEmailHistory();
+}
+function beToggleScope() {
+  const pick = document.querySelector('input[name="be-scope"]:checked').value === 'pick';
+  document.getElementById('be-picker').style.display = pick ? 'block' : 'none';
+}
+let _beSearchTimer = null;
+function beSearchUsers(q) {
+  clearTimeout(_beSearchTimer);
+  const el = document.getElementById('be-search-results');
+  if (!q || q.trim().length < 2) { el.innerHTML = ''; return; }
+  _beSearchTimer = setTimeout(async () => {
+    try {
+      const data = await api('/admin/users?q=' + encodeURIComponent(q.trim()) + '&pageSize=15');
+      el.innerHTML = data.users.length
+        ? data.users.map(u => '<div style="padding:6px 8px;cursor:pointer;border-radius:6px" onmouseover="this.style.background=\'#242424\'" onmouseout="this.style.background=\'\'" onclick="beSelectUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ',' + JSON.stringify(u.email || '') + ')">' + u.name + ' — ' + (u.email || u.phone || 'no contact') + ' <span style="color:#6B6560">(' + u.role + ')</span></div>').join('')
+        : '<div style="color:#6B6560;font-size:12px;padding:4px">No matches.</div>';
+    } catch (e) { el.textContent = e.message; }
+  }, 300);
+}
+function beSelectUser(id, name, email) {
+  if (!email) { alert(name + ' has no email on file — cannot receive bulk email.'); return; }
+  _beSelected[id] = { id, name, email };
+  beRenderChips();
+  document.getElementById('be-search').value = '';
+  document.getElementById('be-search-results').innerHTML = '';
+}
+function beRemoveUser(id) {
+  delete _beSelected[id];
+  beRenderChips();
+}
+function beRenderChips() {
+  const ids = Object.keys(_beSelected);
+  const el = document.getElementById('be-selected-chips');
+  el.innerHTML = ids.length
+    ? ids.map(id => '<span style="background:#242424;border:1px solid #2A2850;border-radius:20px;padding:4px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px">' + _beSelected[id].name + ' <span style="cursor:pointer;color:#E8392E" onclick="beRemoveUser(\'' + id + '\')">&times;</span></span>').join('')
+    : '<span style="color:#6B6560;font-size:12px">None yet — search above.</span>';
+}
+async function sendBulkEmail() {
+  const subject = document.getElementById('be-subject').value.trim();
+  const body = document.getElementById('be-body').value.trim();
+  const scope = document.querySelector('input[name="be-scope"]:checked').value;
+  const errEl = document.getElementById('be-err');
+  errEl.textContent = '';
+  if (!subject || !body) { errEl.textContent = 'Subject and message are required.'; return; }
+  const userIds = scope === 'pick' ? Object.keys(_beSelected) : undefined;
+  if (scope === 'pick' && !userIds.length) { errEl.textContent = 'Select at least one recipient, or switch to "All active users".'; return; }
+  const confirmMsg = scope === 'pick' ? 'Send this email to ' + userIds.length + ' selected user(s)?' : 'Send this email to ALL active users with an email on file?';
+  if (!confirm(confirmMsg)) return;
+  try {
+    const data = await api('/admin/bulk-email', { method: 'POST', body: JSON.stringify({ subject, body, userIds }) });
+    alert('Sent to ' + data.bulkEmail.sentCount + ' recipient(s)' + (data.bulkEmail.failedCount ? ', ' + data.bulkEmail.failedCount + ' failed' : '') + '.');
+    document.getElementById('be-subject').value = '';
+    document.getElementById('be-body').value = '';
+    _beSelected = {};
+    renderBulkEmail();
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+async function loadBulkEmailHistory() {
+  try {
+    const data = await api('/admin/bulk-email');
+    const rows = data.emails.map(e =>
+      '<tr><td>' + e.subject + '</td><td style="max-width:320px">' + e.body + '</td>' +
+      '<td>' + e.sentCount + (e.failedCount ? ' (' + e.failedCount + ' failed)' : '') + '</td>' +
+      '<td>' + e.sentByName + '</td><td>' + new Date(e.createdAt).toLocaleString() + '</td></tr>'
+    ).join('');
+    document.getElementById('bulkemail-table').outerHTML = data.emails.length
+      ? '<table><thead><tr><th>Subject</th><th>Message</th><th>Sent</th><th>Sent By</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No bulk emails sent yet.</div>';
+  } catch (e) {
+    document.getElementById('bulkemail-table').textContent = e.message;
+  }
+}
+
 async function renderAiConversations() {
   const main = document.getElementById('main');
   main.innerHTML =
@@ -1367,7 +1485,7 @@ async function renderAdmins() {
           : '<button class="action-btn" onclick="reactivateAdmin(\'' + a.id + '\')">Reactivate</button>') +
           ' <button class="action-btn" onclick="removeAdmin(\'' + a.id + '\',\'' + a.name.replace(/'/g, "\\'") + '\')">Remove</button>';
       }
-      return '<tr><td>' + a.name + (a.isSuperAdmin ? ' <span class="pill amber">Super</span>' : a.isContentAdmin ? ' <span class="pill green">Content</span>' : '') + '</td><td>' + (a.email || a.phone || '—') + '</td>' +
+      return '<tr><td>' + a.name + (a.isSuperAdmin ? ' <span class="pill amber">Super</span>' : a.isContentAdmin ? ' <span class="pill green">Content</span>' : '') + '</td><td>' + contactCell(a.email, a.phone, a.address) + '</td>' +
         '<td>' + pill(a.status) + '</td><td>' + (a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : 'Never') + '</td><td>' + actions + '</td></tr>';
     }).join('');
     document.getElementById('admins-table').outerHTML = data.admins.length
