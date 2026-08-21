@@ -6304,6 +6304,9 @@ function pickRole(r){
   var labels={customer:'Sign In →',cook:'Sign In as Home Cook →',event_planner:'Sign In as Event Planner →',rider:'Sign In as Rider →',shopper:'Sign In as Shopper →'};
   var regLabels={customer:'Register as Customer →',cook:'Register as Home Cook →',event_planner:'Register as Event Planner →',rider:'Register as Rider →',shopper:'Register as Shopper →'};
   btn.textContent=(S.ltab==='reg'?regLabels:labels)[r]||'Sign In →';
+  var rht=document.getElementById('reg-header-title');
+  var titles={customer:'Register as Customer',cook:'Register as Home Cook',event_planner:'Register as Event Planner',rider:'Register as Rider',shopper:'Register as Shopper'};
+  if(rht)rht.textContent=titles[r]||'Register';
   if(S.ltab==='reg')buildRegForm();
 }
 
