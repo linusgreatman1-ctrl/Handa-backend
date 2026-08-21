@@ -1816,7 +1816,9 @@ function openAddrModal(){
   // Fallback to procedure modal
   showProcedureModal(
     '<div style="padding:0 0 24px">'
-    +'<p style="font-size:16px;font-weight:800;margin-bottom:14px">📍 Update Delivery Address</p>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<p style="font-size:16px;font-weight:800;margin:0">📍 Update Delivery Address</p></div>'
     +'<input id="new-addr-main" class="if" placeholder="Street address" style="margin-bottom:10px">'
     +'<input id="new-addr-area" class="if" placeholder="Area / Landmark" style="margin-bottom:10px">'
     +'<input id="new-addr-city" class="if" placeholder="City" style="margin-bottom:16px">'
@@ -5964,7 +5966,9 @@ function showSafetyProc(){
 }
 function showHelpProc(){
   showProcedureModal('<div style="padding:0 0 24px">'
-    +'<p style="font-size:18px;font-weight:900;margin-bottom:4px">Help &amp; Support</p>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<p style="font-size:18px;font-weight:900;margin:0">Help &amp; Support</p></div>'
     +'<p style="color:#9A9390;font-size:13px;margin-bottom:20px">We\'re here to help you</p>'
     +'<div style="background:#1C1C1C;border-radius:14px;padding:14px;margin-bottom:12px">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px">Email Support</div>'
@@ -6639,7 +6643,7 @@ function sendPlanToShopper(){
   if(!window._aiGroceries||!window._aiGroceries.length){showToast&&showToast('Generate a meal plan first','warning');return;}
   var items=window._aiGroceries;
   var total=items.reduce(function(s,g){return s+(g.pr||0);},0);
-  var h='<div style="padding:0 0 24px"><div style="font-size:15px;font-weight:800;color:#F2EDE8;margin-bottom:14px">🛒 Find a Shopper for This List</div><div style="background:#1C1C1C;border-radius:12px;padding:12px 14px;margin-bottom:12px;max-height:220px;overflow-y:auto">';
+  var h='<div style="padding:0 0 24px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:15px;font-weight:800;color:#F2EDE8;">🛒 Find a Shopper for This List</div></div><div style="background:#1C1C1C;border-radius:12px;padding:12px 14px;margin-bottom:12px;max-height:220px;overflow-y:auto">';
   items.forEach(function(g){h+='<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850"><span>'+g.em+' '+g.nm+'</span><span style="color:#2ECC71;font-weight:700">'+N(g.pr)+'</span></div>';});
   h+='</div><div style="display:flex;justify-content:space-between;padding:10px 14px;background:#242424;border-radius:10px;margin-bottom:16px"><span style="color:#9A9390">Estimated Total</span><span style="color:#2ECC71;font-weight:800">'+N(total)+'</span></div><button id="confirm-send-sh" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer">🛒 Find a Shopper</button></div>';
   showProcedureModal(h);
@@ -7461,7 +7465,9 @@ function addNewCard(){
 function openLiveChat(){
   showProcedureModal(
     '<div style="padding:0 0 24px">'
-    +'<p style="font-size:16px;font-weight:800;margin-bottom:4px">💬 Live Chat Support</p>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<p style="font-size:16px;font-weight:800;margin:0">💬 Live Chat Support</p></div>'
     +'<p style="color:#9A9390;font-size:13px;margin-bottom:16px">Average response time: 2 minutes</p>'
     +'<div style="background:#1C1C1C;border-radius:12px;padding:14px;margin-bottom:16px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
@@ -7485,6 +7491,8 @@ function openLiveChat(){
 function callSupport(){
   showProcedureModal(
     '<div style="padding:0 0 24px;text-align:center">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;text-align:left;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button></div>'
     +'<div style="font-size:52px;margin-bottom:16px">📞</div>'
     +'<p style="font-size:16px;font-weight:800;margin-bottom:4px">Call Handa Support</p>'
     +'<p style="color:#9A9390;font-size:13px;margin-bottom:20px">Available Mon–Sat, 8AM–8PM</p>'
