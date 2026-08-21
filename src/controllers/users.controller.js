@@ -102,57 +102,23 @@ async function updateShopperProfile(req, res, next) {
   }
 }
 
-// ── Add-a-role endpoints ──────────────────────────────────────────────
-// Multi-role accounts: an already-registered user can pick up a second
-// (or third) profile without creating a new account. Each profile table
-// has userId @unique — one row per user per table — so nothing stops a
-// user having rows in more than one of these tables at once; only the
-// registration flow (auth.controller.js's register()) previously created
-// just one. These mirror that same creation shape, just gated the other
-// way around (guard against a profile that already exists, not against
-// picking more than one at signup).
-async function createVendorProfile(req, res, next) {
-  try {
-    if (req.user.vendorProfile) return res.status(409).json({ error: "This account already has a vendor profile." });
-    const { vtype, bizName, description, tags } = req.body;
-    if (!vtype || !["HOME_COOK", "EVENT_PLANNER"].includes(vtype)) {
-      return res.status(400).json({ error: "A valid vendor type (vtype) is required." });
-    }
-    if (!bizName || !bizName.trim()) return res.status(400).json({ error: "Business name is required." });
-
-    const profile = await prisma.vendorProfile.create({
-      data: { userId: req.user.id, vtype, bizName, description: description || null, tags: Array.isArray(tags) ? tags : [] },
-    });
-    res.status(201).json({ vendorProfile: profile });
-  } catch (err) {
-    next(err);
-  }
+// ── Add-a-role endpoints — intentionally disabled ────────────────────
+// Each role (customer, rider, shopper, home cook, event planner) requires
+// its own registered account with its own login credentials — one login
+// must never unlock more than one account's dashboards. These three routes
+// stay mounted (so an old client hitting them gets a clear message instead
+// of a 404) but always refuse.
+function multiRoleDisabled(req, res) {
+  res.status(403).json({ error: "Adding another role to an existing account isn't supported. Please register a separate account for this role." });
 }
-
-async function createRiderProfile(req, res, next) {
-  try {
-    if (req.user.riderProfile) return res.status(409).json({ error: "This account already has a rider profile." });
-    const { vehicleType, plateNumber } = req.body;
-    const profile = await prisma.riderProfile.create({
-      data: { userId: req.user.id, vehicleType: vehicleType || null, plateNumber: plateNumber || null },
-    });
-    res.status(201).json({ riderProfile: profile });
-  } catch (err) {
-    next(err);
-  }
+async function createVendorProfile(req, res) {
+  multiRoleDisabled(req, res);
 }
-
-async function createShopperProfile(req, res, next) {
-  try {
-    if (req.user.shopperProfile) return res.status(409).json({ error: "This account already has a shopper profile." });
-    const { market } = req.body;
-    const profile = await prisma.shopperProfile.create({
-      data: { userId: req.user.id, market: market || null },
-    });
-    res.status(201).json({ shopperProfile: profile });
-  } catch (err) {
-    next(err);
-  }
+async function createRiderProfile(req, res) {
+  multiRoleDisabled(req, res);
+}
+async function createShopperProfile(req, res) {
+  multiRoleDisabled(req, res);
 }
 
 // "Go Online" toggle — drives whether a vendor/rider/shopper receives new

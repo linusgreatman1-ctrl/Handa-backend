@@ -971,84 +971,16 @@ function renderRoleSwitcher(){
     return '<button onclick="eGo(\''+it.key+'\')" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1.5px solid '+(active?'#E8392E':'#2A2850')+';background:'+(active?'rgba(232,57,46,.08)':'#242424')+';color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+it.label+(active?' — current':'')+'</button>';
   }).join('');
 
-  var addOpts = [];
-  if (!have.vendor) addOpts.push(['cook','🧑‍🍳 Home Cook'], ['event_planner','🎊 Event Planner']);
-  if (!have.rider) addOpts.push(['rider','🏍️ Rider']);
-  if (!have.shopper) addOpts.push(['shopper','🛒 Shopper']);
-  var addBtns = addOpts.length
-    ? '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 8px;">Add another role</div>'
-      + addOpts.map(function(o){ return '<button onclick="openAddRoleModal(\''+o[0]+'\')" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1.5px dashed #2A2850;background:transparent;color:#9A9390;font-weight:600;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">+ '+o[1]+'</button>'; }).join('')
-    : '';
-  var vendorNote = have.vendor
-    ? '<div style="font-size:11px;color:#6B6560;margin:2px 0 4px;">Your account type is '+vendorLabel.replace(/^[^\s]+\s/,'')+' — one vendor type per account for now.</div>'
-    : '';
-
   return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
-    + '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Switch role</div>'
-    + rows + vendorNote + addBtns
+    + '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Your account</div>'
+    + rows
     + '</div>';
 }
 
-var _addRoleTarget = null;
+// Kept for the (unrelated) event-request / proposal modals, which reuse
+// this same small field-builder pair.
 function _arField(lb,id,ph,tp){ return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">'+lb+'</label><input class="if" id="'+id+'" '+(tp?'type="'+tp+'" ':'')+'placeholder="'+ph+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'; }
 function _arSelect(lb,id,opts){ return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">'+lb+'</label><select class="if" id="'+id+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'+opts+'</select>'; }
-
-function openAddRoleModal(target){
-  _addRoleTarget = target;
-  var labels = { cook:'Home Cook', event_planner:'Event Planner', rider:'Rider', shopper:'Shopper' };
-  var fields = '';
-  if (target === 'cook') fields = _arField('Cooking Speciality','ar-sp','e.g. Nigerian, Continental','');
-  else if (target === 'event_planner') fields = _arField('Business Name','ar-bizname','e.g. Celebrate Lagos Events','') + _arSelect('Event Speciality','ar-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>');
-  else if (target === 'rider') fields = _arSelect('Vehicle Type','ar-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>') + _arField('Plate Number','ar-plate','e.g. LG-123-AA','');
-  else if (target === 'shopper') fields = _arField('Primary Market','ar-market','e.g. Mile 12 Market, Lagos','');
-
-  var html = '<div id="add-role-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
-    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:420px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
-    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">Add another role: '+(labels[target]||target)+'</div>'
-    + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">Your name, phone, and password stay the same — just a few extra details for this role.</div>'
-    + fields
-    + '<div style="display:flex;gap:10px;margin-top:18px;">'
-    + '<button onclick="closeAddRoleModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel</button>'
-    + '<button onclick="submitAddRole()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#E8392E;color:white;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Add Role</button>'
-    + '</div></div></div>';
-
-  var existing = document.getElementById('add-role-modal'); if (existing) existing.remove();
-  document.body.insertAdjacentHTML('beforeend', html);
-}
-function closeAddRoleModal(){
-  var el = document.getElementById('add-role-modal'); if (el) el.remove();
-  _addRoleTarget = null;
-}
-async function submitAddRole(){
-  var target = _addRoleTarget;
-  if (!target) return;
-  var path, body = {};
-  if (target === 'cook' || target === 'event_planner') {
-    path = '/users/me/vendor-profile';
-    body.vtype = target === 'cook' ? 'HOME_COOK' : 'EVENT_PLANNER';
-    body.bizName = target === 'event_planner' ? ((document.getElementById('ar-bizname')||{}).value||'').trim() : (S.user.name||'My Kitchen');
-    if (target === 'event_planner' && !body.bizName) { showToast&&showToast('Please enter a business name','warning'); return; }
-    if (target === 'cook') body.tags = [((document.getElementById('ar-sp')||{}).value||'').trim()].filter(Boolean);
-  } else if (target === 'rider') {
-    path = '/users/me/rider-profile';
-    body.vehicleType = (document.getElementById('ar-vehicle')||{}).value||'';
-    body.plateNumber = (document.getElementById('ar-plate')||{}).value||'';
-  } else if (target === 'shopper') {
-    path = '/users/me/shopper-profile';
-    body.market = (document.getElementById('ar-market')||{}).value||'';
-  } else return;
-
-  try{
-    await api(path, { method:'POST', body: JSON.stringify(body) });
-    var me = await api('/auth/me');
-    S.user = mapApiUser(me.user);
-    closeAddRoleModal();
-    showToast&&showToast('Role added!','success');
-    eGo(target);
-  }catch(err){
-    showToast&&showToast(err.message||'Could not add role','warning');
-  }
-}
 
 // ── KYC documents ─────────────────────────────────────────────────────
 // Real upload + admin review, replacing the hardcoded "✅ Verified" badges
@@ -1229,8 +1161,8 @@ async function refreshFavouritesModal(){
 // each submit a priced proposal; the customer compares and accepts one,
 // which creates a real Booking (see acceptEventProposal → backend) and
 // hands off to the existing booking/escrow/payment flow unchanged. Every
-// screen here is a dynamically-injected modal, same pattern as
-// openAddRoleModal — no new full-screen HTML blocks needed.
+// screen here is a dynamically-injected modal — no new full-screen HTML
+// blocks needed.
 function openPostEventRequestModal(){
   var svcOpts = ['Decoration','Catering','Photography','Planning','Music/DJ','Venue'];
   var html = '<div id="event-request-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
@@ -7398,13 +7330,20 @@ function buildRegForm(){
   var sel=function(lb,id,opts){return '<label class="il">'+lb+'</label><select class="if" id="'+id+'" style="margin-bottom:12px">'+opts+'</select>';};
   var ta=function(lb,id,ph){return '<label class="il">'+lb+'</label><textarea class="if" id="'+id+'" rows="3" placeholder="'+ph+'" style="margin-bottom:12px"></textarea>';};
   var bank=fld('Bank Account Name','&#x1F3E6;','r-bankname','Account holder name','')+fld('Bank Name','&#x1F3E6;','r-bankname2','e.g. GTBank, OPay','')+fld('Account Number','&#x1F4B3;','r-bankacct','10-digit account number','');
+  var addr=fld('Home Address','&#x1F4CD;','r-addr','Your home address','');
+  var roleSwitchBar=['customer','cook','event_planner','rider','shopper'].map(function(r){
+    var labels={customer:'🛍️ Customer',cook:'🧑‍🍳 Home Cook',event_planner:'🎊 Event Planner',rider:'🏍️ Rider',shopper:'🛒 Shopper'};
+    var active=r===role;
+    return '<button type="button" onclick="pickRole(\''+r+'\')" style="flex:1;min-width:0;padding:8px 4px;border-radius:10px;border:1.5px solid '+(active?'#E8392E':'#2A2850')+';background:'+(active?'rgba(232,57,46,.1)':'transparent')+';color:'+(active?'#F2EDE8':'#9A9390')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+labels[r]+'</button>';
+  }).join('');
+  var switchRow='<div style="display:flex;gap:6px;margin-bottom:16px;">'+roleSwitchBar+'</div>';
   var h='';
-  if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Delivery Address','&#x1F4CD;','r-addr','Your home address','')+stateLGA;}
-  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+fld('Rate per Session (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cooking experience...')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
-  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Event Speciality','r-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>')+ta('Short Bio','r-bio','Describe your event planning experience...')+bank+stateLGA;}
-  else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
-  else if(role==='shopper'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Primary Market','&#x1F6D2;','r-market','e.g. Mile 12 Market, Lagos','')+ta('Short Bio','r-bio','e.g. I specialise in fresh produce at Mile 12 Market...')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
-  var rf=document.getElementById('reg-form');if(rf)rf.innerHTML=h;
+  if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+stateLGA;}
+  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+fld('Rate per Session (&#x20a6;) (Your charge for cooking)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cooking experience...')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
+  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Event Speciality','r-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>')+ta('Short Bio','r-bio','Describe your event planning experience...')+bank+stateLGA;}
+  else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
+  else if(role==='shopper'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Primary Market','&#x1F6D2;','r-market','e.g. Mile 12 Market, Lagos','')+ta('Short Bio','r-bio','e.g. I specialise in fresh produce at Mile 12 Market...')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
+  var rf=document.getElementById('reg-form');if(rf)rf.innerHTML=switchRow+h;
 }
 
 function loadLGAs(state,targetId){
