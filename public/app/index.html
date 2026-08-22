@@ -7,16 +7,15 @@
 <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
 <style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-/* Suppresses the browser/OS default focus ring (renders as a jarring
-   yellow/gold outline around cards, buttons, and clickable divs on
-   Windows/Edge) app-wide, replacing it with an on-brand outline that only
-   appears for real keyboard navigation (:focus-visible) — a mouse/touch
-   click never shows it, matching how every other control in this app
-   already gives its own visual feedback (border-color change, background
-   tint, etc.) instead of relying on the browser's default. */
+/* Suppresses the browser/OS default focus ring (rendered thick and
+   yellow/gold on Windows/Edge for cards, buttons, and clickable divs)
+   app-wide, replacing it for real keyboard navigation (:focus-visible,
+   never a mouse/touch click) with a thin blue line matching the original
+   default focus outline's own color/weight — just without the
+   Windows/Edge yellow substitution. */
 button,a,[onclick],input,select,textarea,.card,.ibtn,.bkbtn{outline:none}
-button:focus-visible,a:focus-visible,[onclick]:focus-visible,.card:focus-visible,.ibtn:focus-visible,.bkbtn:focus-visible{outline:2px solid #E8392E;outline-offset:2px;border-radius:inherit}
-input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #E8392E;outline-offset:1px}
+button:focus-visible,a:focus-visible,[onclick]:focus-visible,.card:focus-visible,.ibtn:focus-visible,.bkbtn:focus-visible{outline:1px solid #3B9FE8;outline-offset:2px;border-radius:inherit}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:1px solid #3B9FE8;outline-offset:1px}
 /* Mobile (<600px): body IS the viewport, unchanged from the original
    design — nothing in this block touches it.
    Tablet (600-1023px): body widens into a centered card with a branded
