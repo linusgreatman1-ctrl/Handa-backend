@@ -6730,8 +6730,15 @@ function eGo(scr){
   // Remember which role dashboard is actively open so tryRestoreSession()
   // can bring the user back here on refresh, instead of always bouncing a
   // multi-role account back to whatever role it originally registered as.
+  // sessionStorage, NOT localStorage: the auth token itself (_accessToken,
+  // above) is sessionStorage-scoped -- one tab per logged-in account, e.g.
+  // testing a customer account in one tab and a vendor account in another.
+  // localStorage is shared across every tab on the origin, so writing the
+  // active role there let one tab's navigation silently override which
+  // dashboard a DIFFERENT tab/account landed on after its own refresh --
+  // exactly the "accounts switching with each other" symptom reported.
   if(['home','shopper','cook','homecook','event_planner','rider'].indexOf(scr)>=0){
-    try{localStorage.setItem('handa_active_role',scr);}catch(e){}
+    try{sessionStorage.setItem('handa_active_role',scr);}catch(e){}
   }
   document.querySelectorAll('.ntab').forEach(function(b){b.classList.remove('active');});
   var navMap={home:'nav-home',history:'nav-history',track:'nav-track',profile:'nav-profile'};
@@ -6930,9 +6937,9 @@ async function guestLogin(){
   }
 }
 
-// Restores a session from a token already in localStorage (page reload) —
-// called from the DOMContentLoaded bootstrap before falling back to the
-// login screen.
+// Restores a session from a token already in sessionStorage (page reload,
+// same tab) — called from the DOMContentLoaded bootstrap before falling
+// back to the login screen.
 async function tryRestoreSession(){
   if(!_accessToken)return false;
   try{
@@ -6943,7 +6950,7 @@ async function tryRestoreSession(){
     // (via the role switcher) right before this refresh, prefer that, as
     // long as the account still genuinely has that profile.
     try{
-      var savedRole=localStorage.getItem('handa_active_role');
+      var savedRole=sessionStorage.getItem('handa_active_role');
       var stillHasIt=savedRole==='home'
         ||(savedRole==='shopper'&&S.user.shopperProfileId)
         ||(savedRole==='rider'&&S.user.riderProfileId)
