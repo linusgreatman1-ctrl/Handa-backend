@@ -546,10 +546,13 @@ model ShopSession {
   callStartedAt DateTime?
   callEndedAt   DateTime?
 
-  // Real 3-way audio call (rider + shopper + customer) the rider starts
-  // once they reach the customer with the delivery — set the moment any
-  // of the 3 real parties marks it done. markDelivered requires this to
-  // be set first, same gating shape as the pickup/delivery OTP codes.
+  // Real 3-way audio call (rider + shopper + customer) the shopper starts
+  // once the rider arrives at their location and the two of them have done
+  // the joint item check — the rider confirms the items directly with the
+  // customer before the shopper hands them over. Set the moment any of the
+  // 3 real parties marks it done. markOutForDelivery (the shopper->rider
+  // handoff) requires this to be set first, same gating shape as the
+  // pickup/delivery OTP codes.
   confirmCallCompletedAt DateTime?
 
   createdAt   DateTime  @default(now())

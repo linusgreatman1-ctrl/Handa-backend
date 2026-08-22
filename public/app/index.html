@@ -3525,9 +3525,9 @@ function confirmCallBindListeners(){
     confirmCallRemovePeer(p.fromSocketId);
   });
 
-  // A rider's POST /confirm-call/start broadcasts this to the whole
-  // shop-session room, including the rider's own socket — skip showing
-  // an invite banner to whoever's already joined (the rider themselves).
+  // A shopper's POST /confirm-call/start broadcasts this to the whole
+  // shop-session room, including the shopper's own socket — skip showing
+  // an invite banner to whoever's already joined (the shopper themselves).
   _socket.on('shop-session:confirm-call-invite', function(p){
     if(!p||!p.sessionId) return;
     if(window._confirmCall && window._confirmCall.sessionId===p.sessionId) return;
@@ -3536,6 +3536,13 @@ function confirmCallBindListeners(){
   _socket.on('shop-session:confirm-call-completed', function(p){
     if(!p||!p.sessionId) return;
     dismissConfirmCallInvite();
+    if(window._shopperSession && window._shopperSession.id===p.sessionId){
+      window._shopperSession.confirmCallCompletedAt = window._shopperSession.confirmCallCompletedAt || new Date().toISOString();
+      unlockShopperHandoverIfReady();
+    }
+    if(window._riderActiveSession && window._riderActiveSession.id===p.sessionId){
+      window._riderActiveSession.confirmCallCompletedAt = window._riderActiveSession.confirmCallCompletedAt || new Date().toISOString();
+    }
     if(window._confirmCall && window._confirmCall.sessionId===p.sessionId){
       showToast&&showToast('Confirm call completed','success');
       confirmCallLeave();
@@ -3547,7 +3554,7 @@ function showConfirmCallInviteBanner(sessionId){
   dismissConfirmCallInvite();
   var html='<div id="confirmcall-invite-banner" style="position:fixed;left:12px;right:12px;top:12px;z-index:10000;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:\'DM Sans\',sans-serif;display:flex;align-items:center;gap:10px;">'
     +'<div style="font-size:22px;flex-shrink:0;">&#x1F4DE;</div>'
-    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;">Delivery Confirm Call</div><div style="font-size:11px;color:#9A9390;">Your rider wants a 3-way call to confirm delivery</div></div>'
+    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;">Confirm Call</div><div style="font-size:11px;color:#9A9390;">The shopper wants a 3-way call to confirm the items before handover</div></div>'
     +'<button onclick="joinConfirmCallInvite(\''+sessionId+'\')" style="padding:9px 14px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0;">Join</button>'
     +'<button onclick="dismissConfirmCallInvite()" style="padding:9px 10px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-size:12px;cursor:pointer;flex-shrink:0;">&#x2715;</button>'
     +'</div>';
@@ -3558,15 +3565,35 @@ function dismissConfirmCallInvite(){
 }
 function joinConfirmCallInvite(sessionId){
   dismissConfirmCallInvite();
-  var myRole = (S.role==='shopper')?'shopper':'customer';
+  var myRole = (S.role==='shopper') ? 'shopper' : (S.role==='rider') ? 'rider' : 'customer';
   confirmCallJoin(sessionId, myRole);
   showConfirmCallPanel(myRole);
 }
 
+// Either the shopper or the rider (both physically present) can end the
+// call and mark it complete — the customer (joining remotely) can only
+// leave, since ending the call locally on their side shouldn't unblock the
+// shopper's handover on its own.
+async function completeConfirmCallGeneric(sessionId){
+  if(!sessionId) return;
+  try{
+    var res=await api('/shop-sessions/'+sessionId+'/confirm-call/complete',{method:'POST'});
+    if(res&&res.session){
+      if(window._shopperSession&&window._shopperSession.id===sessionId) window._shopperSession=Object.assign({},window._shopperSession,res.session);
+      if(window._riderActiveSession&&window._riderActiveSession.id===sessionId) window._riderActiveSession=Object.assign({},window._riderActiveSession,res.session);
+    }
+  }catch(err){ showToast&&showToast(err.message||'Could not complete the confirm call','warning'); }
+  confirmCallLeave();
+  showToast&&showToast('Confirm call done','success');
+  unlockShopperHandoverIfReady();
+}
+
 function showConfirmCallPanel(myRole){
   var existing=document.getElementById('confirmcall-panel'); if(existing) existing.remove();
-  var actionBtn = myRole==='rider'
-    ? '<button onclick="riderCompleteConfirmCall()" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2713; Confirmed — End Call</button>'
+  var sessionId = window._confirmCall ? window._confirmCall.sessionId : '';
+  var canComplete = (myRole==='shopper'||myRole==='rider');
+  var actionBtn = canComplete
+    ? '<button onclick="completeConfirmCallGeneric(\''+sessionId+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2713; Confirmed — End Call</button>'
     : '<button onclick="leaveConfirmCallOnly()" style="flex:2;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Leave Call</button>';
   var html='<div id="confirmcall-panel" style="position:fixed;left:12px;right:12px;bottom:84px;z-index:9998;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.4);font-family:\'DM Sans\',sans-serif;">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
@@ -3843,17 +3870,14 @@ function renderShopperPhase(phase) {
         <div id="joint-confirm-list"></div>
       </div>
 
-      <!-- Shopper must call customer before confirming — for rider's safety -->
+      <!-- Real 3-way audio call (you + rider + customer) — required before handover -->
       <div style="background:rgba(232,57,46,0.10);border:1.5px solid rgba(232,71,10,.25);border-radius:13px;padding:13px 15px;margin-bottom:13px;">
-        <div style="font-weight:800;font-size:13px;color:#E8392E;margin-bottom:6px;">📞 Call Customer First — Required</div>
-        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">You must call ${_cNm} in ${_rNm}'s presence to confirm the items. This protects ${_rNm} in case of any dispute. The confirm button unlocks only after the call.</div>
-        <div id="customer-call-confirmed" style="display:none;background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.3);border-radius:9px;padding:8px 11px;font-size:12px;color:#2ECC71;font-weight:700;margin-bottom:10px;">✅ Customer confirmed — you can now proceed</div>
-        <div id="shopper-call-box">
-          <div style="display:flex;gap:8px;">
-            <button onclick="shopperCallCustomer('inapp')" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:10px;padding:10px 5px;font-weight:700;font-size:12px;cursor:pointer;color:#2ECC71;font-family:\'DM Sans\',sans-serif;">📞 In-App Call</button>
-            <button onclick="shopperCallCustomer('phone')" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(26,95,212,.3);border-radius:10px;padding:10px 5px;font-weight:700;font-size:12px;cursor:pointer;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;">📱 Phone</button>
-            <button onclick="shopperCallCustomer('whatsapp')" style="flex:1;background:rgba(37,211,102,.1);border:1.5px solid rgba(37,211,102,.3);border-radius:10px;padding:10px 5px;font-weight:700;font-size:12px;cursor:pointer;color:#128C7E;font-family:\'DM Sans\',sans-serif;">💬 WhatsApp</button>
-          </div>
+        <div style="font-weight:800;font-size:13px;color:#E8392E;margin-bottom:6px;">📞 3-Way Confirm Call — Required</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Start a real call with ${_rNm} and ${_cNm} so the rider can hear the customer confirm the items directly before you hand them over. The confirm button unlocks only after the call.</div>
+        <div id="shopper-confirmcall-status">
+          ${(window._shopperSession&&window._shopperSession.confirmCallCompletedAt)
+            ? '<div style="font-size:12px;color:#2ECC71;font-weight:700;">✅ Confirm call completed — you may now confirm handover</div>'
+            : '<button onclick="shopperStartConfirmCall()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#3B9FE8;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">📞 Start 3-Way Confirm Call</button>'}
         </div>
       </div>
 
@@ -3870,7 +3894,7 @@ function renderShopperPhase(phase) {
         ].map(([ic,t])=>`<div style="display:flex;gap:9px;align-items:flex-start;margin-bottom:7px;"><span style="flex-shrink:0;">${ic}</span><span style="font-size:12px;color:#9A9390;">${t}</span></div>`).join('')}
       </div>
 
-      <button class="btn btn-primary" id="confirm-handover-btn" disabled style="opacity:.4;cursor:not-allowed;margin-bottom:9px;" onclick="shopperHandoverConfirmed()">🤝 Confirm Handover to Rider</button>
+      <button class="btn btn-primary" id="confirm-handover-btn" ${(window._shopperSession&&window._shopperSession.confirmCallCompletedAt)?'':'disabled'} style="${(window._shopperSession&&window._shopperSession.confirmCallCompletedAt)?'':'opacity:.4;cursor:not-allowed;'}margin-bottom:9px;" onclick="shopperHandoverConfirmed()">🤝 Confirm Handover to Rider</button>
       
     </div>`;
     renderJointConfirmList();
@@ -4169,54 +4193,42 @@ function doShopRiderCall(type) {
 }
 
 function shopperHandoverConfirmed() {
-  // Hard guard — button must be enabled (call was made) before this can proceed
-  const btn = document.getElementById('confirm-handover-btn');
-  if(btn && btn.disabled) {
-    showToast('Please call the customer first to confirm items 📞', 'warning');
+  const s = window._shopperSession;
+  if(!s || !s.confirmCallCompletedAt) {
+    showToast('Complete the 3-way confirm call with the rider and customer first 📞', 'warning');
     return;
   }
   showToast('Handover confirmed! Now allocate payments to your sellers 💸','success');
   renderShopperPhase('sellerPayout');
 }
 
+// Shopper starts a real 3-way audio call (self + rider + customer) once the
+// rider has arrived and the joint item check is done — invites the rider
+// (physically present, joins via their own app) and the customer (joins
+// remotely) into the shared shop-session room. Real backend call, not a
+// setTimeout simulation — see startConfirmCall in shopSessions.controller.js.
+async function shopperStartConfirmCall(){
+  var s=window._shopperSession;
+  if(!s) return;
+  try{
+    var res=await api('/shop-sessions/'+s.id+'/confirm-call/start',{method:'POST'});
+    if(res&&res.session) window._shopperSession=Object.assign({},s,res.session);
+  }catch(err){ showToast&&showToast(err.message||'Could not start the confirm call','warning'); return; }
+  confirmCallJoin(s.id,'shopper');
+  showConfirmCallPanel('shopper');
+  var statusEl=document.getElementById('shopper-confirmcall-status');
+  if(statusEl) statusEl.innerHTML='<div style="font-size:12px;color:#3B9FE8;font-weight:700;">📞 Call in progress — waiting for the rider and customer...</div>';
+}
 
-function shopperCallCustomer(type) {
-  var custNm = shopperCustomerName();
-  var custPhone = (window._shopperSession&&window._shopperSession.customer&&window._shopperSession.customer.phone)||'';
-  if(type==='inapp') showToast('In-app call to '+custNm+' connecting... 📞','success');
-  else if(type==='phone') showToast('Opening phone dialler'+(custPhone?' — '+custPhone:'')+'','info');
-  else { if(custPhone) window.open('https://wa.me/'+custPhone.replace(/\D/g,''),'_blank'); showToast('Opening WhatsApp call to '+custNm+' 💬','success'); }
-
-  // Show "connecting" state on the call box
-  const callBox = document.getElementById('shopper-call-box');
-  if(callBox) {
-    callBox.innerHTML = `<div style="display:flex;align-items:center;gap:10px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:10px;padding:10px 13px;">
-      <span style="font-size:20px;animation:pulse 1s infinite;">📞</span>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#2ECC71;">Calling ${custNm}...</div>
-        <div style="font-size:11px;color:#9A9390;">Confirm items with them in the rider's presence</div>
-      </div>
-    </div>`;
-  }
-
-  // After 2s simulate call answered — reveal confirmed badge and unlock confirm button
-  setTimeout(() => {
-    const confirmed = document.getElementById('customer-call-confirmed');
-    if(confirmed) confirmed.style.display = 'block';
-    const btn = document.getElementById('confirm-handover-btn');
-    if(btn) {
-      btn.disabled = false;
-      btn.style.opacity = '1';
-      btn.style.cursor = 'pointer';
-    }
-    if(callBox) {
-      callBox.innerHTML = `<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:10px;padding:10px 13px;font-size:12px;color:#2ECC71;font-weight:700;">
-        ✅ ${custNm} confirmed items — you may now confirm handover
-      </div>`;
-    }
-    renderJointConfirmList();
-    showToast(custNm+' confirmed all items ✅','success');
-  }, 2000);
+// Unlocks the shopper's "Confirm Handover to Rider" button the moment the
+// confirm call completes -- called both right after this shopper ends the
+// call themselves and from the global shop-session:confirm-call-completed
+// listener (in case the rider or customer ends it instead).
+function unlockShopperHandoverIfReady(){
+  var statusEl=document.getElementById('shopper-confirmcall-status');
+  if(statusEl) statusEl.innerHTML='<div style="font-size:12px;color:#2ECC71;font-weight:700;">✅ Confirm call completed — you may now confirm handover</div>';
+  var btn=document.getElementById('confirm-handover-btn');
+  if(btn){ btn.disabled=false; btn.style.opacity='1'; btn.style.cursor='pointer'; }
 }
 
 // ══════════════════════════════════════════════════
@@ -6381,36 +6393,9 @@ function riderMapPhase2(){
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Delivering to</div>'
     +'<div style="font-weight:700;color:#F2EDE8;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
     +'</div>'
-    +(s&&s.confirmCallCompletedAt ? '' :
-      '<button onclick="riderStartConfirmCall()" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(59,159,232,.4);background:rgba(59,159,232,.08);color:#3B9FE8;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:9px;font-family:\'DM Sans\',sans-serif;">&#x1F4DE; Start 3-Way Confirm Call</button>')
     +'<button onclick="finishDelivery()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Confirm Delivery Complete</button>'
     +'<button onclick="openRiderReportChooser()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">&#x26A0;&#xFE0F; Report an Issue</button>'
     +'</div>';
-}
-
-// Rider taps this once they've physically reached the customer with the
-// delivery -- invites the shopper (joining remotely) and the customer into
-// a real 3-way audio room before the delivery-code step is allowed.
-async function riderStartConfirmCall(){
-  var s=window._riderActiveSession;
-  if(!s) return;
-  try{
-    var res=await api('/shop-sessions/'+s.id+'/confirm-call/start',{method:'POST'});
-    if(res&&res.session) window._riderActiveSession=Object.assign({},s,res.session);
-  }catch(err){ showToast&&showToast(err.message||'Could not start the confirm call','warning'); return; }
-  confirmCallJoin(s.id,'rider');
-  showConfirmCallPanel('rider');
-}
-async function riderCompleteConfirmCall(){
-  var s=window._riderActiveSession;
-  if(!s) return;
-  try{
-    var res=await api('/shop-sessions/'+s.id+'/confirm-call/complete',{method:'POST'});
-    if(res&&res.session) window._riderActiveSession=Object.assign({},s,res.session);
-  }catch(err){ showToast&&showToast(err.message||'Could not complete the confirm call','warning'); }
-  confirmCallLeave();
-  showToast&&showToast('Confirm call done — you can now confirm delivery','success');
-  riderMapPhase2();
 }
 
 // ── Handover code entry (rider side) ────────────────────────────────────
@@ -6446,12 +6431,6 @@ function submitHandoverCode(){
 }
 
 async function finishDelivery(){
-  var s=window._riderActiveSession;
-  if(s && !s.confirmCallCompletedAt){
-    showToast&&showToast('Complete the 3-way confirm call with the shopper and customer first','warning');
-    riderStartConfirmCall();
-    return;
-  }
   openHandoverCodeModal('Confirm Delivery', async function(code){
     if(window._riderActiveSession){
       try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }
@@ -6463,6 +6442,11 @@ async function finishDelivery(){
   });
 }
 async function riderConfirmPickup(){
+  var s=window._riderActiveSession;
+  if(s && !s.confirmCallCompletedAt){
+    showToast&&showToast('Ask the shopper to start the 3-way confirm call with you and the customer first','warning');
+    return;
+  }
   openHandoverCodeModal('Confirm Pickup', async function(code){
     if(window._riderActiveSession){
       try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/out-for-delivery',{method:'POST',body:JSON.stringify({code:code})}); }

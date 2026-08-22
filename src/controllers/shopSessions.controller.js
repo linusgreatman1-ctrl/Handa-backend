@@ -557,29 +557,34 @@ async function acceptDelivery(req, res, next) {
   }
 }
 
+// Gated on the 3-way confirm call: the rider is picking items up FROM the
+// shopper here, which is the real "handing the goods to the rider" moment
+// the confirm call protects, not the later drop-off to the customer.
 const markOutForDelivery = transitionHandler(["RIDER_ASSIGNED"], "OUT_FOR_DELIVERY", {
   requireRider: true,
   codeField: "pickupCode",
   codeErrorMessage: "Incorrect pickup code. Ask the shopper for the code on their screen.",
+  requireConfirmCall: true,
 });
 const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
   requireRider: true,
   codeField: "deliveryCode",
   codeErrorMessage: "Incorrect delivery code. Ask the customer for their code.",
-  requireConfirmCall: true,
 });
 
-// Rider taps this once they've physically reached the customer, before
-// entering the delivery code — invites the shopper and customer (who join
-// remotely) into a real 3-way audio room over the same shop-session room's
-// webrtc-style signaling (see confirmcall:* relay in live.js).
+// The shopper taps this once the rider has arrived at their location and
+// the two of them have done the joint item check — invites the rider
+// (physically present, joining via their own app) and the customer
+// (joining remotely) into a real 3-way audio room so the rider can hear
+// the customer confirm the items directly, before the shopper hands them
+// over. Same confirmcall:* signaling relay as before (see live.js).
 async function startConfirmCall(req, res, next) {
   try {
-    if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
+    if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ error: "Shop session not found." });
-    if (session.riderId !== req.user.riderProfile.id) return res.status(403).json({ error: "You are not the rider on this session." });
-    if (session.status !== "OUT_FOR_DELIVERY") return res.status(409).json({ error: `Session must be OUT_FOR_DELIVERY (currently ${session.status}).` });
+    if (session.shopperId !== req.user.shopperProfile.id) return res.status(403).json({ error: "You are not the shopper on this session." });
+    if (session.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: `Session must be RIDER_ASSIGNED (currently ${session.status}).` });
 
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-invite", { sessionId: session.id });
     res.json({ session });
