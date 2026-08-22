@@ -44,6 +44,8 @@ function attachLiveSocket(httpServer) {
           role: true,
           status: true,
           name: true,
+          isSuperAdmin: true,
+          isContentAdmin: true,
           vendorProfile: { select: { id: true } },
           riderProfile: { select: { id: true } },
           shopperProfile: { select: { id: true } },
@@ -63,6 +65,12 @@ function attachLiveSocket(httpServer) {
     if (user.vendorProfile) socket.join(`vendor:${user.vendorProfile.id}`);
     if (user.riderProfile) socket.join(`dispatch:riders`);
     if (user.shopperProfile) socket.join(`dispatch:shoppers`);
+    // Real-time Live Chat notifications (see chat.controller.js's
+    // maybeSendAiReply) — any admin who can see the Live Chat tab
+    // (same isSuperAdmin/isContentAdmin gate the frontend nav uses) gets
+    // a push the moment the AI replies to a user, not just when the
+    // user's own message lands.
+    if (user.role === "ADMIN" && (user.isSuperAdmin || user.isContentAdmin)) socket.join("admins");
 
     // ── Explicit room joins, each gated by an actual access check so a
     // socket can't eavesdrop on someone else's booking/session/chat by

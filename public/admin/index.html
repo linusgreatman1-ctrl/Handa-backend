@@ -104,7 +104,7 @@
     <button class="nav-item" data-tab="bulkemail" data-elevated="1" onclick="switchTab('bulkemail')">Bulk Email</button>
     <button class="nav-item" data-tab="bulksms" data-elevated="1" onclick="switchTab('bulksms')">Bulk SMS</button>
     <button class="nav-item" data-tab="aiconversations" data-elevated="1" onclick="switchTab('aiconversations')">AI Conversations</button>
-    <button class="nav-item" data-tab="chatthreads" data-elevated="1" onclick="switchTab('chatthreads')">Live Chat</button>
+    <button class="nav-item" data-tab="chatthreads" data-elevated="1" onclick="switchTab('chatthreads')">Live Chat <span id="chat-notif-badge" style="display:none;background:#E8392E;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:4px;">0</span></button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
     <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
     <div class="spacer"></div>
@@ -114,10 +114,57 @@
   <main id="main"></main>
 </div>
 
+<div id="admin-toast" style="display:none;position:fixed;top:16px;right:16px;z-index:99999;background:#1C1C1C;color:#F2EDE8;border:1.5px solid #3B9FE8;border-radius:12px;padding:12px 16px;max-width:320px;font-family:inherit;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer;"></div>
+
+<script src="/socket.io/socket.io.js"></script>
 <script>
 const API = '/api';
 let accessToken = null;
 let currentUser = null;
+
+// ── Live Chat notifications — a real Socket.IO connection (this admin
+// panel previously had none at all; every other tab is load-on-click/
+// polling). Any CONTENT_ADMIN/SUPER_ADMIN socket auto-joins the shared
+// "admins" room (see live.js) and gets a real push the moment the AI
+// replies to a user — not just when the user's own message lands — so an
+// admin watching this panel can see what the AI is saying and decide to
+// jump into the conversation, without needing to already have that
+// specific thread open. ──
+let adminChatSocket = null;
+let chatUnreadCount = 0;
+function connectAdminNotifSocket() {
+  if (adminChatSocket || typeof io === 'undefined' || !accessToken) return;
+  adminChatSocket = io({ path: '/socket.io', auth: { token: accessToken }, transports: ['websocket', 'polling'] });
+  adminChatSocket.on('chat:ai-replied', (p) => {
+    bumpChatBadge();
+    showAdminToast('🤖 AI replied to ' + (p.userName || 'a user') + ': "' + (p.preview || '').slice(0, 90) + '"', p.threadId);
+  });
+  adminChatSocket.on('chat:new-message-for-admins', () => {
+    bumpChatBadge();
+  });
+}
+function bumpChatBadge() {
+  chatUnreadCount++;
+  const el = document.getElementById('chat-notif-badge');
+  if (!el) return;
+  el.textContent = chatUnreadCount;
+  el.style.display = 'inline-block';
+}
+function clearChatBadge() {
+  chatUnreadCount = 0;
+  const el = document.getElementById('chat-notif-badge');
+  if (el) el.style.display = 'none';
+}
+let _adminToastTimer = null;
+function showAdminToast(text, threadId) {
+  const el = document.getElementById('admin-toast');
+  if (!el) return;
+  el.textContent = text;
+  el.style.display = 'block';
+  el.onclick = () => { switchTab('chatthreads'); if (threadId) renderChatThreadDetail(threadId); el.style.display = 'none'; };
+  clearTimeout(_adminToastTimer);
+  _adminToastTimer = setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
 
 function authHeaders() {
   return accessToken ? { 'Authorization': 'Bearer ' + accessToken } : {};
@@ -173,6 +220,7 @@ async function doLogin() {
     document.getElementById('who-email').textContent = currentUser.email || currentUser.phone || '';
     document.querySelectorAll('.nav-item[data-super]').forEach(b => b.classList.toggle('hidden', !currentUser.isSuperAdmin));
     document.querySelectorAll('.nav-item[data-elevated]').forEach(b => b.classList.toggle('hidden', !(currentUser.isSuperAdmin || currentUser.isContentAdmin)));
+    if (currentUser.isSuperAdmin || currentUser.isContentAdmin) connectAdminNotifSocket();
     switchTab('dashboard');
   } catch (e) {
     err.textContent = e.message;
@@ -194,6 +242,7 @@ function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, bulksms: renderBulkSms, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
   if (tab !== 'chatthreads') stopChatThreadAutoRefresh();
+  if (tab === 'chatthreads') clearChatBadge();
   renderers[tab]();
 }
 

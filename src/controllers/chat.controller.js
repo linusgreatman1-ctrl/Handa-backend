@@ -67,6 +67,13 @@ async function maybeSendAiReply(threadId, senderUserId, io) {
   const aiMessage = await prisma.chatMessage.create({ data: { threadId, senderId: aiUser.id, body: replyText } });
   io?.to(`chat:${threadId}`).emit("chat:message", aiMessage);
   await notify(io, senderUserId, "CHAT", "Support replied", replyText.slice(0, 120), { threadId }).catch(() => {});
+
+  // Real-time nudge to every connected admin (see live.js's "admins" room
+  // join) the moment the AI actually replies -- not just when the user's
+  // own message lands -- so an admin can see what the AI is saying and
+  // decide whether to jump into the conversation themselves.
+  const sender = await prisma.user.findUnique({ where: { id: senderUserId }, select: { name: true } }).catch(() => null);
+  io?.to("admins").emit("chat:ai-replied", { threadId, userName: sender ? sender.name : "a user", preview: replyText });
 }
 
 // Finds an existing thread for this context (order/booking/session/support)
