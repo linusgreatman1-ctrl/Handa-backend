@@ -6,6 +6,35 @@ const orderFlow = require("../services/orderFlow.service");
 const { notify } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
+// Resolves a booking's `items` array into a priced snapshot. Each entry is
+// either a real catalog item ({menuItemId, qty} — price always looked up
+// server-side, never trusted from the client) or a customer-typed "Other"
+// request with no matching menu item ({customName, customPriceKobo, qty}
+// — used by the meal-picker's free-text row, e.g. "Suya" for a dish not on
+// the vendor's menu). Both contribute to the real total the same way.
+async function resolveBookingItems(items, vendorId) {
+  if (!Array.isArray(items) || !items.length) return { selectedItemsSnapshot: [], itemsTotalKobo: 0 };
+  const menuItemIds = items.filter((i) => i.menuItemId).map((i) => i.menuItemId);
+  const menuItems = menuItemIds.length ? await prisma.menuItem.findMany({ where: { id: { in: menuItemIds }, vendorId } }) : [];
+  let itemsTotalKobo = 0;
+  const selectedItemsSnapshot = items.map((reqItem) => {
+    const qty = Math.max(1, parseInt(reqItem.qty) || 1);
+    if (reqItem.menuItemId) {
+      const menuItem = menuItems.find((m) => m.id === reqItem.menuItemId);
+      if (!menuItem) throw Object.assign(new Error("One or more items do not belong to this vendor."), { status: 400 });
+      itemsTotalKobo += menuItem.priceKobo * qty;
+      return { menuItemId: menuItem.id, name: menuItem.name, priceKobo: menuItem.priceKobo, qty };
+    }
+    const name = (reqItem.customName || "").trim();
+    const priceKobo = Math.max(0, Math.round(Number(reqItem.customPriceKobo) || 0));
+    if (!name || priceKobo <= 0) throw Object.assign(new Error("A custom item needs both a name and a price."), { status: 400 });
+    if (priceKobo > 100000000) throw Object.assign(new Error("Custom item price is unreasonably high."), { status: 400 }); // ₦1,000,000 sanity cap
+    itemsTotalKobo += priceKobo * qty;
+    return { menuItemId: null, name, priceKobo, qty, custom: true };
+  });
+  return { selectedItemsSnapshot, itemsTotalKobo };
+}
+
 // Bookings cover catering, home-cook, and event-planning requests — custom
 // quoted engagements (a package + optional add-on items + an event date),
 // unlike Order's fixed-price catalog checkout. Vendor must accept before
@@ -28,17 +57,8 @@ async function createBooking(req, res, next) {
       totalKobo += servicePackage.priceKobo;
     }
 
-    let selectedItemsSnapshot = [];
-    if (Array.isArray(items) && items.length) {
-      const menuItems = await prisma.menuItem.findMany({ where: { id: { in: items.map((i) => i.menuItemId) }, vendorId } });
-      selectedItemsSnapshot = items.map((reqItem) => {
-        const menuItem = menuItems.find((m) => m.id === reqItem.menuItemId);
-        if (!menuItem) throw Object.assign(new Error("One or more items do not belong to this vendor."), { status: 400 });
-        const qty = Math.max(1, parseInt(reqItem.qty) || 1);
-        totalKobo += menuItem.priceKobo * qty;
-        return { menuItemId: menuItem.id, name: menuItem.name, priceKobo: menuItem.priceKobo, qty };
-      });
-    }
+    const { selectedItemsSnapshot, itemsTotalKobo } = await resolveBookingItems(items, vendorId);
+    totalKobo += itemsTotalKobo;
 
     if (totalKobo <= 0) return res.status(400).json({ error: "Booking must include a service package and/or items." });
 
@@ -154,19 +174,12 @@ async function updateBooking(req, res, next) {
       }
       let newSelectedItems = booking.selectedItems;
       if (items !== undefined) {
-        if (Array.isArray(items) && items.length) {
-          const menuItems = await prisma.menuItem.findMany({ where: { id: { in: items.map((i) => i.menuItemId) }, vendorId: booking.vendorId } });
-          newSelectedItems = items.map((reqItem) => {
-            const menuItem = menuItems.find((m) => m.id === reqItem.menuItemId);
-            if (!menuItem) throw Object.assign(new Error("One or more items do not belong to this vendor."), { status: 400 });
-            const qty = Math.max(1, parseInt(reqItem.qty) || 1);
-            return { menuItemId: menuItem.id, name: menuItem.name, priceKobo: menuItem.priceKobo, qty };
-          });
-        } else {
-          newSelectedItems = [];
-        }
+        const resolved = await resolveBookingItems(items, booking.vendorId);
+        newSelectedItems = resolved.selectedItemsSnapshot;
+        totalKobo += resolved.itemsTotalKobo;
+      } else {
+        totalKobo += (newSelectedItems || []).reduce((sum, i) => sum + i.priceKobo * i.qty, 0);
       }
-      totalKobo += (newSelectedItems || []).reduce((sum, i) => sum + i.priceKobo * i.qty, 0);
       if (totalKobo <= 0) return res.status(400).json({ error: "Booking must include a service package and/or items." });
       data.servicePackageId = newServicePackage?.id || null;
       data.selectedItems = newSelectedItems;

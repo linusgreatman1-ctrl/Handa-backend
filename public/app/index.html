@@ -1411,10 +1411,14 @@ var _epPackages=[
   {id:'naming',nm:'Naming Ceremony',em:'👶',pr:120000,desc:'Traditional & modern',includes:['Ceremony coordination','Decor setup','Catering liaison','Guest management']}
 ];
 
+// mealCount: exact number of meals the customer must pick to fill this
+// package (null = event-catering flow instead, 0/falsy-but-not-null would
+// mean "any number" — 'multi' uses a real number Infinity for that).
 var _hcPackages=[
-  {id:'basic',nm:'3-Day Meal Prep',em:'🍱',pr:15000,desc:'Fresh meals for 3 days',includes:['3 days of meals','2 meals per day','Fresh ingredients','Delivered or ready for pickup']},
-  {id:'standard',nm:'Weekly Family Meals',em:'🍲',pr:35000,desc:'A full week of home cooking',includes:['7 days of meals','Family-sized portions','Menu variety across the week','Delivered or ready for pickup']},
-  {id:'premium',nm:'Event Catering Package',em:'🎉',pr:90000,desc:'Cooking for a gathering or small event',includes:['Custom menu for your event','Larger batch cooking','Serving-ready presentation','Coordination on delivery time']}
+  {id:'basic',nm:'3-Day Meal Prep',em:'🍱',pr:15000,desc:'Fresh meals for 3 days',includes:['3 days of meals','2 meals per day','Fresh ingredients','Delivered or ready for pickup'],mealCount:3},
+  {id:'standard',nm:'Weekly Family Meals',em:'🍲',pr:35000,desc:'A full week of home cooking',includes:['7 days of meals','Family-sized portions','Menu variety across the week','Delivered or ready for pickup'],mealCount:7},
+  {id:'multi',nm:'Multiple Meals Package',em:'🍛',pr:0,desc:'Pick as many meals as you need — priced by what you choose',includes:['Choose any number of meals','Priced per meal selected','Great for larger or custom orders'],mealCount:Infinity},
+  {id:'premium',nm:'Event Catering Package',em:'🎉',pr:90000,desc:'Cooking for a gathering or small event',includes:['Custom menu for your event','Larger batch cooking','Serving-ready presentation','Coordination on delivery time'],mealCount:null,isEventCatering:true}
 ];
 function vendorPackageTemplates(){ return S.vtype==='event_planner'?_epPackages:_hcPackages; }
 
@@ -6809,17 +6813,26 @@ function cookBkRender(phase){
         +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">'+c.sp+' &bull; <span onclick="openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">&#x2605;'+c.rt+'</span></p></div>'
       +'</div></div>'
       +'<div style="padding:16px 16px 0">'
-        +((_hcPackages.filter(function(pkg){return c.pkgs&&c.pkgs[pkg.id];}).length||(c.pkgs&&c.pkgs._custom&&c.pkgs._custom.length))?(
+        +((_hcPackages.length||(c.pkgs&&c.pkgs._custom&&c.pkgs._custom.length))?(
           '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Packages</p>'
-          +_hcPackages.filter(function(pkg){return c.pkgs&&c.pkgs[pkg.id];}).map(function(pkg){
-            var real=c.pkgs[pkg.id];
+          +_hcPackages.map(function(pkg){
+            // mealCount/isEventCatering packages are always offered (itemized
+            // from the vendor's real menu via the meal picker, no vendor
+            // pre-configuration needed) — only genuinely vendor-configured
+            // fixed packages stay gated on a real ServicePackage row.
+            var isPicker=pkg.mealCount||pkg.isEventCatering;
+            var real=c.pkgs&&c.pkgs[pkg.id];
+            if(!isPicker&&!real)return '';
             var selP=_cb.selectedPkg&&_cb.selectedPkg.id===pkg.id;
+            var label=isPicker?(selP?_cb.selectedPkg.nm:pkg.nm):real.label;
+            var priceDisplay=isPicker?(selP?Number(_cb.selectedPkg.pr).toLocaleString():'Select meals'):Number(real.price).toLocaleString();
+            var subDesc=isPicker?pkg.desc:(pkg.desc+(real.guests?' &bull; '+real.guests+' guests':''));
             return '<div onclick="selectCookPackage(\''+pkg.id+'\')" style="background:'+(selP?'rgba(155,89,182,.12)':'#1C1C1C')+';border:2px solid '+(selP?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
               +'<div style="display:flex;align-items:center;gap:12px">'
                 +'<span style="font-size:26px;flex-shrink:0">'+pkg.em+'</span>'
-                +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+real.label+'</div>'
-                +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+pkg.desc+(real.guests?' &bull; '+real.guests+' guests':'')+'</div></div>'
-                +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(real.price).toLocaleString()+'</div></div>'
+                +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+label+'</div>'
+                +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+subDesc+'</div></div>'
+                +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#9B59B6;font-size:14px">'+(isPicker&&!selP?priceDisplay:'&#x20a6;'+priceDisplay)+'</div></div>'
               +'</div></div>';
           }).join('')
           +((c.pkgs&&c.pkgs._custom||[]).map(function(real){
@@ -7043,8 +7056,10 @@ function toggleCookPkg(id,pr,nm){
 }
 
 function selectCookPackage(id){
-  if(_cb.selectedPkg&&_cb.selectedPkg.id===id){_cb.selectedPkg=null;cookBkRender('packages');return;}
   var tpl=_hcPackages.find(function(p){return p.id===id;});
+  if(tpl&&tpl.isEventCatering){ openEventCateringPicker(tpl); return; }
+  if(tpl&&tpl.mealCount){ openMealPicker(tpl); return; }
+  if(_cb.selectedPkg&&_cb.selectedPkg.id===id){_cb.selectedPkg=null;cookBkRender('packages');return;}
   if(tpl){
     var real=_cb.cook&&_cb.cook.pkgs&&_cb.cook.pkgs[id];
     _cb.selectedPkg=Object.assign({},tpl,{pr:real?real.price:tpl.pr});
@@ -7052,6 +7067,180 @@ function selectCookPackage(id){
     var customReal=((_cb.cook&&_cb.cook.pkgs&&_cb.cook.pkgs._custom)||[]).find(function(p){return p.key===id;});
     _cb.selectedPkg=customReal?{id:customReal.key,nm:customReal.label,em:'✨',pr:customReal.price,includes:customReal.inc}:null;
   }
+  cookBkRender('packages');
+}
+
+// ── Meal picker: 3-Day Meal Prep (exactly 3), Weekly Family Meals
+// (exactly 7), Multiple Meals Package (any number). Selections are real
+// vendor menu items (checkboxes) plus an optional free-text "Other" row
+// per item, each with its own price — both feed the same real
+// items[]/totalKobo the backend already computes from (resolveBookingItems
+// on the backend accepts either a real menuItemId or a
+// {customName,customPriceKobo} pair). ──
+var _mealPicker=null;
+function openMealPicker(tpl){
+  _mealPicker={tpl:tpl,selections:[]}; // selections: [{menuItemId?,name,priceKobo,qty:1,custom?}]
+  renderMealPicker();
+}
+function mealPickerCount(){ return _mealPicker.selections.length; }
+function mealPickerRequired(){ return _mealPicker.tpl.mealCount===Infinity?null:_mealPicker.tpl.mealCount; }
+function renderMealPicker(){
+  var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
+  var c=_cb.cook,menu=c.menu||[];
+  var tpl=_mealPicker.tpl,required=mealPickerRequired(),count=mealPickerCount();
+  var total=_mealPicker.selections.reduce(function(s,x){return s+x.priceKobo;},0);
+  var full=required!=null&&count>=required;
+  var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
+    +'<button onclick="cookBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
+    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+tpl.nm+'</h2>'
+    +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">'+(required!=null?('Select exactly '+required+' meal'+(required===1?'':'s')+' — '+count+' of '+required+' selected'):('Select any number of meals — '+count+' selected'))+'</p>'
+    +'</div>'
+    +'<div style="padding:16px 16px 100px">'
+    +(menu.length?'':'<div style="text-align:center;padding:30px 10px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🍽️</p><p>This cook hasn\'t added any menu items yet.</p></div>')
+    +menu.map(function(m){
+      var picked=_mealPicker.selections.some(function(x){return x.menuItemId===m.id;});
+      var disabled=!picked&&full;
+      return '<label style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;'+(disabled?'opacity:.4;':'cursor:pointer;')+'">'
+        +'<input type="checkbox" '+(picked?'checked':'')+(disabled?' disabled':'')+' onchange="toggleMealPickerItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0">'
+        +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
+        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div></div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'</div>'
+        +'</label>';
+    }).join('')
+    +_mealPicker.selections.filter(function(x){return x.custom;}).map(function(x,ci){
+      return '<div style="display:flex;align-items:center;gap:12px;background:rgba(155,89,182,.12);border:1.5px solid #9B59B6;border-radius:14px;padding:14px;margin-bottom:10px">'
+        +'<span style="font-size:26px;flex-shrink:0">✍️</span>'
+        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request</div></div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'</div>'
+        +'<span onclick="removeMealPickerCustom(\''+x._cid+'\')" style="color:#E8392E;cursor:pointer;font-size:18px;margin-left:6px">&times;</span>'
+        +'</div>';
+    }).join('')
+    +(full?'':'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:14px;margin-top:6px">'
+      +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — type what you want</div>'
+      +'<input id="mp-other-name" placeholder="e.g. Suya, Ofada Rice..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+      +'<input id="mp-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+      +'<button onclick="addMealPickerCustom()" style="width:100%;padding:10px;border-radius:10px;border:none;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;border:1.5px solid #9B59B6">+ Add</button>'
+      +'</div>')
+    +'</div>'
+    +'<div style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="color:#9A9390;font-size:13px">Total</span><span style="font-weight:900;font-size:18px;color:#9B59B6">&#x20a6;'+Number(total/100).toLocaleString()+'</span></div>'
+    +'<button onclick="confirmMealPicker()" '+((required!=null&&count!==required)||(required==null&&count===0)?'disabled style="width:100%;padding:14px;border-radius:12px;border:none;background:#555;color:#999;font-weight:800;font-size:14px;cursor:not-allowed"':'style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer"')+'>Continue</button>'
+    +'</div>';
+  ov.innerHTML=h;ov.style.display='block';
+}
+function toggleMealPickerItem(id,priceNaira,name){
+  var i=_mealPicker.selections.findIndex(function(x){return x.menuItemId===id;});
+  if(i>-1)_mealPicker.selections.splice(i,1);
+  else{
+    var required=mealPickerRequired();
+    if(required!=null&&mealPickerCount()>=required)return;
+    _mealPicker.selections.push({menuItemId:id,name:name,priceKobo:Math.round(priceNaira*100),qty:1});
+  }
+  renderMealPicker();
+}
+function addMealPickerCustom(){
+  var required=mealPickerRequired();
+  if(required!=null&&mealPickerCount()>=required){showToast&&showToast('You already selected '+required+' meals','warning');return;}
+  var name=(document.getElementById('mp-other-name')||{}).value||'';
+  var price=parseFloat((document.getElementById('mp-other-price')||{}).value);
+  if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
+  if(!(price>0)){showToast&&showToast('Enter a price','warning');return;}
+  _mealPicker.selections.push({name:name.trim(),priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
+  renderMealPicker();
+}
+function removeMealPickerCustom(cid){
+  _mealPicker.selections=_mealPicker.selections.filter(function(x){return x._cid!==cid;});
+  renderMealPicker();
+}
+function confirmMealPicker(){
+  var required=mealPickerRequired();
+  var count=mealPickerCount();
+  if(required!=null&&count!==required){showToast&&showToast('Select exactly '+required+' meals to continue','warning');return;}
+  if(required==null&&count===0){showToast&&showToast('Select at least one meal','warning');return;}
+  var total=_mealPicker.selections.reduce(function(s,x){return s+x.priceKobo;},0);
+  _cb.selectedPkg={id:_mealPicker.tpl.id,nm:_mealPicker.tpl.nm,em:_mealPicker.tpl.em,pr:Math.round(total/100),includes:_mealPicker.tpl.includes,mealPickerItems:_mealPicker.selections};
+  _cb.selected={}; // meal-picker items travel via _cb.selectedPkg.mealPickerItems, not the a-la-carte checklist
+  cookBkRender('packages');
+}
+
+// ── Event Catering Package: event type + guest count + food selection
+// (real menu items + free-text "Other"), no fixed meal-count cap. ──
+var _eventCatering=null;
+function openEventCateringPicker(tpl){
+  _eventCatering={tpl:tpl,eventType:'Wedding',guestCount:'',selections:[]};
+  renderEventCateringPicker();
+}
+function renderEventCateringPicker(){
+  var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
+  var c=_cb.cook,menu=c.menu||[];
+  var ec=_eventCatering;
+  var total=ec.selections.reduce(function(s,x){return s+x.priceKobo;},0);
+  var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
+    +'<button onclick="cookBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
+    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+ec.tpl.nm+'</h2>'
+    +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">Tell us about your event</p>'
+    +'</div>'
+    +'<div style="padding:16px 16px 100px">'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Event Type</label>'
+    +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
+    +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
+    +'</select>'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Number of Guests</label>'
+    +'<input id="ec-guests" type="number" value="'+ec.guestCount+'" oninput="_eventCatering.guestCount=this.value" placeholder="e.g. 100" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:16px;">'
+    +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select Foods</p>'
+    +menu.map(function(m){
+      var picked=ec.selections.some(function(x){return x.menuItemId===m.id;});
+      return '<label style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
+        +'<input type="checkbox" '+(picked?'checked':'')+' onchange="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0">'
+        +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
+        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div></div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'</div>'
+        +'</label>';
+    }).join('')
+    +ec.selections.filter(function(x){return x.custom;}).map(function(x){
+      return '<div style="display:flex;align-items:center;gap:12px;background:rgba(155,89,182,.12);border:1.5px solid #9B59B6;border-radius:14px;padding:14px;margin-bottom:10px">'
+        +'<span style="font-size:26px;flex-shrink:0">✍️</span>'
+        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request</div></div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'</div>'
+        +'<span onclick="removeEventCateringCustom(\''+x._cid+'\')" style="color:#E8392E;cursor:pointer;font-size:18px;margin-left:6px">&times;</span>'
+        +'</div>';
+    }).join('')
+    +'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:14px;margin-top:6px">'
+    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — type what you want</div>'
+    +'<input id="ec-other-name" placeholder="e.g. Small Chops, Cocktails..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+    +'<input id="ec-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+    +'<button onclick="addEventCateringCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #9B59B6;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer">+ Add</button>'
+    +'</div>'
+    +'</div>'
+    +'<div style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="color:#9A9390;font-size:13px">Total</span><span style="font-weight:900;font-size:18px;color:#9B59B6">&#x20a6;'+Number(total/100).toLocaleString()+'</span></div>'
+    +'<button onclick="confirmEventCatering()" '+(ec.selections.length===0?'disabled style="width:100%;padding:14px;border-radius:12px;border:none;background:#555;color:#999;font-weight:800;font-size:14px;cursor:not-allowed"':'style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer"')+'>Continue</button>'
+    +'</div>';
+  ov.innerHTML=h;ov.style.display='block';
+}
+function toggleEventCateringItem(id,priceNaira,name){
+  var i=_eventCatering.selections.findIndex(function(x){return x.menuItemId===id;});
+  if(i>-1)_eventCatering.selections.splice(i,1);
+  else _eventCatering.selections.push({menuItemId:id,name:name,priceKobo:Math.round(priceNaira*100),qty:1});
+  renderEventCateringPicker();
+}
+function addEventCateringCustom(){
+  var name=(document.getElementById('ec-other-name')||{}).value||'';
+  var price=parseFloat((document.getElementById('ec-other-price')||{}).value);
+  if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
+  if(!(price>0)){showToast&&showToast('Enter a price','warning');return;}
+  _eventCatering.selections.push({name:name.trim(),priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
+  renderEventCateringPicker();
+}
+function removeEventCateringCustom(cid){
+  _eventCatering.selections=_eventCatering.selections.filter(function(x){return x._cid!==cid;});
+  renderEventCateringPicker();
+}
+function confirmEventCatering(){
+  if(!_eventCatering.selections.length){showToast&&showToast('Select at least one food item','warning');return;}
+  var total=_eventCatering.selections.reduce(function(s,x){return s+x.priceKobo;},0);
+  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:_eventCatering.tpl.nm+' — '+_eventCatering.eventType,em:_eventCatering.tpl.em,pr:Math.round(total/100),includes:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType,guestCount:_eventCatering.guestCount};
+  _cb.selected={};
   cookBkRender('packages');
 }
 
@@ -7090,10 +7279,24 @@ async function cookBkConfirmBooking(){
   if(!pkgReal&&_cb.selectedPkg&&String(_cb.selectedPkg.id).indexOf('custom_')===0){
     pkgReal=((_cb.cook&&_cb.cook.pkgs&&_cb.cook.pkgs._custom)||[]).find(function(p){return p.key===_cb.selectedPkg.id;});
   }
+  var guestCount;
+  // Meal-picker packages (3-Day/Weekly/Multiple Meals/Event Catering) are
+  // priced purely from the real+custom items the customer picked — never
+  // also charge a flat servicePackage price on top, even if the vendor
+  // happens to have a real ServicePackage row with a matching key.
+  if(_cb.selectedPkg&&_cb.selectedPkg.mealPickerItems){
+    pkgReal=null;
+    items=items.concat(_cb.selectedPkg.mealPickerItems.map(function(x){
+      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:x.qty}:{menuItemId:x.menuItemId,qty:x.qty};
+    }));
+    if(_cb.selectedPkg.guestCount)guestCount=parseInt(_cb.selectedPkg.guestCount)||undefined;
+    if(_cb.selectedPkg.eventType)notes=(notes?notes+' — ':'')+'Event type: '+_cb.selectedPkg.eventType;
+  }
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_cb.cookId, type:'HOME_COOK', items:items,
       servicePackageId:pkgReal?pkgReal.id:undefined,
+      guestCount:guestCount,
       eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes,
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
