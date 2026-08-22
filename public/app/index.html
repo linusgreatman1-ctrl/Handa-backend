@@ -456,6 +456,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
     <div id="reg-form" style="display:none"></div>
     <button class="btn full" id="auth-btn" onclick="doAuth()" style="padding:15px;font-size:16px;margin-bottom:14px">Sign In →</button>
+    <p style="text-align:center;color:#6B6560;font-size:11px;margin:-6px 0 14px;line-height:1.5">By continuing, you agree to our <span onclick="openLegalModal('terms')" style="color:#9A9390;text-decoration:underline;cursor:pointer;">Terms &amp; Conditions</span> and <span onclick="openLegalModal('privacy')" style="color:#9A9390;text-decoration:underline;cursor:pointer;">Privacy Policy</span>.</p>
     <div id="login-extras">
       <div style="text-align:center;margin-bottom:14px"><span style="color:#9A9390;font-size:13px">Or </span><span onclick="guestLogin()" style="color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline">Continue as Guest</span></div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div style="flex:1;height:1px;background:#333"></div><span style="color:#555;font-size:12px">OR</span><div style="flex:1;height:1px;background:#333"></div></div>
@@ -643,7 +644,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="ep-vendor-body"></div>
     <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
-      <button id="ep-vnav-orders" class="ntab active" onclick="vendorNav('orders')"><div class="ntab-icon">&#x1F514;</div><div class="ntab-dot" style="opacity:1;background:#2ECC71;"></div><div class="ntab-label" style="color:#2ECC71;">Orders</div></button>
+      <button id="ep-vnav-orders" class="ntab active" onclick="vendorNav('orders')"><div class="ntab-icon">&#x1F514;</div><div class="ntab-dot" style="opacity:1;background:#2ECC71;"></div><div class="ntab-label" style="color:#2ECC71;">Bookings</div></button>
       <button id="ep-vnav-menu" class="ntab" onclick="vendorNav('menu')"><div class="ntab-icon">&#x1F4E6;</div><div class="ntab-dot"></div><div class="ntab-label">Packages</div></button>
       <button id="ep-vnav-earnings" class="ntab" onclick="vendorNav('earnings')"><div class="ntab-icon">&#x1F4B0;</div><div class="ntab-dot"></div><div class="ntab-label">Earnings</div></button>
       <button id="ep-vnav-messages" class="ntab" onclick="vendorNav('messages')"><div class="ntab-icon">&#x1F4AC;</div><div class="ntab-dot"></div><div class="ntab-label">Messages</div></button>
@@ -673,6 +674,12 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 </div>
 <div id="screen-etrack" class="escreen"><div style="background:#111;padding:44px 20px 14px;border-bottom:1px solid #2A2850"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><h2 style="font-weight:800;font-size:20px;margin:0">📍 Track Order</h2></div><div id="etrack-body" style="padding:16px;overflow-y:auto;flex:1"><div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div></div></div>
 <nav id="bnav" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;z-index:1000;justify-content:space-around;align-items:center"><button class="ntab active" id="nav-home" onclick="eGo('home')"><div class="ntab-icon">🏠</div><div class="ntab-label">Home</div></button><button class="ntab" id="nav-history" onclick="eGo('history')"><div class="ntab-icon">📋</div><div class="ntab-label">History</div></button><button class="ntab" id="nav-track" onclick="eGo('track')"><div class="ntab-icon">📍</div><div class="ntab-label">Track</div></button><button class="ntab" id="nav-profile" onclick="eGo('profile')"><div class="ntab-icon">👤</div><div class="ntab-label">Me</div></button></nav>
+<!-- Global notification bell -- one fixed element reused across every
+     role's dashboard instead of threading it into each dashboard's own
+     header markup. Hidden until login, same visibility pattern as #bnav. -->
+<button id="notif-bell" onclick="openNotificationsModal()" style="display:none;position:fixed;top:14px;right:14px;z-index:1005;width:42px;height:42px;border-radius:50%;background:#1C1C1C;border:1.5px solid #2A2850;color:#F2EDE8;font-size:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);">
+  🔔<span id="notif-bell-badge" style="display:none;position:absolute;top:-2px;right:-2px;min-width:17px;height:17px;border-radius:9px;background:#E8392E;color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;padding:0 4px;line-height:17px;">0</span>
+</button>
 
 
 
@@ -976,8 +983,90 @@ async function api(path, opts){
 function connectSocket(){
   if (_socket || !_accessToken || typeof io === 'undefined') return;
   _socket = io({ auth: { token: _accessToken } });
-  _socket.on('notification:new', function(n){ if(typeof toast==='function') toast(n.title + ': ' + n.body); });
+  _socket.on('notification:new', function(n){
+    if(typeof toast==='function') toast(n.title + ': ' + n.body);
+    bumpNotifBadge();
+  });
   confirmCallBindListeners();
+  refreshNotifBadge();
+}
+
+// ── Notifications ────────────────────────────────────────────────────
+// Notification/NotificationPreference + GET/PATCH /notifications* are all
+// real backend already (notify() fires from ~30 places across every
+// controller) -- this was the missing frontend: a real bell, badge, and
+// list, instead of only the toast-on-receipt connectSocket already had.
+var _notifUnread=0;
+function setNotifBadge(n){
+  _notifUnread=Math.max(0,n);
+  var el=document.getElementById('notif-bell-badge');
+  if(!el)return;
+  if(_notifUnread>0){el.textContent=_notifUnread>99?'99+':String(_notifUnread);el.style.display='flex';}
+  else{el.style.display='none';}
+}
+function bumpNotifBadge(){ setNotifBadge(_notifUnread+1); }
+async function refreshNotifBadge(){
+  try{ var res=await api('/notifications?pageSize=1'); setNotifBadge(res.unreadCount||0); }catch(e){}
+}
+function _notifIcon(type){ return {ORDER_UPDATE:'📦',PROMOTION:'🎉',RIDER_ALERT:'🏍️',NEW_FEATURE:'✨',CHAT:'💬',SYSTEM:'🔔'}[type]||'🔔'; }
+function _notifTimeAgo(iso){
+  var ms=Date.now()-new Date(iso).getTime();
+  var mins=Math.floor(ms/60000);
+  if(mins<1)return 'just now';
+  if(mins<60)return mins+'m ago';
+  var hrs=Math.floor(mins/60);
+  if(hrs<24)return hrs+'h ago';
+  return Math.floor(hrs/24)+'d ago';
+}
+async function openNotificationsModal(){
+  var html='<div id="notif-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;">'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:440px;width:100%;margin-top:60px;padding:18px;max-height:78vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">🔔 Notifications</div>'
+    +'<div style="display:flex;gap:10px;align-items:center;"><span onclick="markAllNotificationsRead()" style="color:#3B9FE8;font-size:12px;font-weight:700;cursor:pointer;">Mark all read</span><button onclick="closeNotificationsModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">✕</button></div></div>'
+    +'<div id="notif-list" style="font-size:13px;color:#9A9390;">Loading…</div>'
+    +'</div></div>';
+  var existing=document.getElementById('notif-modal');if(existing)existing.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+  try{
+    var res=await api('/notifications');
+    setNotifBadge(res.unreadCount||0);
+    var list=document.getElementById('notif-list');
+    if(!res.notifications.length){list.innerHTML='<div style="text-align:center;padding:24px;">No notifications yet.</div>';return;}
+    list.innerHTML=res.notifications.map(function(n){
+      return '<div onclick="openNotification('+JSON.stringify(n.id)+')" style="background:'+(n.read?'#1C1C1C':'#242424')+';border:1.5px solid '+(n.read?'#2A2850':'rgba(59,159,232,.35)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;">'
+        +'<span style="font-size:18px;flex-shrink:0;">'+_notifIcon(n.type)+'</span>'
+        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+n.title+(n.read?'':' <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3B9FE8;margin-left:4px;"></span>')+'</div>'
+        +'<div style="font-size:12px;color:#9A9390;margin-top:2px;">'+n.body+'</div>'
+        +'<div style="font-size:10px;color:#666;margin-top:4px;">'+_notifTimeAgo(n.createdAt)+'</div></div>'
+        +'</div>';
+    }).join('');
+  }catch(err){
+    document.getElementById('notif-list').textContent=err.message||'Could not load notifications';
+  }
+}
+function closeNotificationsModal(){ var el=document.getElementById('notif-modal'); if(el)el.remove(); }
+async function markAllNotificationsRead(){
+  try{ await api('/notifications/read-all',{method:'PATCH'}); setNotifBadge(0); openNotificationsModal(); }catch(e){}
+}
+// A notification's own `data` payload carries whichever id is relevant
+// (bookingId / eventRequestId / threadId / shopSessionId) -- routes to
+// that real detail screen instead of just marking read with nowhere to go,
+// matching "delivered through history for things peculiar to history."
+async function openNotification(id){
+  try{
+    var res=await api('/notifications');
+    var n=(res.notifications||[]).find(function(x){return x.id===id;});
+    if(!n)return;
+    if(!n.read){ await api('/notifications/'+id+'/read',{method:'PATCH'}); setNotifBadge(Math.max(0,_notifUnread-1)); }
+    closeNotificationsModal();
+    var d=n.data||{};
+    if(d.bookingId&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('booking',d.bookingId);}
+    else if(d.eventRequestId&&typeof openEventRequestDetailModal==='function'){openEventRequestDetailModal(d.eventRequestId);}
+    else if(d.shopSessionId&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
+    else if(typeof eGo==='function'){eGo('history');}
+  }catch(err){
+    showToast&&showToast(err.message||'Could not open notification','warning');
+  }
 }
 
 // Maps the backend's User (+ optional profiles) shape onto the exact
@@ -1333,10 +1422,11 @@ function closeEventDetailModal(){
 async function acceptEventProposal(requestId, proposalId){
   if(!confirm('Accept this proposal? This creates a real booking and declines the others.')) return;
   try{
-    await api('/event-requests/'+requestId+'/proposals/'+proposalId+'/accept',{method:'POST'});
+    var res=await api('/event-requests/'+requestId+'/proposals/'+proposalId+'/accept',{method:'POST'});
     closeEventDetailModal();
     closeMyEventRequestsModal();
-    showToast&&showToast('Proposal accepted! Pay the deposit from your bookings to confirm.','success');
+    showToast&&showToast('Booking confirmed!','success');
+    if(res.booking&&typeof openCustomerHistoryDetail==='function')openCustomerHistoryDetail('booking',res.booking.id);
   }catch(err){
     showToast&&showToast(err.message||'Could not accept proposal','warning');
   }
@@ -4777,10 +4867,20 @@ async function loadOpenEventRequests(){
     if(!res.requests.length){ el.innerHTML=''; return; }
     el.innerHTML='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📢 Open Event Requests</div>'
       + res.requests.map(function(r){
+        var mine=r.proposals&&r.proposals[0];
+        var actionHtml;
+        if(!mine){
+          actionHtml='<button onclick="openSubmitProposalModal(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Submit Proposal</button>';
+        }else{
+          var stateColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
+          var stateLabels={PENDING:'✓ Proposal Submitted',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
+          var sc=stateColors[mine.status]||'#9A9390';
+          actionHtml='<div style="width:100%;padding:9px;border-radius:9px;border:1.5px solid '+sc+';background:'+sc+'1a;color:'+sc+';font-weight:700;font-size:12px;text-align:center;">'+(stateLabels[mine.status]||mine.status)+'</div>';
+        }
         return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;">'
           + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="color:#9A9390;font-size:11px;">'+(r.customer?r.customer.name:'Customer')+'</span></div>'
           + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+(r.guestCount?' • 👥 '+r.guestCount:'')+(r.budgetKobo?' • Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')+'</div>'
-          + '<button onclick="openSubmitProposalModal(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Submit Proposal</button>'
+          + actionHtml
           + '</div>';
       }).join('');
   }catch(err){
@@ -5354,6 +5454,45 @@ function _showHelpPanel(){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x2753; Help & Support</div></div>'
     +'<p style="font-size:13px;color:#9A9390;margin-bottom:16px;">Support available Mon\u2013Sat, 8AM\u20138PM. Average response: 2 minutes.</p>'
     +'<button onclick="closeProcedureModal();setTimeout(callSupport,200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4DE; Call Support</button>'
+    +'</div>');
+}
+
+var _LEGAL_TERMS = [
+  ['1. Who We Are', 'Handa ("Handa", "we", "us") operates a marketplace connecting customers with independent home cooks, event planners, shoppers, and riders across Nigeria. Handa is a technology platform -- home cooks and event planners are independent providers, not Handa employees, and Handa is not the seller of their food or event services.'],
+  ['2. Your Account', 'You must provide accurate information when registering and keep your login details confidential. You are responsible for all activity on your account. One person may hold more than one role (customer, shopper, rider, home cook, event planner) on a single account. We may suspend or close an account that violates these terms, provides false information, or is used fraudulently.'],
+  ['3. Bookings & Orders', 'A Home Cook or Event Planner booking is only confirmed once the vendor accepts your request. Home Cook bookings are paid through the app and held in escrow until the service is confirmed complete. Event Planner bookings are agreed and paid for directly between you and the planner, outside the app -- Handa facilitates the introduction and booking record, but does not hold or process that payment. Shop-For-Me sessions are paid upfront through the app to cover items, the shopper\'s fee, and the rider\'s delivery fee.'],
+  ['4. Escrow, Completion & Commission', 'For Home Cook bookings and Shop-For-Me sessions, your payment is held in escrow and only released to the vendor, shopper, or rider once you confirm the job is complete (or after a set auto-release window if you do not respond). Handa deducts a platform commission from each release. Event Planner bookings settle their commission separately, based on your confirmation that the event took place.'],
+  ['5. Cancellations & Refunds', 'You may cancel a Home Cook or Shop-For-Me booking before it is completed; any amount held in escrow is refunded to your Handa wallet as store credit. Event Planner bookings, since payment happens outside the app, are cancelled by agreement between you and the planner directly. Repeated cancellations may affect your ability to book on the platform.'],
+  ['6. Disputes', 'If you believe a booking or session was not completed as agreed, you can report it with a description and, optionally, photo evidence, instead of confirming completion. The other party is notified and can respond with their own side. An admin reviews both sides and makes the final call on any refund or release of funds. Filing a knowingly false report is a violation of these terms.'],
+  ['7. Conduct', 'Treat other users respectfully. Harassment, threats, discrimination, or attempts to circumvent Handa\'s payment and escrow system (e.g. arranging a Home Cook or Shop-For-Me payment entirely outside the app to avoid commission) are prohibited and may result in account suspension.'],
+  ['8. Liability', 'Handa provides the platform connecting you with independent providers and does its best to verify accounts (KYC review, ratings) but cannot guarantee the conduct, food safety, or event quality of any individual vendor, shopper, or rider. To the extent permitted by Nigerian law, Handa\'s liability is limited to the amount actually paid through the platform for the specific booking or session in question.'],
+  ['9. Changes to These Terms', 'We may update these terms from time to time as the platform grows. Continuing to use Handa after an update means you accept the revised terms. Material changes will be communicated through the app\'s notification system.'],
+  ['10. Contact', 'Questions about these terms can be sent through Help & Support -> Live Chat, or by calling +234 800 HANDA 1 (Mon-Sat, 8AM-8PM).'],
+];
+var _LEGAL_PRIVACY = [
+  ['1. What We Collect', 'Account details you provide (name, email, phone, address, state/LGA, bank account for payouts), profile photos, KYC documents (government ID, proof of address, vehicle documents for riders) submitted for verification, booking and order history, in-app chat messages, location data during an active Shop-For-Me session or delivery, and payment references from our payment processor (we do not store your card number).'],
+  ['2. How We Use It', 'To create and secure your account, process bookings/orders and escrow payments, match you with a shopper or rider, verify vendor/rider/shopper identity documents, send order and booking notifications, respond to support requests and disputes, and improve the platform. AI features (like the meal planner or support chat) may process your inputs to generate a response, but this data is not used to build advertising profiles.'],
+  ['3. Who We Share It With', 'The other party on a booking or session sees what\'s needed to fulfil it (e.g. a rider sees a delivery address, a vendor sees your booking details) -- never your full payment details. We use trusted third-party services to operate the platform: Paystack for processing card, bank transfer, and USSD payments; Africa\'s Talking for SMS and voice call delivery; and an AI provider (currently Google Gemini) for AI-assisted features such as meal planning and support chat replies. These providers only receive what\'s necessary to perform their specific function.'],
+  ['4. Data Retention', 'We keep your account and transaction history for as long as your account is active and for a reasonable period afterward to meet legal, tax, and dispute-resolution obligations. KYC documents are retained only as long as needed for verification and compliance purposes.'],
+  ['5. Your Rights', 'You can review and update most of your profile information directly in the app (Settings -> Edit Profile). You can request a copy of your data or request account deletion by contacting support -- we\'ll action this within a reasonable time, subject to any records we\'re legally required to keep (e.g. completed transaction history).'],
+  ['6. Security', 'We use industry-standard measures (encrypted connections, hashed passwords, access-controlled admin tools) to protect your data. No system is 100% secure, so please also protect your own password and never share your login with anyone.'],
+  ['7. Location Data', 'Location is only collected during an active Shop-For-Me session or delivery, to coordinate between customer, shopper, and rider, and is not tracked outside of that context.'],
+  ['8. Children', 'Handa is intended for users 18 years and older, since it involves real payments and deliveries.'],
+  ['9. Changes to This Policy', 'We may update this policy as the platform evolves. Material changes will be communicated through the app\'s notification system.'],
+  ['10. Contact', 'Privacy questions or data requests can be sent through Help & Support -> Live Chat, or by calling +234 800 HANDA 1 (Mon-Sat, 8AM-8PM).'],
+];
+function openLegalModal(kind){
+  var isTerms=kind==='terms';
+  var sections=isTerms?_LEGAL_TERMS:_LEGAL_PRIVACY;
+  var body=sections.map(function(s){
+    return '<div style="margin-bottom:16px;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:5px;">'+s[0]+'</div><div style="font-size:12.5px;color:#9A9390;line-height:1.6;">'+s[1]+'</div></div>';
+  }).join('');
+  showProcedureModal('<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(isTerms?'Terms & Conditions':'Privacy Policy')+'</div></div>'
+    +'<p style="font-size:11px;color:#666;margin-bottom:16px;">Last updated: '+new Date().toLocaleDateString('en-NG',{year:'numeric',month:'long'})+'</p>'
+    +body
     +'</div>');
 }
 
@@ -6551,7 +6690,7 @@ function renderAppSidebarNav(scr){
   } else if(scr==='cook'||scr==='homecook'||scr==='event_planner'){
     var isEP=scr==='event_planner';
     el.innerHTML=''
-      +'<button class="sb-nav-item on" data-sbtab="orders" onclick="vendorNav(\'orders\')"><span class="sb-ic">📦</span>Orders</button>'
+      +'<button class="sb-nav-item on" data-sbtab="orders" onclick="vendorNav(\'orders\')"><span class="sb-ic">📦</span>'+(isEP?'Bookings':'Orders')+'</button>'
       +'<button class="sb-nav-item" data-sbtab="menu" onclick="vendorNav(\'menu\')"><span class="sb-ic">🍽️</span>'+(isEP?'Packages':'Menu')+'</button>'
       +'<button class="sb-nav-item" data-sbtab="earnings" onclick="vendorNav(\'earnings\')"><span class="sb-ic">💰</span>Earnings</button>'
       +'<button class="sb-nav-item" data-sbtab="messages" onclick="vendorNav(\'messages\')"><span class="sb-ic">💬</span>Messages</button>'
@@ -6580,12 +6719,20 @@ function eGo(scr){
   if(el){
     var flex=['screen-liveshop','screen-shopperdash','screen-homecookdash','screen-epdash','screen-riderdash'].indexOf(id)>=0;
     el.style.display=flex?'flex':'block';el.classList.add('active');
-    // Each .escreen is its own overflow-y:auto scroll container -- without this,
-    // a screen shown after being scrolled down previously (or right after login)
-    // reopens wherever it was last left, not at the top.
+    // .escreen has min-height:100vh (not a capped height), so it never
+    // actually overflows itself -- the real scrolling container is the
+    // page. el.scrollTop=0 alone does nothing; window.scrollTo is the
+    // real fix for "screen reopens wherever it was last left."
     el.scrollTop=0;
+    window.scrollTo(0,0);
   }
   S.curScreen=scr;
+  // Remember which role dashboard is actively open so tryRestoreSession()
+  // can bring the user back here on refresh, instead of always bouncing a
+  // multi-role account back to whatever role it originally registered as.
+  if(['home','shopper','cook','homecook','event_planner','rider'].indexOf(scr)>=0){
+    try{localStorage.setItem('handa_active_role',scr);}catch(e){}
+  }
   document.querySelectorAll('.ntab').forEach(function(b){b.classList.remove('active');});
   var navMap={home:'nav-home',history:'nav-history',track:'nav-track',profile:'nav-profile'};
   var nb=document.getElementById(navMap[scr]);if(nb)nb.classList.add('active');
@@ -6597,6 +6744,8 @@ function eGo(scr){
   if(bn)bn.style.display=(OWN_NAV_SCREENS.indexOf(scr)>=0)?'none':'flex';
   var sb=document.getElementById('app-sidebar');
   if(sb){sb.style.visibility=(scr==='login')?'hidden':'visible';renderAppSidebarNav(scr);}
+  var nbell=document.getElementById('notif-bell');
+  if(nbell)nbell.style.display=(scr==='login')?'none':'flex';
   if(scr==='home'){
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
     var hn=document.getElementById('e-home-name');if(hn&&S.user)hn.textContent=S.user.name;
@@ -6789,6 +6938,19 @@ async function tryRestoreSession(){
   try{
     var data=await api('/auth/me');
     S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
+    // A multi-role account's scalar `role` is just whichever it registered
+    // as -- if they were actively viewing a different real role of theirs
+    // (via the role switcher) right before this refresh, prefer that, as
+    // long as the account still genuinely has that profile.
+    try{
+      var savedRole=localStorage.getItem('handa_active_role');
+      var stillHasIt=savedRole==='home'
+        ||(savedRole==='shopper'&&S.user.shopperProfileId)
+        ||(savedRole==='rider'&&S.user.riderProfileId)
+        ||((savedRole==='cook'||savedRole==='homecook')&&S.user.vendorProfileId&&S.user.vtype!=='event_planner')
+        ||(savedRole==='event_planner'&&S.user.vendorProfileId&&S.user.vtype==='event_planner');
+      if(savedRole&&stillHasIt)_eRole=savedRole;
+    }catch(e){}
     connectSocket();
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
     var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
@@ -6954,7 +7116,10 @@ async function renderVendorDashboard(kind){
   h+='<div style="background:#1C1C1C;border:1.5px solid rgba(245,166,35,.3);border-radius:14px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">';
   h+='<div><p style="font-weight:700;font-size:14px;margin:0 0 2px">⭐ Get Featured</p><p style="color:#9A9390;font-size:12px;margin:0">Appear on Handa homepage</p></div>';
   h+='<button onclick="payToFeature()" style="padding:10px 14px;background:#F5A623;color:#111;border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">₦5,000/wk</button></div>';
-  h+='<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">'+label+'</p>';
+  // A clear, noticeable break between the commission/featured banners above
+  // and the real bookings list below -- the two used to run straight into
+  // each other with only a small uppercase label between them.
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:22px 0 14px"><div style="flex:1;height:1px;background:#2A2850"></div><span style="font-size:11px;font-weight:800;color:#F2EDE8;text-transform:uppercase;letter-spacing:1px;">'+label+'</span><div style="flex:1;height:1px;background:#2A2850"></div></div>';
   h+='<div id="vendor-bookings-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>';
   h+='</div>';el.innerHTML=h;
   if(!isCook) loadOpenEventRequests();
@@ -7029,21 +7194,20 @@ async function openVendorBookingDetail(id){
       ):(b.status==='CONFIRMED'?(
         b.vendorConfirmedCompleteAt
           ? '<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>'
-          : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Order/Booking Completed</button>'
-      ):''))
-      +'<button onclick="showReportIssue(\'customer\',\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
+          : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Completed</button>'
+      ):''));
     showBottomSheet('Booking Details',content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
   }
 }
-async function customerConfirmBookingComplete(id,completed){
+async function customerConfirmBookingComplete(id,completed,isEP){
   if(completed){
     try{
       await api('/bookings/'+id+'/confirm-complete',{method:'POST',body:JSON.stringify({completed:true})});
-      showToast&&showToast('Booking completed — payment released to the vendor.','success');
+      showToast&&showToast(isEP?'Booking completed — recorded for commission.':'Booking completed — payment released to the vendor.','success');
       closeBottomSheet&&closeBottomSheet();
-      if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
+      eGo('history');
     }catch(err){
       showToast&&showToast(err.message||'Could not confirm this booking','warning');
     }
@@ -7055,13 +7219,17 @@ async function customerConfirmBookingComplete(id,completed){
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">What happened?</div></div>'
-    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Your payment stays safely in escrow while this is looked into. The vendor will be notified and can add their own side.</p>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">'+(isEP?'This is looked into by an admin.':'Your payment stays safely in escrow while this is looked into.')+' The vendor will be notified and can add their own side.</p>'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Category</label>'
     +'<select id="disp-category" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
     +['Never showed up / delivered','Not as described','Poor quality','Other'].map(function(c){return '<option>'+c+'</option>';}).join('')
     +'</select>'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Describe what happened</label>'
     +'<textarea id="disp-desc" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:90px;" placeholder="Tell us what happened..."></textarea>'
+    +'<div style="margin-top:10px;">'
+    +'<label for="disp-evidence" id="disp-evidence-label" style="display:flex;align-items:center;gap:8px;width:100%;padding:11px;background:#242424;border:1.5px dashed #2A2850;border-radius:10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:12px;cursor:pointer;box-sizing:border-box;"><span style="font-size:16px;">📷</span><span id="disp-evidence-label-text">Attach a photo (optional proof)</span></label>'
+    +'<input id="disp-evidence" type="file" accept="image/*" style="display:none;" onchange="var t=document.getElementById(\'disp-evidence-label-text\');if(t)t.textContent=this.files[0]?this.files[0].name:\'Attach a photo (optional proof)\';">'
+    +'</div>'
     +'<button onclick="submitBookingDispute()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Submit Report</button>'
     +'</div>'
   );
@@ -7071,11 +7239,24 @@ async function submitBookingDispute(){
   var cat=(document.getElementById('disp-category')||{}).value||'Other';
   var desc=(document.getElementById('disp-desc')||{}).value||'';
   if(!desc.trim()){showToast&&showToast('Please describe what happened','warning');return;}
+  var fileEl=document.getElementById('disp-evidence');
+  var file=fileEl&&fileEl.files[0];
   try{
-    await api('/bookings/'+_disputeBookingId+'/confirm-complete',{method:'POST',body:JSON.stringify({completed:false,disputeCategory:cat,disputeDescription:desc.trim()})});
-    showToast&&showToast('Report submitted — payment stays in escrow until this is resolved.','success');
+    var res=await api('/bookings/'+_disputeBookingId+'/confirm-complete',{method:'POST',body:JSON.stringify({completed:false,disputeCategory:cat,disputeDescription:desc.trim()})});
+    if(file&&res.ticket){
+      var fd=new FormData();fd.append('evidence',file);
+      var evRes=await fetch(API_BASE+'/support/tickets/'+res.ticket.id+'/evidence',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+      if(!evRes.ok){
+        var evData=await evRes.json().catch(function(){return {};});
+        showToast&&showToast('Report submitted, but the photo failed to upload: '+(evData.error||'try again later.'),'warning');
+        closeProcedureModal();closeBottomSheet&&closeBottomSheet();eGo('history');
+        return;
+      }
+    }
+    showToast&&showToast('Report submitted — this will be looked into.','success');
     closeProcedureModal();
-    if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
+    closeBottomSheet&&closeBottomSheet();
+    eGo('history');
   }catch(err){
     showToast&&showToast(err.message||'Could not submit report','warning');
   }
@@ -7110,15 +7291,16 @@ async function submitVendorDisputeResponse(ticketId,bookingId){
       var evRes=await fetch(API_BASE+'/support/tickets/'+ticketId+'/second-party-evidence',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
       if(!evRes.ok){
         var evData=await evRes.json().catch(function(){return {};});
-        showToast&&showToast('Response sent, but the photo failed to upload: '+(evData.error||'try again from booking detail.'),'warning');
-        closeProcedureModal();
-        openVendorBookingDetail(bookingId);
+        showToast&&showToast('Response sent, but the photo failed to upload: '+(evData.error||'try again later.'),'warning');
+        closeProcedureModal();closeBottomSheet&&closeBottomSheet();
+        if(typeof vendorNav==='function')vendorNav('orders');
         return;
       }
     }
     showToast&&showToast('Response sent to the admin.','success');
     closeProcedureModal();
-    openVendorBookingDetail(bookingId);
+    closeBottomSheet&&closeBottomSheet();
+    if(typeof vendorNav==='function')vendorNav('orders');
   }catch(err){
     showToast&&showToast(err.message||'Could not submit your response','warning');
   }
@@ -7157,20 +7339,29 @@ async function openCustomerHistoryDetail(kind,id){
     var res=await api('/bookings/'+id);
     var b=res.booking;
     var v=b.vendor||{};
+    var vu=v.user||{};
+    // Stashed for the zero-arg Chat/Call/WhatsApp buttons below -- avoids
+    // embedding a vendor name/phone (which can contain a stray quote) into
+    // an inline onclick attribute.
+    window._bookingDetailVendor={id:vu.id,name:v.bizName||vu.name||'Vendor',phone:vu.phone||'',type:b.type,bookingId:b.id};
     var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
     var rows=[
       ['Booking #',b.bookingNumber||'—'],
       ['Vendor',v.bizName||'—'],
       ['Status',b.status],
       ['Type',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
-      ['Date',when+(b.eventTime?' at '+b.eventTime:'')],
+      ['Booked On',b.createdAt?new Date(b.createdAt).toLocaleString():'—'],
+      ['Scheduled For',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
       ['Guests',b.guestCount||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:'—'],
       ['Total',N(Math.round(b.totalKobo/100))],
     ];
     var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (!b.eventDate || new Date(b.eventDate).getTime()>Date.now());
+    var cancellable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var needsCompletionResponse=b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
+    var isEP=b.type==='EVENT_PLANNING';
+    var confirmCopy=isEP?'Confirm so it can be recorded, or let us know if it wasn\'t actually completed.':'Confirm so payment can be released, or let us know if it wasn\'t actually completed.';
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
@@ -7178,17 +7369,47 @@ async function openCustomerHistoryDetail(kind,id){
       +(needsCompletionResponse?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:4px;">The vendor marked this complete</div>'
-        +'<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">Confirm so payment can be released, or let us know if it wasn\'t actually completed.</div>'
+        +'<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">'+confirmCopy+'</div>'
         +'<div style="display:flex;gap:10px;">'
-        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',false)" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">No — Not Completed</button>'
-        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true)" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes — Completed</button>'
+        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',false,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">No — Not Completed</button>'
+        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes — Completed</button>'
         +'</div></div>'
       ):'')
-      +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
-      +'<button onclick="showReportIssue(\'order\',\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'
+        +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
+        +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
+        +'<button onclick="openBookingWhatsApp()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>WhatsApp</button>'
+      +'</div>'
+      +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
+      +(cancellable?'<button onclick="customerCancelBooking(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel Booking</button>':'')
+      +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
     showBottomSheet('Booking Details',content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
+  }
+}
+function openBookingChat(){
+  var v=window._bookingDetailVendor;if(!v||!v.id)return;
+  var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
+  openChat({name:v.name,em:'👤',phone:v.phone,otherUserId:v.id,contextType:'BOOKING',contextId:v.bookingId});
+}
+function openBookingCall(){
+  var v=window._bookingDetailVendor;if(!v)return;
+  openCallModal(v.name,v.phone||'+234000',v.type==='EVENT_PLANNING'?'Event Planner':'Home Cook','👤');
+}
+function openBookingWhatsApp(){
+  var v=window._bookingDetailVendor;if(!v)return;
+  window.open('https://wa.me/'+(v.phone||'234000').replace(/[^0-9]/g,''),'_blank');
+}
+async function customerCancelBooking(id){
+  if(!confirm('Cancel this booking? This cannot be undone.'))return;
+  try{
+    await api('/bookings/'+id+'/cancel',{method:'POST'});
+    showToast&&showToast('Booking cancelled.','success');
+    closeBottomSheet();
+    eGo('history');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not cancel this booking','warning');
   }
 }
 var _editingBooking=null;
@@ -7338,6 +7559,7 @@ function closeCookBooking(){
 }
 
 function cookBkRender(phase){
+  var _cbPhaseChanged=_cb.phase!==phase;
   _cb.phase=phase;
   var ov=document.getElementById('__cook_bk_ov');
   if(!ov)return;
@@ -7553,7 +7775,11 @@ function cookBkRender(phase){
   }
 
   ov.innerHTML=h;
-  ov.scrollTop=0;
+  // Only snap back to the top when actually moving to a different phase --
+  // re-rendering the SAME phase (e.g. tapping a package to highlight it,
+  // still 'packages') used to reset scroll on every tap, throwing the
+  // customer back to the top away from what they just picked.
+  if(_cbPhaseChanged)ov.scrollTop=0;
 
   // Start auto-release timer for service_done phase
   if(phase==='service_done'){
@@ -7911,6 +8137,7 @@ function cookMarkServiceDone(bookingIdx){
 
 // EP Booking: packages → details → confirmed (NO payment phase)
 function epBkRender(phase){
+  var _epbPhaseChanged=_epb.phase!==phase;
   _epb.phase=phase;
   var ov=document.getElementById('__ep_bk_ov');
   if(!ov)return;
@@ -8050,7 +8277,10 @@ function epBkRender(phase){
       +'</div></div>';
   }
 
-  ov.innerHTML=h; ov.scrollTop=0;
+  ov.innerHTML=h;
+  // Same fix as cookBkRender: only reset scroll on an actual phase change,
+  // not on a same-phase re-render triggered by tapping a package.
+  if(_epbPhaseChanged)ov.scrollTop=0;
 }
 
 function selectEPPackage(id){

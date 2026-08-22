@@ -119,7 +119,7 @@ async function getBooking(req, res, next) {
     const booking = await prisma.booking.findUnique({
       where: { id: req.params.id },
       include: {
-        vendor: { include: { user: { select: { name: true, phone: true, address: true } } } },
+        vendor: { include: { user: { select: { id: true, name: true, phone: true, address: true } } } },
         servicePackage: true,
         ratings: true,
         customer: { select: { name: true, phone: true, address: true, state: true } },

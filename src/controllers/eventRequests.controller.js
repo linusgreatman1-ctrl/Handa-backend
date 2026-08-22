@@ -44,7 +44,14 @@ async function listEventRequests(req, res, next) {
       }
       const requests = await prisma.eventRequest.findMany({
         where: { status: status || "OPEN" },
-        include: { customer: { select: { name: true } }, _count: { select: { proposals: true } } },
+        include: {
+          customer: { select: { name: true } },
+          _count: { select: { proposals: true } },
+          // The calling vendor's own proposal on this request, if any --
+          // lets the frontend show "Proposal Submitted" instead of
+          // re-offering "Submit Proposal" on a request they already bid on.
+          proposals: { where: { vendorId: req.user.vendorProfile.id }, select: { id: true, status: true } },
+        },
         orderBy: { createdAt: "desc" },
         take: 100,
       });
@@ -145,18 +152,28 @@ async function acceptProposal(req, res, next) {
     const io = req.app.get("io");
 
     const booking = await prisma.$transaction(async (tx) => {
+      // Event Planning bookings no longer go through escrow at all (see
+      // bookings.controller.js's acceptBooking) -- the planner already
+      // committed to this price by proposing, and there's nothing for the
+      // customer to pay through the app, so this goes straight to
+      // CONFIRMED, matching exactly where acceptBooking sends a normal EP
+      // booking. paymentMethod is required by the schema but inapplicable
+      // here -- CASH_ON_DELIVERY is the closest real meaning ("settled
+      // directly, not through the app"); the frontend's booking-detail
+      // view already overrides the displayed text for any EP booking
+      // regardless of this raw value.
       const newBooking = await tx.booking.create({
         data: {
           bookingNumber: generateReference("EVT"),
           type: "EVENT_PLANNING",
-          status: "ACCEPTED", // the planner already committed to this price by proposing
+          status: "CONFIRMED",
           customerId: request.customerId,
           vendorId: proposal.vendorId,
           eventDate: request.eventDate,
           venue: request.venue,
           guestCount: request.guestCount,
           notes: [request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
-          paymentMethod: "WALLET",
+          paymentMethod: "CASH_ON_DELIVERY",
           totalKobo: proposal.priceKobo,
         },
       });
@@ -175,7 +192,7 @@ async function acceptProposal(req, res, next) {
     });
 
     const losers = await prisma.eventProposal.findMany({ where: { eventRequestId: request.id, status: "DECLINED" } });
-    await notify(io, req.user.id, "ORDER_UPDATE", "Proposal accepted", "Pay the deposit to confirm your event booking.", { bookingId: booking.id });
+    await notify(io, req.user.id, "ORDER_UPDATE", "Proposal accepted", "Your event booking is confirmed! Payment is arranged directly with your planner, outside the app.", { bookingId: booking.id });
     for (const loser of losers) {
       const vendorUser = await prisma.vendorProfile.findUnique({ where: { id: loser.vendorId }, select: { userId: true } });
       if (vendorUser) {
@@ -184,7 +201,7 @@ async function acceptProposal(req, res, next) {
     }
     const winnerVendor = await prisma.vendorProfile.findUnique({ where: { id: proposal.vendorId }, select: { userId: true } });
     if (winnerVendor) {
-      await notify(io, winnerVendor.userId, "ORDER_UPDATE", "Proposal accepted!", "Your event proposal was accepted. Awaiting the customer's deposit.", { bookingId: booking.id });
+      await notify(io, winnerVendor.userId, "ORDER_UPDATE", "Proposal accepted!", "Your event proposal was accepted -- the customer has booked you.", { bookingId: booking.id });
     }
 
     res.json({ booking });
