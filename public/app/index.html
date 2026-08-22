@@ -929,6 +929,7 @@ function connectSocket(){
   if (_socket || !_accessToken || typeof io === 'undefined') return;
   _socket = io({ auth: { token: _accessToken } });
   _socket.on('notification:new', function(n){ if(typeof toast==='function') toast(n.title + ': ' + n.body); });
+  confirmCallBindListeners();
 }
 
 // Maps the backend's User (+ optional profiles) shape onto the exact
@@ -3351,6 +3352,203 @@ function toggleRtcFullscreen(frameId){
   }else{
     (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
   }
+}
+
+// ── Real 3-way (rider + shopper + customer) audio confirm call ─────────
+// Kept fully separate from the sfm*/_rtc single-peer shopping-call engine
+// above (own state, own confirmcall:* socket events, see live.js) so it
+// can never collide with a shopping call that just ended on the same
+// session. Multi-peer by design: window._confirmCall.peers is a
+// socketId -> RTCPeerConnection map, not a single connection.
+function confirmCallCreatePeer(remoteSocketId){
+  var cc=window._confirmCall;
+  if(!cc) return null;
+  if(cc.peers[remoteSocketId]) return cc.peers[remoteSocketId];
+  var pc=new RTCPeerConnection({ iceServers: cc.iceServers||[{urls:'stun:stun.l.google.com:19302'}] });
+  var peer={ pc:pc, audioEl:null };
+  cc.peers[remoteSocketId]=peer;
+  if(cc.localStream) cc.localStream.getTracks().forEach(function(t){ pc.addTrack(t, cc.localStream); });
+  pc.onicecandidate=function(ev){
+    if(ev.candidate && _socket) _socket.emit('confirmcall:ice-candidate', { toSocketId:remoteSocketId, candidate:ev.candidate, sessionId:cc.sessionId });
+  };
+  pc.ontrack=function(ev){
+    var audioEl=document.createElement('audio');
+    audioEl.autoplay=true; audioEl.id='confirmcall-audio-'+remoteSocketId; audioEl.srcObject=ev.streams[0];
+    audioEl.style.display='none';
+    document.body.appendChild(audioEl);
+    peer.audioEl=audioEl;
+  };
+  updateConfirmCallCount();
+  return peer;
+}
+function confirmCallRemovePeer(remoteSocketId){
+  var cc=window._confirmCall;
+  if(!cc||!cc.peers[remoteSocketId]) return;
+  try{ cc.peers[remoteSocketId].pc.close(); }catch(e){}
+  var ael=cc.peers[remoteSocketId].audioEl;
+  if(ael){ try{ ael.pause(); ael.remove(); }catch(e){} }
+  delete cc.peers[remoteSocketId];
+  updateConfirmCallCount();
+}
+function updateConfirmCallCount(){
+  var cc=window._confirmCall;
+  var el=document.getElementById('confirmcall-count');
+  if(el&&cc) el.textContent = Object.keys(cc.peers).length+' connected';
+}
+
+async function confirmCallJoin(sessionId, myRole){
+  if(window._confirmCall && window._confirmCall.sessionId===sessionId) return;
+  if(window._confirmCall) confirmCallLeave();
+  if(typeof RTCPeerConnection==='undefined'||!navigator.mediaDevices){
+    showToast&&showToast('Calls are not supported in this browser','warning');
+    return;
+  }
+  var cc={ sessionId:sessionId, role:myRole, peers:{}, localStream:null, iceServers:null };
+  window._confirmCall=cc;
+  try{
+    cc.localStream = await navigator.mediaDevices.getUserMedia({ audio:true, video:false });
+  }catch(err){
+    showToast&&showToast('Microphone access was denied — cannot join the confirm call','warning');
+    if(window._confirmCall===cc) window._confirmCall=null;
+    return;
+  }
+  cc.iceServers = await sfmFetchIceServers();
+  if(window._confirmCall!==cc) return; // left/replaced while awaiting permissions
+  if(_socket){
+    _socket.emit('shop-session:join', { sessionId: sessionId }, function(){
+      if(window._confirmCall===cc) _socket.emit('confirmcall:join', { sessionId: sessionId });
+    });
+  }
+}
+
+function confirmCallLeave(){
+  var cc=window._confirmCall;
+  if(!cc) return;
+  if(_socket) _socket.emit('confirmcall:leave', { sessionId: cc.sessionId });
+  Object.keys(cc.peers).forEach(function(sid){ confirmCallRemovePeer(sid); });
+  if(cc.localStream) cc.localStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} });
+  window._confirmCall=null;
+  var panel=document.getElementById('confirmcall-panel'); if(panel) panel.remove();
+}
+function leaveConfirmCallOnly(){
+  confirmCallLeave();
+  showToast&&showToast('Left the confirm call','info');
+}
+function toggleConfirmCallMic(){
+  var cc=window._confirmCall;
+  if(!cc||!cc.localStream) return;
+  var track=cc.localStream.getAudioTracks()[0];
+  if(!track) return;
+  track.enabled=!track.enabled;
+  showToast&&showToast(track.enabled?'Mic on':'Mic muted','info');
+}
+
+function confirmCallBindListeners(){
+  if(!_socket||_socket._confirmCallBound) return;
+  _socket._confirmCallBound=true;
+
+  _socket.on('confirmcall:existing-peers', function(p){
+    var cc=window._confirmCall;
+    if(!cc||cc.sessionId!==p.sessionId||!p.socketIds) return;
+    p.socketIds.forEach(function(sid){
+      var peer=confirmCallCreatePeer(sid);
+      if(!peer) return;
+      peer.pc.createOffer().then(function(offer){
+        return peer.pc.setLocalDescription(offer).then(function(){
+          _socket.emit('confirmcall:offer', { toSocketId:sid, sdp:offer, sessionId:cc.sessionId });
+        });
+      }).catch(function(){});
+    });
+  });
+  _socket.on('confirmcall:peer-joined', function(p){
+    var cc=window._confirmCall;
+    if(!cc||cc.sessionId!==p.sessionId) return;
+    confirmCallCreatePeer(p.fromSocketId);
+  });
+  _socket.on('confirmcall:offer', function(p){
+    var cc=window._confirmCall;
+    if(!cc||cc.sessionId!==p.sessionId) return;
+    var peer=confirmCallCreatePeer(p.fromSocketId);
+    if(!peer) return;
+    peer.pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).then(function(){
+      return peer.pc.createAnswer();
+    }).then(function(answer){
+      return peer.pc.setLocalDescription(answer).then(function(){
+        _socket.emit('confirmcall:answer', { toSocketId:p.fromSocketId, sdp:answer, sessionId:cc.sessionId });
+      });
+    }).catch(function(){});
+  });
+  _socket.on('confirmcall:answer', function(p){
+    var cc=window._confirmCall;
+    if(!cc||cc.sessionId!==p.sessionId||!cc.peers[p.fromSocketId]) return;
+    cc.peers[p.fromSocketId].pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).catch(function(){});
+  });
+  _socket.on('confirmcall:ice-candidate', function(p){
+    var cc=window._confirmCall;
+    if(!cc||cc.sessionId!==p.sessionId||!cc.peers[p.fromSocketId]||!p.candidate) return;
+    cc.peers[p.fromSocketId].pc.addIceCandidate(new RTCIceCandidate(p.candidate)).catch(function(){});
+  });
+  _socket.on('confirmcall:peer-left', function(p){
+    var cc=window._confirmCall;
+    if(!cc||cc.sessionId!==p.sessionId) return;
+    confirmCallRemovePeer(p.fromSocketId);
+  });
+
+  // A rider's POST /confirm-call/start broadcasts this to the whole
+  // shop-session room, including the rider's own socket — skip showing
+  // an invite banner to whoever's already joined (the rider themselves).
+  _socket.on('shop-session:confirm-call-invite', function(p){
+    if(!p||!p.sessionId) return;
+    if(window._confirmCall && window._confirmCall.sessionId===p.sessionId) return;
+    showConfirmCallInviteBanner(p.sessionId);
+  });
+  _socket.on('shop-session:confirm-call-completed', function(p){
+    if(!p||!p.sessionId) return;
+    dismissConfirmCallInvite();
+    if(window._confirmCall && window._confirmCall.sessionId===p.sessionId){
+      showToast&&showToast('Confirm call completed','success');
+      confirmCallLeave();
+    }
+  });
+}
+
+function showConfirmCallInviteBanner(sessionId){
+  dismissConfirmCallInvite();
+  var html='<div id="confirmcall-invite-banner" style="position:fixed;left:12px;right:12px;top:12px;z-index:10000;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:\'DM Sans\',sans-serif;display:flex;align-items:center;gap:10px;">'
+    +'<div style="font-size:22px;flex-shrink:0;">&#x1F4DE;</div>'
+    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;">Delivery Confirm Call</div><div style="font-size:11px;color:#9A9390;">Your rider wants a 3-way call to confirm delivery</div></div>'
+    +'<button onclick="joinConfirmCallInvite(\''+sessionId+'\')" style="padding:9px 14px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex-shrink:0;">Join</button>'
+    +'<button onclick="dismissConfirmCallInvite()" style="padding:9px 10px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-size:12px;cursor:pointer;flex-shrink:0;">&#x2715;</button>'
+    +'</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function dismissConfirmCallInvite(){
+  var el=document.getElementById('confirmcall-invite-banner'); if(el) el.remove();
+}
+function joinConfirmCallInvite(sessionId){
+  dismissConfirmCallInvite();
+  var myRole = (S.role==='shopper')?'shopper':'customer';
+  confirmCallJoin(sessionId, myRole);
+  showConfirmCallPanel(myRole);
+}
+
+function showConfirmCallPanel(myRole){
+  var existing=document.getElementById('confirmcall-panel'); if(existing) existing.remove();
+  var actionBtn = myRole==='rider'
+    ? '<button onclick="riderCompleteConfirmCall()" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2713; Confirmed — End Call</button>'
+    : '<button onclick="leaveConfirmCallOnly()" style="flex:2;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Leave Call</button>';
+  var html='<div id="confirmcall-panel" style="position:fixed;left:12px;right:12px;bottom:84px;z-index:9998;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.4);font-family:\'DM Sans\',sans-serif;">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+    +'<div style="width:8px;height:8px;border-radius:50%;background:#2ECC71;animation:pulse .9s infinite;flex-shrink:0;"></div>'
+    +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;">3-Way Confirm Call</div>'
+    +'<div style="font-size:11px;color:#9A9390;margin-left:auto;" id="confirmcall-count">Connecting…</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="toggleConfirmCallMic()" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3A4; Mic</button>'
+    +actionBtn
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  updateConfirmCallCount();
 }
 
 async function sendLiveChat() {
@@ -6152,9 +6350,36 @@ function riderMapPhase2(){
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Delivering to</div>'
     +'<div style="font-weight:700;color:#F2EDE8;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
     +'</div>'
+    +(s&&s.confirmCallCompletedAt ? '' :
+      '<button onclick="riderStartConfirmCall()" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(59,159,232,.4);background:rgba(59,159,232,.08);color:#3B9FE8;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:9px;font-family:\'DM Sans\',sans-serif;">&#x1F4DE; Start 3-Way Confirm Call</button>')
     +'<button onclick="finishDelivery()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Confirm Delivery Complete</button>'
     +'<button onclick="openRiderReportChooser()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">&#x26A0;&#xFE0F; Report an Issue</button>'
     +'</div>';
+}
+
+// Rider taps this once they've physically reached the customer with the
+// delivery -- invites the shopper (joining remotely) and the customer into
+// a real 3-way audio room before the delivery-code step is allowed.
+async function riderStartConfirmCall(){
+  var s=window._riderActiveSession;
+  if(!s) return;
+  try{
+    var res=await api('/shop-sessions/'+s.id+'/confirm-call/start',{method:'POST'});
+    if(res&&res.session) window._riderActiveSession=Object.assign({},s,res.session);
+  }catch(err){ showToast&&showToast(err.message||'Could not start the confirm call','warning'); return; }
+  confirmCallJoin(s.id,'rider');
+  showConfirmCallPanel('rider');
+}
+async function riderCompleteConfirmCall(){
+  var s=window._riderActiveSession;
+  if(!s) return;
+  try{
+    var res=await api('/shop-sessions/'+s.id+'/confirm-call/complete',{method:'POST'});
+    if(res&&res.session) window._riderActiveSession=Object.assign({},s,res.session);
+  }catch(err){ showToast&&showToast(err.message||'Could not complete the confirm call','warning'); }
+  confirmCallLeave();
+  showToast&&showToast('Confirm call done — you can now confirm delivery','success');
+  riderMapPhase2();
 }
 
 // ── Handover code entry (rider side) ────────────────────────────────────
@@ -6190,6 +6415,12 @@ function submitHandoverCode(){
 }
 
 async function finishDelivery(){
+  var s=window._riderActiveSession;
+  if(s && !s.confirmCallCompletedAt){
+    showToast&&showToast('Complete the 3-way confirm call with the shopper and customer first','warning');
+    riderStartConfirmCall();
+    return;
+  }
   openHandoverCodeModal('Confirm Delivery', async function(code){
     if(window._riderActiveSession){
       try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }

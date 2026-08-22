@@ -309,7 +309,7 @@ async function matchSession(req, res, next) {
   }
 }
 
-function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage } = {}) {
+function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall } = {}) {
   return async (req, res, next) => {
     try {
       const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -325,6 +325,9 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRide
       }
       if (codeField && session[codeField] && req.body.code !== session[codeField]) {
         return res.status(400).json({ error: codeErrorMessage });
+      }
+      if (requireConfirmCall && !session.confirmCallCompletedAt) {
+        return res.status(409).json({ error: "Complete the 3-way confirm call with the shopper and customer first." });
       }
 
       const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: toStatus } });
@@ -563,7 +566,50 @@ const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
   requireRider: true,
   codeField: "deliveryCode",
   codeErrorMessage: "Incorrect delivery code. Ask the customer for their code.",
+  requireConfirmCall: true,
 });
+
+// Rider taps this once they've physically reached the customer, before
+// entering the delivery code — invites the shopper and customer (who join
+// remotely) into a real 3-way audio room over the same shop-session room's
+// webrtc-style signaling (see confirmcall:* relay in live.js).
+async function startConfirmCall(req, res, next) {
+  try {
+    if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    if (session.riderId !== req.user.riderProfile.id) return res.status(403).json({ error: "You are not the rider on this session." });
+    if (session.status !== "OUT_FOR_DELIVERY") return res.status(409).json({ error: `Session must be OUT_FOR_DELIVERY (currently ${session.status}).` });
+
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-invite", { sessionId: session.id });
+    res.json({ session });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Any of the 3 real parties (rider, shopper, or customer) can mark the
+// confirm call done — idempotent, since more than one side might tap it.
+async function completeConfirmCall(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    const isParty =
+      session.customerId === req.user.id ||
+      (req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id) ||
+      (req.user.riderProfile && session.riderId === req.user.riderProfile.id);
+    if (!isParty) return res.status(403).json({ error: "You are not a party to this session." });
+
+    const updated = session.confirmCallCompletedAt
+      ? session
+      : await prisma.shopSession.update({ where: { id: session.id }, data: { confirmCallCompletedAt: new Date() } });
+
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-completed", { sessionId: session.id });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function confirmSession(req, res, next) {
   try {
@@ -666,6 +712,8 @@ module.exports = {
   acceptDelivery,
   markOutForDelivery,
   markDelivered,
+  startConfirmCall,
+  completeConfirmCall,
   confirmSession,
   cancelSession,
   confirmSellerPayouts,

@@ -23,6 +23,8 @@ router.post("/:id/find-rider", ctrl.findRider);
 router.post("/:id/pay-rider-fee-topup", ctrl.payRiderFeeTopUp);
 router.post("/:id/accept-delivery", ctrl.acceptDelivery);
 router.post("/:id/out-for-delivery", ctrl.markOutForDelivery);
+router.post("/:id/confirm-call/start", ctrl.startConfirmCall);
+router.post("/:id/confirm-call/complete", ctrl.completeConfirmCall);
 router.post("/:id/delivered", ctrl.markDelivered);
 router.post("/:id/confirm", ctrl.confirmSession);
 router.post("/:id/cancel", ctrl.cancelSession);

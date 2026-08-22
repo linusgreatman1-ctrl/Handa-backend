@@ -151,6 +151,32 @@ function attachLiveSocket(httpServer) {
       socket.to(`shop-session:${sessionId}`).emit("webrtc:peer-left", { sessionId, fromSocketId: socket.id });
     });
 
+    // ── Parallel signaling relay for the post-delivery 3-way (rider +
+    // shopper + customer) confirm call — kept on its own event namespace
+    // rather than reusing webrtc:* so it can never collide with the
+    // 2-party shopping-call state a session may have just torn down.
+    // Same relay-only shape: this server only exchanges SDP/ICE, actual
+    // audio goes directly peer-to-peer. ──
+    ["confirmcall:offer", "confirmcall:answer", "confirmcall:ice-candidate"].forEach((evt) => {
+      socket.on(evt, (payload) => {
+        if (!payload || !payload.toSocketId) return;
+        io.to(payload.toSocketId).emit(evt, Object.assign({}, payload, { fromSocketId: socket.id }));
+      });
+    });
+    socket.on("confirmcall:join", ({ sessionId }) => {
+      if (!sessionId) return;
+      const room = `shop-session:${sessionId}`;
+      if (!socket.rooms.has(room)) return;
+      const members = io.sockets.adapter.rooms.get(room);
+      const existing = members ? [...members].filter((id) => id !== socket.id) : [];
+      socket.emit("confirmcall:existing-peers", { sessionId, socketIds: existing });
+      socket.to(room).emit("confirmcall:peer-joined", { sessionId, fromSocketId: socket.id });
+    });
+    socket.on("confirmcall:leave", ({ sessionId }) => {
+      if (!sessionId) return;
+      socket.to(`shop-session:${sessionId}`).emit("confirmcall:peer-left", { sessionId, fromSocketId: socket.id });
+    });
+
     // "disconnecting" (not "disconnect") fires while socket.rooms is still
     // populated, so a dropped tab/network still tells the other side of
     // any live call to tear down instead of hanging on a dead peer.
@@ -159,6 +185,7 @@ function attachLiveSocket(httpServer) {
         if (room.startsWith("shop-session:")) {
           const sessionId = room.slice("shop-session:".length);
           socket.to(room).emit("webrtc:peer-left", { sessionId, fromSocketId: socket.id });
+          socket.to(room).emit("confirmcall:peer-left", { sessionId, fromSocketId: socket.id });
         }
       }
     });
