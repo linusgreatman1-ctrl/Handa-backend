@@ -82,7 +82,22 @@ async function createBooking(req, res, next) {
       },
     });
 
-    req.app.get("io")?.to(`vendor:${vendorId}`).emit("booking:new", { bookingId: booking.id, vendorId });
+    // This previously only emitted a raw "booking:new" socket event to the
+    // vendor:{vendorId} room -- nothing in the frontend ever listened for
+    // it, and it never wrote a real Notification row, so a vendor had no
+    // way to learn a new booking request existed (no bell badge, nothing
+    // in their notification list, not even after refreshing). notify()
+    // is the same real mechanism every other booking-lifecycle event
+    // (accept/decline/complete/dispute) already uses.
+    const label = type === "EVENT_PLANNING" ? "event planning" : "home cook";
+    await notify(
+      req.app.get("io"),
+      vendor.userId,
+      "ORDER_UPDATE",
+      "New booking request",
+      `${req.user.name || "A customer"} sent you a ${label} booking request for ₦${Math.round(totalKobo / 100).toLocaleString()}.`,
+      { bookingId: booking.id }
+    );
     res.status(201).json({ booking });
   } catch (err) {
     next(err);
