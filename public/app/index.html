@@ -1410,10 +1410,10 @@ async function loadRealCatalog(){
       return o;
     }
     var newEp = byType.EVENT_PLANNER.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg||4.5, tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
     var newCooks = byType.HOME_COOK.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg||4.5, rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         // Real menu items (id = actual backend MenuItem id) — cookBkRender's
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
@@ -1424,7 +1424,7 @@ async function loadRealCatalog(){
 
     var shopperRes = await api('/shoppers?pageSize=50').catch(function(){ return {shoppers:[]}; });
     var newShoppers = (shopperRes.shoppers||[]).map(function(s){
-      return { id:s.id, nm:(s.user&&s.user.name)||'Shopper', em:'👤', market:s.market||'', dist:'1.0 km', rt:s.ratingAvg||4.5, rv:s.ratingCount||0, available:s.isOnline, ph:(s.user&&s.user.phone)||'', specialties:s.specialties||[] };
+      return { id:s.id, nm:(s.user&&s.user.name)||'Shopper', em:'👤', market:s.market||'', dist:'1.0 km', rt:s.ratingAvg?s.ratingAvg.toFixed(1):'New', rv:s.ratingCount||0, available:s.isOnline, ph:(s.user&&s.user.phone)||'', specialties:s.specialties||[] };
     });
 
     D.ep = newEp; D.cooks = newCooks; D.shoppers = newShoppers;
@@ -5324,7 +5324,7 @@ function showProfileSection(s){
   if(s==='payment-methods'){showAddFundsModal();return;}
   if(s==='withdraw'){openWithdraw('customer');return;}
   if(s==='notifications'){_showNotifPanel();return;}
-  if(s==='favourites'){_showFavPanel();return;}
+  if(s==='favourites'){openFavouritesModal();return;}
   if(s==='help-support'){_showHelpPanel();return;}
 }
 var _notifKeys=['orderUpdates','promotions','riderAlerts','newFeatures'];
@@ -5346,20 +5346,6 @@ async function _showNotifPanel(){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x1F514; Notifications</div></div>'
     +rows
     +'</div>');
-}
-function _showFavPanel(){
-  var favs=["Mama\'s Kitchen","Sweet Creations","Suya Palace"];
-  var rows=favs.map(function(r){
-    return '<div style="display:flex;justify-content:space-between;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;">'
-      +'<span style="font-size:13px;color:#F2EDE8;">'+r+'</span>'
-      +'<button onclick="this.parentElement.remove();toast(\'Removed\')" style="background:transparent;border:none;color:#E8392E;cursor:pointer;font-size:16px;">&#x2715;</button>'
-      +'</div>';
-  }).join('');
-  showProcedureModal('<div style="padding:0 0 20px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
-    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
-    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x2764;&#xFE0F; Favourites</div></div>'
-    +rows+'</div>');
 }
 function _showHelpPanel(){
   showProcedureModal('<div style="padding:0 0 20px;">'

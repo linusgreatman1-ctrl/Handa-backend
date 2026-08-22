@@ -309,7 +309,7 @@ async function matchSession(req, res, next) {
   }
 }
 
-function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall } = {}) {
+function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall, onSuccess } = {}) {
   return async (req, res, next) => {
     try {
       const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -332,6 +332,13 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRide
 
       const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: toStatus } });
       req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: toStatus });
+      if (onSuccess) {
+        try {
+          await onSuccess(updated, req);
+        } catch (e) {
+          console.error("[shop-session] transition onSuccess failed:", e);
+        }
+      }
       res.json({ session: updated });
     } catch (err) {
       next(err);
@@ -570,6 +577,14 @@ const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
   requireRider: true,
   codeField: "deliveryCode",
   codeErrorMessage: "Incorrect delivery code. Ask the customer for their code.",
+  // RiderProfile.deliveries was previously a display-only field nothing
+  // ever incremented (always whatever the seed set it to) -- this is the
+  // real completion event, so it's the real place to count one.
+  onSuccess: async (session, req) => {
+    if (req.user.riderProfile) {
+      await prisma.riderProfile.update({ where: { id: req.user.riderProfile.id }, data: { deliveries: { increment: 1 } } });
+    }
+  },
 });
 
 // The shopper taps this once the rider has arrived at their location and

@@ -126,7 +126,13 @@ async function main() {
     email: "rider@example.com",
     phone: "+2348010000008",
     role: "RIDER",
-    extra: { riderProfile: { create: { vehicleType: "Motorcycle", plateNumber: "LG-234-NK", isOnline: true, isVerified: true, ratingAvg: 4.9, ratingCount: 340, deliveries: 1240, acceptRate: 94 } } },
+    // No hardcoded fake stats (was ratingAvg:4.9/ratingCount:340/deliveries:1240
+    // with zero real Rating/ShopSession rows behind them -- clicking into
+    // "reviews" always showed "No reviews yet" despite the impressive
+    // number). ratingAvg/ratingCount are real aggregates recomputed by
+    // ratings.controller.js on every new Rating; deliveries is really
+    // incremented by shopSessions.controller.js's markDelivered.
+    extra: { riderProfile: { create: { vehicleType: "Motorcycle", plateNumber: "LG-234-NK", isOnline: true, isVerified: true } } },
   });
 
   await makeUser({
