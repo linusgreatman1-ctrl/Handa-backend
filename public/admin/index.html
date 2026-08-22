@@ -440,13 +440,19 @@ async function setUserStatusThenReload(userId, status, reload) {
 // either way.
 function statusToggleBtn(u, reloadFnCall, backFnCall) {
   if (u.status === 'SUSPENDED') {
+    // The account name is passed via a data-* attribute (escHtml-escaped),
+    // not as a JSON.stringify'd inline onclick argument -- a double-quoted
+    // JSON string embedded inside this double-quoted onclick attribute
+    // breaks (and silently mis-parses into garbage attributes) the moment
+    // the name contains a space, which is true of virtually every real name.
     return '<span style="position:relative;display:inline-block">'
-      + '<button class="action-btn" onclick="toggleSuspendedMenu(this,\'' + u.id + '\',' + JSON.stringify(u.name || 'this account') + ',function(){' + reloadFnCall + '},function(){' + (backFnCall || reloadFnCall) + '})">Suspended &#9662;</button>'
+      + '<button class="action-btn" data-name="' + escHtml(u.name || 'this account') + '" onclick="toggleSuspendedMenu(this,\'' + u.id + '\',function(){' + reloadFnCall + '},function(){' + (backFnCall || reloadFnCall) + '})">Suspended &#9662;</button>'
       + '</span>';
   }
   return '<button class="action-btn" onclick="setUserStatusThenReload(\'' + u.id + '\',\'SUSPENDED\',function(){' + reloadFnCall + '})">Suspend</button>';
 }
-function toggleSuspendedMenu(btnEl, id, name, reload, goBack) {
+function toggleSuspendedMenu(btnEl, id, reload, goBack) {
+  var name = btnEl.dataset.name || 'this account';
   document.querySelectorAll('.suspend-menu').forEach(function (m) { m.remove(); });
   var wrap = btnEl.parentElement;
   var menu = document.createElement('div');
