@@ -3,6 +3,13 @@ const wallet = require("./wallet.service");
 
 const AUTO_RELEASE_HOURS = Number(process.env.ESCROW_AUTO_RELEASE_HOURS || 24);
 
+// Platform's cut, taken automatically out of a Shop-For-Me shopper's or
+// rider's payout the moment their hold releases — not a separate weekly
+// invoice like vendor CommissionPeriod, a real-time deduction. VENDOR
+// (booking) holds aren't listed here; that commission is deducted
+// separately at booking completion (bookings.controller.js), not here.
+const PLATFORM_COMMISSION_RATES = { SHOPPER: 0.2, RIDER: 0.2 };
+
 // Every booking/session is paid into escrow up front (real money already
 // collected from the customer via Paystack — see payments.service) and
 // only credited to the vendor/rider/shopper's withdrawable Wallet once
@@ -35,13 +42,34 @@ async function releaseHold(holdId, { reference, description } = {}) {
     if (hold.status !== "HELD") throw Object.assign(new Error(`Escrow hold is already ${hold.status.toLowerCase()}.`), { status: 409 });
 
     if (hold.payeeId && hold.payeeRole !== "PLATFORM") {
+      const commissionRate = PLATFORM_COMMISSION_RATES[hold.payeeRole] || 0;
+      const commissionKobo = Math.round(hold.amountKobo * commissionRate);
+      const payoutKobo = hold.amountKobo - commissionKobo;
+
       await wallet.creditWallet(
         hold.payeeId,
-        hold.amountKobo,
+        payoutKobo,
         "PAYOUT",
         { contextType: hold.contextType, contextId: hold.bookingId || hold.shopSessionId, reference, description },
         tx
       );
+
+      if (commissionKobo > 0) {
+        await tx.escrowHold.create({
+          data: {
+            contextType: hold.contextType,
+            bookingId: hold.bookingId,
+            shopSessionId: hold.shopSessionId,
+            payerId: hold.payerId,
+            payeeId: null,
+            payeeRole: "PLATFORM",
+            amountKobo: commissionKobo,
+            status: "RELEASED",
+            releasedAt: new Date(),
+            autoReleaseAt: null,
+          },
+        });
+      }
     }
 
     return tx.escrowHold.update({ where: { id: holdId }, data: { status: "RELEASED", releasedAt: new Date() } });

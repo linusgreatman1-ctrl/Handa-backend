@@ -2925,6 +2925,10 @@ function sfmSocketListeners(){
     if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
     promptCallTopUp(p.topUpRequiredKobo);
   });
+  _socket.on('shop-session:rider-fee-topup-required',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    promptRiderFeeTopUp(p.topUpRequiredKobo,p.distanceKm);
+  });
 }
 
 // Your live call ran past the tier you already paid for — this is the
@@ -2945,6 +2949,29 @@ function promptCallTopUp(topUpRequiredKobo){
         showToast('Complete payment in the new tab to continue.','success');
       }else{
         showToast('Call fee top-up paid — continuing to packaging.','success');
+      }
+    }catch(err){
+      showToast(err.message||'Could not process the top-up payment','warning');
+    }
+  });
+}
+
+// The real distance-based rider fee (see utils/distanceFee.js) came out
+// higher than the flat estimate collected at deposit time — same
+// stays-put-until-paid pattern as promptCallTopUp.
+function promptRiderFeeTopUp(topUpRequiredKobo,distanceKm){
+  showToast('Rider fee for this delivery ('+(distanceKm||'?')+'km) is '+N(topUpRequiredKobo/100)+' more than deposited — pay the difference to find a rider','warning');
+  openEscrowModal(topUpRequiredKobo/100, async function(){
+    try{
+      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
+      var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-rider-fee-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
+      if(res.session)window._sfmSession=res.session;
+      if(res.authorizationUrl){
+        window.open(res.authorizationUrl,'_blank');
+        showToast('Complete payment in the new tab to continue.','success');
+      }else{
+        showToast('Rider fee topped up — your shopper can now search for a rider.','success');
       }
     }catch(err){
       showToast(err.message||'Could not process the top-up payment','warning');
@@ -3578,13 +3605,13 @@ function renderShopperPhase(phase) {
 
   // PHASE G: Seller Payout — shopper allocates escrow to registered market sellers
   } else if (phase === 'sellerPayout') {
-    const sellers = window._registeredSellers || [];
-    const totalBudget = 2500;
+    const ss=window._shopperSession||{};
+    const totalBudget = Math.round(((ss.depositKobo||0)-(ss.sessionFeeKobo||0)-(ss.riderFeeKobo||0))/100);
     body.innerHTML = `<div class="fi" style="padding:20px 18px 100px;">
       <div style="text-align:center;margin-bottom:20px;">
         <div style="font-size:52px;margin-bottom:10px;">🏪</div>
         <div class="h2" style="margin-bottom:6px;">Pay Your Sellers</div>
-        <p style="color:#9A9390;font-size:13px;line-height:1.5;">Select the market women you bought from and enter the amount for each. CityChef escrow will transfer to all of them at once.</p>
+        <p style="color:#9A9390;font-size:13px;line-height:1.5;">Select the market women you bought from and enter the amount for each. Handa escrow will transfer to all of them at once.</p>
       </div>
 
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:14px;padding:13px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;">
@@ -3598,25 +3625,12 @@ function renderShopperPhase(phase) {
         </div>
       </div>
 
-      <div id="sp-seller-list" style="margin-bottom:14px;"></div>
+      <div id="sp-seller-list" style="margin-bottom:14px;"><div style="text-align:center;padding:20px;color:#9A9390;font-size:13px;">Loading your sellers…</div></div>
 
-      ${sellers.length === 0 ? `
-        <div style="background:rgba(245,166,35,0.12);border:1.5px solid rgba(184,120,0,.25);border-radius:13px;padding:14px 16px;margin-bottom:14px;text-align:center;">
-          <div style="font-weight:700;font-size:13px;color:#F5A623;margin-bottom:6px;">No Sellers Registered Yet</div>
-          <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Register your regular market women in your profile so CityChef can pay them directly.</div>
-          <button class="btn btn-outline" style="font-size:12px;padding:8px 16px;border-color:#F5A623;color:#F5A623;" onclick="shopperNav('profile');showToast('Tap My Sellers to register market women','info')">👉 Register Sellers in Profile</button>
-        </div>` : `
-        <button class="btn btn-outline" style="width:100%;margin-bottom:14px;border-style:dashed;font-size:13px;" onclick="openAddSellerToPayoutModal()">+ Add Another Seller to This Payout</button>`}
+      <div id="sp-seller-actions"></div>
 
       <div id="sp-balance-warning" style="display:none;background:rgba(232,57,46,0.10);border:1.5px solid rgba(204,31,54,.25);border-radius:12px;padding:11px 14px;margin-bottom:14px;">
         <div style="font-size:12px;color:#E8392E;font-weight:700;" id="sp-balance-msg"></div>
-      </div>
-
-      <div style="background:#1C1C1C;border-radius:13px;padding:12px 14px;margin-bottom:18px;">
-        <div style="font-size:12px;color:#9A9390;line-height:1.7;">
-          📱 Your session fee <strong style="color:#F5A623;">₦2,400</strong> will be credited to your app balance once ${shopperCustomerName()} confirms delivery.<br>
-          ⏳ Rider delivery fee released when customer confirms receipt.
-        </div>
       </div>
 
       <button class="btn btn-primary" id="sp-pay-btn" style="width:100%;opacity:.4;pointer-events:none;" onclick="confirmSellerPayouts()">
@@ -3624,8 +3638,14 @@ function renderShopperPhase(phase) {
       </button>
       <p style="font-size:11px;color:#9A9390;text-align:center;margin-top:8px;">Instant bank transfers. Each seller is notified immediately by SMS.</p>
     </div>`;
-    window._spPayoutRows = sellers.map(s => ({ ...s, amount: '', selected: false }));
-    renderSellerPayoutList();
+    loadRegisteredSellers().then(function(sellers){
+      window._spPayoutRows = (sellers||[]).map(s => ({ ...s, amount: '', selected: false }));
+      var actionsEl=document.getElementById('sp-seller-actions');
+      if(actionsEl)actionsEl.innerHTML=(!sellers||!sellers.length)
+        ? '<div style="background:rgba(245,166,35,0.12);border:1.5px solid rgba(184,120,0,.25);border-radius:13px;padding:14px 16px;margin-bottom:14px;text-align:center;"><div style="font-weight:700;font-size:13px;color:#F5A623;margin-bottom:6px;">No Sellers Registered Yet</div><div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Register the market seller you bought from — you can do this right here, no need to go back to your profile.</div><button class="btn btn-outline" style="font-size:12px;padding:8px 16px;border-color:#F5A623;color:#F5A623;" onclick="window._afterSellerSave=\'payout\';openAddSellerModal()">+ Add Seller &amp; Pay</button></div>'
+        : '<button class="btn btn-outline" style="width:100%;margin-bottom:14px;border-style:dashed;font-size:13px;" onclick="window._afterSellerSave=\'payout\';openAddSellerModal()">+ Add Another Seller &amp; Pay</button>';
+      renderSellerPayoutList();
+    });
 
   // PHASE G2: Payments sent — session complete
   } else if (phase === 'escrowReleased') {
@@ -3793,6 +3813,14 @@ async function shopperCallFindRider(){
     try{
       var res = await api('/shop-sessions/'+window._shopperSession.id+'/find-rider',{method:'POST'});
       if(res.session) window._shopperSession = res.session;
+      if(res.topUpRequiredKobo>0){
+        // Backend also pushes shop-session:rider-fee-topup-required to the
+        // customer in real time (see the socket listener near
+        // shop-session:call-topup-required) — this toast just lets the
+        // shopper themselves know why nothing happened yet.
+        showToast&&showToast('The real rider fee for this distance ('+(res.distanceKm||'?')+'km) is more than what was deposited — waiting on the customer to top up before a rider can be found.','warning');
+        return;
+      }
     }
     catch(err){ showToast&&showToast(err.message||'Could not search for a rider','warning'); return; }
   }
@@ -3992,6 +4020,24 @@ document.addEventListener('click', function(e){
 });
 
 
+// Real seller registry — GET/POST/DELETE /shoppers/me/sellers were already
+// fully built on the backend (bank-account resolution via Paystack, real
+// ownership checks) but the frontend never called them, using a plain
+// in-memory array instead. window._registeredSellers is kept as the same
+// shape the existing render functions already expect (s.name/market/bank/
+// acct/acctname/phone) — just populated from the real API response now,
+// with s.id/s.bankCode added for the real payout call.
+async function loadRegisteredSellers(){
+  try{
+    var res=await api('/shoppers/me/sellers');
+    window._registeredSellers=(res.sellers||[]).map(function(s){
+      return {id:s.id,name:s.name,phone:s.phone,market:s.market||'',bank:s.bankName,bankCode:s.bankCode,acct:s.bankAccountNumber,acctname:s.bankAccountName};
+    });
+  }catch(err){
+    window._registeredSellers=window._registeredSellers||[];
+  }
+  return window._registeredSellers;
+}
 function renderSellerRegistryList() {
   const list = document.getElementById('seller-registry-list'); if(!list) return;
   const sellers = window._registeredSellers || [];
@@ -4015,9 +4061,11 @@ function renderSellerRegistryList() {
 }
 
 
-function openAddSellerModal(editIdx = null) {
+async function openAddSellerModal(editIdx = null) {
   const existing = editIdx !== null ? (window._registeredSellers[editIdx] || {}) : {};
   const isEdit = editIdx !== null;
+  var banks=window._bankListCache;
+  if(!banks){ try{ var bRes=await api('/users/banks'); banks=window._bankListCache=bRes.banks||[]; }catch(e){ banks=[]; } }
   let m = document.getElementById('add-seller-modal');
   if(!m){
     m = document.createElement('div');
@@ -4025,6 +4073,9 @@ function openAddSellerModal(editIdx = null) {
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
     document.body.appendChild(m);
   }
+  var bankOpts=(banks&&banks.length)
+    ? '<option value="">Select Bank</option>'+banks.map(function(b){return '<option value="'+b.code+'"'+(existing.bankCode===b.code?' selected':'')+'>'+b.name+'</option>';}).join('')
+    : '';
   m.innerHTML = `
     <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 20px 44px;max-height:90vh;overflow-y:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
@@ -4032,15 +4083,12 @@ function openAddSellerModal(editIdx = null) {
         <button onclick="const m=document.getElementById('add-seller-modal');if(m)m.style.display='none';" style="background:#1C1C1C;border:none;border-radius:50%;width:34px;height:34px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">×</button>
       </div>
       <div style="font-size:12px;color:#9A9390;margin-bottom:18px;background:rgba(59,159,232,0.10);border-radius:10px;padding:10px 12px;">
-        Register this market woman so CityChef can pay her directly after your shopping sessions. She will receive an instant bank transfer + SMS confirmation.
+        Register this market woman so Handa can pay her directly after your shopping sessions. She will receive an instant bank transfer.
       </div>
       ${[
         ['Popular Name (Shop Name)','text','seller-name','e.g. Mama Nkechi, Iya Tomato...', existing.name||''],
         ['Phone Number','tel','seller-phone','e.g. 08033001122', existing.phone||''],
         ['Market Name','text','seller-market','e.g. Mile 12, Agege, Oyingbo...', existing.market||''],
-        ['Bank Name','text','seller-bank','e.g. Opay, Palmpay, GTBank...', existing.bank||''],
-        ['Account Number','number','seller-acct','10-digit account number', existing.acct||''],
-        ['Account Name','text','seller-acctname','Name on bank account', existing.acctname||''],
       ].map(([lbl,type,id,ph,val])=>`
         <div style="margin-bottom:14px;">
           <label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">${lbl}</label>
@@ -4048,6 +4096,13 @@ function openAddSellerModal(editIdx = null) {
             style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;"
             onfocus="this.style.borderColor='#E8392E'" onblur="this.style.borderColor='#2A2850'">
         </div>`).join('')}
+      ${bankOpts?('<div style="margin-bottom:14px;"><label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Bank</label><select id="seller-bankcode" style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">'+bankOpts+'</select></div>')
+        :'<div style="background:rgba(232,57,46,.08);border:1px solid rgba(232,57,46,.25);border-radius:11px;padding:11px;margin-bottom:14px;font-size:12px;color:#E8392E;">Bank list is unavailable right now — try again later to register a seller.</div>'}
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Account Number</label>
+        <input type="text" id="seller-acct" placeholder="10-digit account number" value="${existing.acct||''}" maxlength="10"
+          style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">
+      </div>
       <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="saveSeller(${isEdit ? editIdx : 'null'})">
         ${isEdit ? '✅ Save Changes' : '+ Register Seller'}
       </button>
@@ -4056,39 +4111,39 @@ function openAddSellerModal(editIdx = null) {
 }
 
 
-function saveSeller(editIdx) {
+async function saveSeller(editIdx) {
   const name  = document.getElementById('seller-name')?.value.trim();
   const phone = document.getElementById('seller-phone')?.value.trim();
   const market= document.getElementById('seller-market')?.value.trim();
-  const bank  = document.getElementById('seller-bank')?.value.trim();
+  const bankCode = document.getElementById('seller-bankcode')?.value;
+  const bankSel = document.getElementById('seller-bankcode');
+  const bankName = bankSel ? bankSel.options[bankSel.selectedIndex].text : '';
   const acct  = document.getElementById('seller-acct')?.value.trim();
-  const acctname = document.getElementById('seller-acctname')?.value.trim();
-  if(!name || !phone || !market || !bank || !acct || !acctname) { showToast('Please fill all fields','info'); return; }
+  if(!name || !phone || !bankCode || !acct) { showToast('Please fill all fields','info'); return; }
   if(acct.length < 10) { showToast('Account number must be at least 10 digits','info'); return; }
-  const seller = { name, phone, market, bank, acct, acctname };
-  window._registeredSellers = window._registeredSellers || [];
-  if(editIdx !== null && editIdx !== 'null' && editIdx !== undefined) {
-    window._registeredSellers[Number(editIdx)] = seller;
-    showToast(`${name} updated successfully ✅`, 'success');
-  } else {
-    window._registeredSellers.push(seller);
-    showToast(`${name} registered! CityChef can now pay her directly 🎉`, 'success');
+  try{
+    var res=await api('/shoppers/me/sellers',{method:'POST',body:JSON.stringify({name:name,phone:phone,market:market,bankName:bankName,bankCode:bankCode,accountNumber:acct})});
+    showToast&&showToast(name+' registered — '+res.seller.bankAccountName+' confirmed 🎉','success');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not register seller','warning');
+    return;
   }
-  // Close modal immediately
   const modal = document.getElementById('add-seller-modal');
   if(modal) modal.style.display = 'none';
-  // Refresh list
+  await loadRegisteredSellers();
   renderSellerRegistryList();
-  // If opened from payout flow, add new seller to payout rows and refresh
+  // If opened mid-payout, add the newly registered seller straight into
+  // this payout's selection instead of making the shopper go back and
+  // re-open the payout screen.
   if(window._afterSellerSave === 'payout') {
     window._afterSellerSave = null;
     const newSellers = window._registeredSellers || [];
-    const newSeller = newSellers[newSellers.length-1];
+    const newSeller = newSellers.find(function(s){return s.name===name && s.acct===acct;}) || newSellers[newSellers.length-1];
     if(newSeller) {
       window._spPayoutRows = window._spPayoutRows || [];
       window._spPayoutRows.push({...newSeller, amount:'', selected:true});
       renderSellerPayoutList();
-      showToast(newSeller.name+' added to payout list 🎉','success');
+      showToast(newSeller.name+' added to this payout 🎉','success');
     }
   }
 }
@@ -4096,12 +4151,19 @@ function saveSeller(editIdx) {
 
 function editSellerModal(i) { openAddSellerModal(i); }
 
-function deleteSeller(i) {
+async function deleteSeller(i) {
   const sellers = window._registeredSellers;
-  const name = sellers[i]?.name || 'Seller';
-  sellers.splice(i, 1);
+  const seller = sellers[i];
+  if(!seller)return;
+  try{
+    await api('/shoppers/me/sellers/'+seller.id,{method:'DELETE'});
+    showToast&&showToast(seller.name+' removed from your sellers','info');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not remove seller','warning');
+    return;
+  }
+  await loadRegisteredSellers();
   renderSellerRegistryList();
-  showToast(`${name} removed from your sellers`,'info');
 }
 
 
@@ -4180,14 +4242,30 @@ function updatePayoutTotals() {
 }
 
 
-function confirmSellerPayouts() {
+async function confirmSellerPayouts() {
   const rows = window._spPayoutRows || [];
   const paid = rows.filter(r=>r.selected && parseFloat(r.amount)>0);
   if(paid.length===0){ showToast('Add at least one seller with an amount','info'); return; }
-  window._spPaidSellers = paid;
+  var ss=window._shopperSession;
+  if(!ss||!ss.id){showToast&&showToast('No active session found','warning');return;}
   const total = paid.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-  showToast(`Sending ₦${total.toLocaleString()} to ${paid.length} seller${paid.length>1?'s':''} 💸`,'success');
-  setTimeout(()=>renderShopperPhase('escrowReleased'), 1200);
+  var btn=document.getElementById('sp-pay-btn');if(btn){btn.disabled=true;btn.style.opacity='.6';}
+  try{
+    var allocations=paid.map(function(r){return {sellerId:r.id,amountKobo:Math.round(parseFloat(r.amount)*100)};});
+    var res=await api('/shop-sessions/'+ss.id+'/seller-payouts',{method:'POST',body:JSON.stringify({allocations:allocations})});
+    var failed=(res.results||[]).filter(function(r){return r.status==='FAILED';});
+    if(failed.length){
+      showToast&&showToast(failed.length+' payout(s) failed — '+(failed[0].error||'check the seller\'s bank details'),'warning');
+      if(btn){btn.disabled=false;btn.style.opacity='1';}
+      return;
+    }
+    window._spPaidSellers = paid;
+    showToast(`Sending ₦${total.toLocaleString()} to ${paid.length} seller${paid.length>1?'s':''} 💸`,'success');
+    renderShopperPhase('escrowReleased');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not send payouts','warning');
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+  }
 }
 
 // ── Generic modal helper (for seller picker) ──────────────────────────────────
@@ -5870,7 +5948,7 @@ function buildShopperProfile(){
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-weight:800;font-size:14px;cursor:pointer;">Sign Out</button>';
   body.innerHTML=html;
-  renderSellerRegistryList();
+  loadRegisteredSellers().then(renderSellerRegistryList);
   refreshKycSection('shopper');
 }
 

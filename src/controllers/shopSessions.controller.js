@@ -6,6 +6,7 @@ const orderFlow = require("../services/orderFlow.service");
 const { generateReference } = require("../utils/reference");
 const { generateOtpCode } = require("../utils/otp");
 const { notify } = require("../services/notifications.service");
+const distanceFee = require("../utils/distanceFee");
 
 const SEARCHING_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -198,6 +199,24 @@ async function approveItem(req, res, next) {
     if (!item || item.session.customerId !== req.user.id) return res.status(404).json({ error: "Item not found." });
     if (!item.priceKobo) return res.status(400).json({ error: "This item has not been priced by the shopper yet." });
 
+    // The deposit must cover items + the shopper fee + the rider fee
+    // together — approving an item that would push the items total past
+    // what's actually left over is refused outright rather than silently
+    // allowed, matching the same "stays pending until funded" principle as
+    // the call-duration and rider-fee top-ups.
+    const currentApproved = await prisma.shopSessionItem.aggregate({
+      where: { sessionId: item.sessionId, approved: true },
+      _sum: { priceKobo: true },
+    });
+    const projectedItemsTotal = (currentApproved._sum.priceKobo || 0) + item.priceKobo;
+    const availableForItems = item.session.depositKobo - item.session.sessionFeeKobo - item.session.riderFeeKobo;
+    if (projectedItemsTotal > availableForItems) {
+      return res.status(400).json({
+        error: "Your escrow balance is not enough to cover this item alongside the shopper and rider fees. Please top up your escrow to continue.",
+        shortfallKobo: projectedItemsTotal - availableForItems,
+      });
+    }
+
     await prisma.shopSessionItem.update({ where: { id: item.id }, data: { approved: true, approvedAt: new Date() } });
     const approvedTotal = await prisma.shopSessionItem.aggregate({
       where: { sessionId: item.sessionId, approved: true },
@@ -235,7 +254,12 @@ async function paySession(req, res, next) {
     if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
 
     const budgetKobo = Math.max(0, parseInt(req.body.budgetKobo) || 0);
-    const amountKobo = session.sessionFeeKobo + budgetKobo;
+    // Collect for the shopper fee AND the rider fee up front (the fixed
+    // estimate set at createSession — findRider later recomputes a real
+    // distance-based fee and, if it's higher, blocks on a top-up rather
+    // than silently under-collecting), plus whatever items budget the
+    // customer sets.
+    const amountKobo = session.sessionFeeKobo + session.riderFeeKobo + budgetKobo;
 
     if (req.body.paymentMethod === "WALLET") {
       await prisma.$transaction(async (tx) => {
@@ -400,10 +424,99 @@ async function payCallTopUp(req, res, next) {
     next(err);
   }
 }
-const findRider = (req, res, next) => {
-  req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
-  return transitionHandler(["PACKAGING"], "FINDING_RIDER", { requireShopper: true })(req, res, next);
-};
+// The rider fee is computed right here — "immediately the shopper starts
+// searching for a rider" — using the shopper's and customer's registered
+// state/LGA (see utils/distanceFee.js for how, given no Maps API key is
+// configured yet). Riders then see this real number on GET
+// /shop-sessions?as=available before deciding to accept. If the real
+// distance-based fee is higher than the flat estimate collected at
+// createSession, the session stays in PACKAGING and the customer must pay
+// the difference via POST /:id/pay-rider-fee-topup first — same
+// stays-put-until-paid pattern as startPackaging's call-duration top-up.
+async function findRider(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({
+      where: { id: req.params.id },
+      include: {
+        shopper: { include: { user: { select: { state: true, lga: true } } } },
+        customer: { select: { state: true, lga: true } },
+      },
+    });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    if (!req.user.shopperProfile || session.shopperId !== req.user.shopperProfile.id) {
+      return res.status(403).json({ error: "You are not the shopper on this session." });
+    }
+    if (session.status !== "PACKAGING") {
+      return res.status(409).json({ error: `Session must be in one of [PACKAGING] (currently ${session.status}).` });
+    }
+
+    const pickup = session.shopper?.user || {};
+    const dropoff = session.customer || {};
+    const { feeKobo, distanceKm } = distanceFee.estimateRiderFeeKobo(pickup, dropoff);
+    const topUpRequiredKobo = Math.max(0, feeKobo - session.riderFeeKobo);
+
+    if (topUpRequiredKobo > 0) {
+      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:rider-fee-topup-required", { sessionId: session.id, topUpRequiredKobo, distanceKm });
+      return res.json({ session, topUpRequiredKobo, distanceKm });
+    }
+
+    const updated = await prisma.shopSession.update({
+      where: { id: session.id },
+      data: { status: "FINDING_RIDER" },
+    });
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "FINDING_RIDER" });
+    req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
+    res.json({ session: updated, topUpRequiredKobo: 0, distanceKm });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Charges exactly the rider-fee shortfall flagged by findRider, computed
+// fresh (never trusts a client-supplied amount) — mirrors payCallTopUp's
+// WALLET-vs-Paystack branching exactly. On success the session moves
+// PACKAGING -> FINDING_RIDER for real.
+async function payRiderFeeTopUp(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({
+      where: { id: req.params.id },
+      include: {
+        shopper: { include: { user: { select: { state: true, lga: true } } } },
+        customer: { select: { state: true, lga: true } },
+      },
+    });
+    if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
+    if (session.status !== "PACKAGING") return res.status(409).json({ error: "No rider-fee top-up is currently due." });
+
+    const pickup = session.shopper?.user || {};
+    const dropoff = session.customer || {};
+    const { feeKobo } = distanceFee.estimateRiderFeeKobo(pickup, dropoff);
+    const topUpKobo = feeKobo - session.riderFeeKobo;
+    if (topUpKobo <= 0) return res.status(409).json({ error: "No rider-fee top-up is currently due." });
+
+    if (req.body.paymentMethod === "WALLET") {
+      await prisma.$transaction(async (tx) => {
+        await walletSvc.debitWallet(req.user.id, topUpKobo, "ESCROW_HOLD", { contextType: "SHOP_SESSION", contextId: session.id, description: "Shop-For-Me rider fee top-up" }, tx);
+      });
+      const updated = await orderFlow.confirmRiderFeeTopUp(session.id, topUpKobo);
+      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "FINDING_RIDER" });
+      req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
+      return res.json({ session: updated, paid: true });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/transfer/USSD." });
+    const reference = generateReference("TOPUP");
+    const payment = await paystack.initializeTransaction({
+      email: req.user.email,
+      amountKobo: topUpKobo,
+      reference,
+      metadata: { purpose: "SHOP_SESSION_RIDER_FEE_TOPUP", sessionId: session.id },
+    });
+    res.json({ paid: false, authorizationUrl: payment.authorization_url, reference });
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function acceptDelivery(req, res, next) {
   try {
@@ -489,10 +602,10 @@ async function confirmSellerPayouts(req, res, next) {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session || session.shopperId !== req.user.shopperProfile.id) return res.status(404).json({ error: "Shop session not found." });
 
-    const { allocations } = req.body; // [{ sellerId, amountKobo, bankCode }]
+    const { allocations } = req.body; // [{ sellerId, amountKobo }] — bankCode now comes from the seller's own saved record, not re-sent by the client
     if (!Array.isArray(allocations) || allocations.length === 0) return res.status(400).json({ error: "At least one payout allocation is required." });
 
-    const budgetKobo = session.depositKobo - session.sessionFeeKobo;
+    const budgetKobo = session.depositKobo - session.sessionFeeKobo - session.riderFeeKobo;
     const existingPaid = await prisma.sellerPayout.aggregate({
       where: { sessionId: session.id, status: { in: ["PENDING", "PROCESSING", "PAID"] } },
       _sum: { amountKobo: true },
@@ -514,7 +627,12 @@ async function confirmSellerPayouts(req, res, next) {
         data: { sessionId: session.id, sellerId: seller.id, amountKobo: alloc.amountKobo, reference },
       });
       try {
-        const recipient = await paystack.createTransferRecipient({ name: seller.bankAccountName, accountNumber: seller.bankAccountNumber, bankCode: alloc.bankCode });
+        if (!seller.bankCode) {
+          results.push({ sellerId: seller.id, status: "FAILED", error: "This seller has no bank code on file — re-register them with a bank selected from the list." });
+          await prisma.sellerPayout.update({ where: { id: payout.id }, data: { status: "FAILED" } });
+          continue;
+        }
+        const recipient = await paystack.createTransferRecipient({ name: seller.bankAccountName, accountNumber: seller.bankAccountNumber, bankCode: seller.bankCode });
         const transfer = await paystack.initiateTransfer({ amountKobo: alloc.amountKobo, recipientCode: recipient.recipient_code, reason: "Handa market seller payout", reference });
         await prisma.sellerPayout.update({ where: { id: payout.id }, data: { status: "PROCESSING", reference: transfer.transfer_code } });
         results.push({ sellerId: seller.id, status: "PROCESSING" });
@@ -544,6 +662,7 @@ module.exports = {
   startPackaging,
   payCallTopUp,
   findRider,
+  payRiderFeeTopUp,
   acceptDelivery,
   markOutForDelivery,
   markDelivered,

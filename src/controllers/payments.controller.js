@@ -65,6 +65,10 @@ async function applyVerifiedPayment(data) {
     await orderFlow.confirmCallTopUp(data.metadata.sessionId, data.amount, data.reference);
     return { purpose, sessionId: data.metadata.sessionId };
   }
+  if (purpose === "SHOP_SESSION_RIDER_FEE_TOPUP") {
+    await orderFlow.confirmRiderFeeTopUp(data.metadata.sessionId, data.amount);
+    return { purpose, sessionId: data.metadata.sessionId };
+  }
   if (purpose === "COMMISSION_PAYMENT") {
     await orderFlow.confirmCommissionPayment(data.metadata.commissionPeriodId, data.reference);
     return { purpose };

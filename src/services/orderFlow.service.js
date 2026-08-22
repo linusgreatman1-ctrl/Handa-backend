@@ -94,6 +94,22 @@ async function confirmCallTopUp(sessionId, amountKobo, reference) {
   return updated;
 }
 
+// Applies a confirmed rider-fee top-up payment (see shopSessions.controller's
+// payRiderFeeTopUp) — increments both the rider fee and deposit by exactly
+// what was charged, and moves the session on to FINDING_RIDER now that the
+// real distance-based fee has been paid in full. No escrow hold is created
+// here — the rider's hold is only created once a real rider accepts (see
+// acceptDelivery), same as before this top-up flow existed.
+async function confirmRiderFeeTopUp(sessionId, amountKobo) {
+  const session = await prisma.shopSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw Object.assign(new Error("Shop session not found."), { status: 404 });
+
+  return prisma.shopSession.update({
+    where: { id: sessionId },
+    data: { riderFeeKobo: { increment: amountKobo }, depositKobo: { increment: amountKobo }, status: "FINDING_RIDER" },
+  });
+}
+
 async function confirmCommissionPayment(commissionPeriodId, reference) {
   const period = await prisma.commissionPeriod.findUnique({ where: { id: commissionPeriodId } });
   if (!period || period.status === "PAID") return period;
@@ -144,6 +160,7 @@ module.exports = {
   confirmShopSessionPayment,
   ensureShopperFeeHold,
   confirmCallTopUp,
+  confirmRiderFeeTopUp,
   confirmCommissionPayment,
   confirmFeatureBoostPayment,
   applyTransferWebhook,

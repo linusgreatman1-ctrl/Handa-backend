@@ -57,6 +57,7 @@ async function createSeller(req, res, next) {
         phone,
         market,
         bankName,
+        bankCode,
         bankAccountNumber: accountNumber,
         bankAccountName: resolved.account_name,
       },
