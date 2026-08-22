@@ -458,7 +458,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 
 <!-- ═══════════════════════════════════════════ HOME ═══ -->
 
-<div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="color:#9A9390">🔍</span><input style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="errandSearch(this.value)"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
+<div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><div id="e-home-header-extra" style="margin:6px 0 10px"></div><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="color:#9A9390">🔍</span><input style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="errandSearch(this.value)"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
 <div id="screen-liveshop" class="escreen flex-screen" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
       <div style="padding:52px 22px 14px;display:flex;align-items:center;gap:14px;flex-shrink:0;border-bottom:1px solid #2A2850;background:#111;">
         <button class="ibtn" onclick="eGo('home')">←</button>
@@ -501,6 +501,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <div>
         <h2 style="font-size:20px;font-weight:900;margin:0 0 2px" id="pname">Guest</h2>
         <p style="color:#9A9390;font-size:13px;margin:0 0 6px" id="pemail">Not signed in</p>
+        <div id="pcontact-extra" style="margin-bottom:6px"></div>
         <span class="bdg ba">Pro Member</span>
       </div>
     </div>
@@ -1359,10 +1360,10 @@ async function loadRealCatalog(){
       return o;
     }
     var newEp = byType.EVENT_PLANNER.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg||4.5, tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', promo:false, bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg||4.5, tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
     var newCooks = byType.HOME_COOK.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg||4.5, rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:false, bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg||4.5, rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         // Real menu items (id = actual backend MenuItem id) — cookBkRender's
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
@@ -1629,6 +1630,7 @@ function doWithdraw(){
 function openAddMenu(itemId){
   var editing=!!itemId;
   var item=editing?(window._myMenuItems||[]).find(function(i){return i.id===itemId;}):null;
+  window._emojiManuallySet=!!(item&&item.emoji); // editing an item that already has one counts as "already decided"
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
@@ -1636,13 +1638,13 @@ function openAddMenu(itemId){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(editing?'Edit':'Add')+' Menu Item</div></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Item Name *</label>'
-    +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
+    +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Price (&#x20a6;) *</label>'
     +'<input id="new-item-price" type="number" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="e.g. 2500" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Emoji (optional — or add a photo below)</label>'
-    +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="🍛" maxlength="4" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
+    +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="🍛" maxlength="4" oninput="window._emojiManuallySet=true" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Photo (optional)</label>'
     +'<div style="display:flex;align-items:center;gap:12px;">'
@@ -1652,6 +1654,31 @@ function openAddMenu(itemId){
     +'<button onclick="saveMenuItem('+(editing?'\''+itemId+'\'':'null')+')" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">'+(editing?'Save Changes':'Add to Menu')+'</button>'
     +'</div>'
   );
+}
+// Keyword -> emoji suggestions for a menu item's name, so a vendor typing
+// "Jollof Rice" or "Grilled Chicken" gets a sensible varied default instead
+// of always re-typing (or forgetting) the same one emoji. Never overwrites
+// an emoji the vendor already picked themselves.
+var FOOD_EMOJI_KEYWORDS=[
+  ['rice','🍚'],['jollof','🍚'],['chicken','🍗'],['soup','🍲'],['stew','🍲'],
+  ['fish','🐟'],['beans','🫘'],['plantain','🍌'],['bread','🍞'],['pepper','🌶️'],
+  ['meat','🥩'],['beef','🥩'],['suya','🍢'],['egg','🥚'],['cake','🍰'],
+  ['pastry','🥐'],['pie','🥧'],['drink','🥤'],['juice','🥤'],['smoothie','🥤'],
+  ['salad','🥗'],['pasta','🍝'],['spaghetti','🍝'],['noodle','🍜'],['pizza','🍕'],
+  ['yam','🍠'],['pepper soup','🌶️'],['pounded','🍚'],['moimoi','🫘'],['akara','🫘'],
+];
+function guessFoodEmoji(name){
+  var n=(name||'').toLowerCase();
+  for(var i=0;i<FOOD_EMOJI_KEYWORDS.length;i++){
+    if(n.indexOf(FOOD_EMOJI_KEYWORDS[i][0])>-1)return FOOD_EMOJI_KEYWORDS[i][1];
+  }
+  return n.trim()?'🍽️':'';
+}
+function autoSuggestFoodEmoji(name){
+  var el=document.getElementById('new-item-emoji');
+  if(!el||window._emojiManuallySet)return; // never clobber a manual choice
+  var guess=guessFoodEmoji(name);
+  if(guess)el.value=guess;
 }
 function previewNewItemPhoto(inp){
   var file=inp.files[0];if(!file)return;
@@ -2670,10 +2697,14 @@ function renderShopPhase(phase) {
         <div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;">Escrow</span><span class="badge b-green">🔓 Released</span></div>
       </div>
       <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${shopperName} (Shopper):</p>
-      <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSelectRatingStar('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
+      <textarea id="rate-shopper-comment" placeholder="Leave a review for ${shopperName} (optional)..." style="width:100%;min-height:60px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:10px 12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:8px;font-family:'DM Sans',sans-serif;"></textarea>
+      <button onclick="sfmSubmitRating('SHOPPER','rate-shopper-stars','rate-shopper-comment')" style="background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:10px;font-family:'DM Sans',sans-serif;">Submit Review</button>
       ${(done.shopper&&done.shopper.id) ? `<button data-label="${shopperName}" onclick="toggleFavourite('SHOPPER','${done.shopper.id}',this)" style="background:transparent;border:1.5px solid #2A2850;border-radius:20px;padding:6px 14px;color:#9A9390;font-size:12px;cursor:pointer;margin-bottom:18px;font-family:'DM Sans',sans-serif;">☆ Favourite ${shopperName}</button>` : ''}
       <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${riderName} (Rider):</p>
-      <div style="display:flex;gap:6px;margin-bottom:22px;" id="rate-rider-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSubmitRating('RIDER',${s},'rate-rider-stars')">⭐</span>`).join('')}</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-rider-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSelectRatingStar('RIDER',${s},'rate-rider-stars')">⭐</span>`).join('')}</div>
+      <textarea id="rate-rider-comment" placeholder="Leave a review for ${riderName} (optional)..." style="width:100%;min-height:60px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:10px 12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:8px;font-family:'DM Sans',sans-serif;"></textarea>
+      <button onclick="sfmSubmitRating('RIDER','rate-rider-stars','rate-rider-comment')" style="background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:22px;font-family:'DM Sans',sans-serif;">Submit Review</button>
       <button class="btn btn-primary" onclick="go('home')">Back to Home 🏠</button>
     </div>`;
   }
@@ -2786,7 +2817,8 @@ async function _rmSubmit(role,contextType,contextId){
   }catch(err){showToast&&showToast(err.message||'Could not submit review','warning');}
 }
 
-async function sfmSubmitRating(rateeRole, score, containerId){
+var _sfmPendingRatings={};
+function sfmSelectRatingStar(rateeRole, score, containerId){
   var container=document.getElementById(containerId);
   if(container){
     container.querySelectorAll('span').forEach(function(x){
@@ -2795,10 +2827,17 @@ async function sfmSubmitRating(rateeRole, score, containerId){
       x.style.transform=s===score?'scale(1.25)':'scale(1)';
     });
   }
+  _sfmPendingRatings[containerId]=score;
+}
+async function sfmSubmitRating(rateeRole, containerId, commentId){
+  var score=_sfmPendingRatings[containerId];
+  if(!score){showToast&&showToast('Tap a star rating first','warning');return;}
+  var commentEl=document.getElementById(commentId);
+  var comment=commentEl?commentEl.value.trim():'';
   if(!window._sfmSession){showToast&&showToast('Rated '+score+' stars ⭐','success');return;}
   try{
-    await api('/ratings',{method:'POST',body:JSON.stringify({contextType:'SHOP_SESSION',contextId:window._sfmSession.id,rateeRole:rateeRole,score:score})});
-    showToast&&showToast('Rated '+score+' star'+(score>1?'s':'')+' ⭐','success');
+    await api('/ratings',{method:'POST',body:JSON.stringify({contextType:'SHOP_SESSION',contextId:window._sfmSession.id,rateeRole:rateeRole,score:score,comment:comment||undefined})});
+    showToast&&showToast('Review submitted ⭐','success');
   }catch(err){
     showToast&&showToast(err.message||'Could not submit rating','warning');
   }
@@ -4493,7 +4532,10 @@ function renderVendorProfile(){
     +'<div style="display:flex;gap:14px;align-items:center;">'
     +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(46,204,113,.2);border:2px solid rgba(46,204,113,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F37D;&#xFE0F;</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
-    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">'+vt+' &bull; <span onclick="openRatingsModal(\''+u.id+'\',\'VENDOR\',\''+(u.vendorProfileId||'')+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">&#x2605; My Reviews</span></div></div></div></div>'
+    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">'+vt+' &bull; <span onclick="openRatingsModal(\''+u.id+'\',\'VENDOR\',\''+(u.vendorProfileId||'')+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">&#x2605; My Reviews</span></div>'
+    +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
+    +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
+    +'</div></div></div>'
     +[['Business Name',bizName],['Address',addr],['Phone',phone],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
@@ -4536,12 +4578,7 @@ async function renderRiderDeliveries(){
   body.innerHTML=''
     +'<div style="background:linear-gradient(180deg,rgba(245,166,35,.1) 0%,transparent 50%);padding:52px 22px 0;">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">'
-    +'<div style="display:flex;gap:12px;align-items:center;">'
-    +'<div onclick="uploadRiderPic()" style="width:52px;height:52px;border-radius:15px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img style="display:'+(u.avatarUrl?'block':'none')+';width:52px;height:52px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F6F5;</span></div>'
-    +'<div><div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:#F2EDE8;">'+nm+'</div>'
-    +'<p style="color:#F5A623;font-size:12px;font-weight:700;margin:2px 0 0;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+(u.state?' @ '+u.state:'')+'</p>'
-    +(u.address?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4CD; '+u.address+'</p>':'')
-    +'</div></div>'
+    +fullProfileHeader({avatarUrl:u.avatarUrl,uploadFn:'uploadRiderPic()',icon:'🏍️',name:nm,roleLine:'Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+(u.state?' @ '+u.state:''),address:u.address,lga:u.lga,state:u.state,phone:u.phone})
     +'<button class="online-pill" id="rider-pill" onclick="toggleOnline()" style="border-color:'+(S.rdrOnline?'#2ECC71':'#2A2850')+';background:'+(S.rdrOnline?'rgba(46,204,113,0.10)':'#242424')+';flex-shrink:0;">'
     +'<div class="status-dot '+(S.rdrOnline?'online':'offline')+'" id="rdr-status-dot"></div>'
     +'<span style="font-size:14px;font-weight:700;color:'+(S.rdrOnline?'#2ECC71':'#9A9390')+';" id="rdr-status-lbl">'+(S.rdrOnline?'Online':'Go Online')+'</span>'
@@ -4666,7 +4703,10 @@ function renderRiderProfile(){
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
     +'<div onclick="uploadRiderPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="rider-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="rider-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F6F5;</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
-    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider</div></div></div>'
+    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+'</div>'
+    +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
+    +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
+    +'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
     +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Deliveries</div><div style="font-weight:800;color:#fff;">'+deliveries+'</div></div>'
     +'<div onclick="openRatingsModal(\''+u.id+'\',\'RIDER\',\''+(u.riderProfileId||'')+'\')" style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;cursor:pointer;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;text-decoration:underline;text-decoration-style:dotted;">'+rating+'</div></div>'
@@ -5390,6 +5430,23 @@ async function loadShopperAvailableSessions(){
 }
 
 
+// Shared avatar+name+role@location+address(+lga+state)+phone header, used
+// on every role's dashboard-home AND profile screen, plus the customer's
+// home/profile. `uploadFn` is a string like "uploadShopperPic()" (or ''
+// to disable click-to-upload, e.g. read-only contexts).
+function fullProfileHeader(o){
+  var addr=[o.address,o.lga,o.state].filter(Boolean).join(', ');
+  var rgb=o.accentRgb||'245,166,35';
+  return '<div style="display:flex;gap:12px;align-items:center;">'
+    +'<div'+(o.uploadFn?' onclick="'+o.uploadFn+'"':'')+' style="width:52px;height:52px;border-radius:15px;background:rgba('+rgb+',.2);border:2px solid rgba('+rgb+',.4);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;'+(o.uploadFn?'cursor:pointer;':'')+'position:relative;overflow:hidden;">'
+    +'<img style="display:'+(o.avatarUrl?'block':'none')+';width:52px;height:52px;object-fit:cover;position:absolute;" src="'+(o.avatarUrl||'')+'" />'
+    +'<span style="display:'+(o.avatarUrl?'none':'block')+';">'+(o.icon||'👤')+'</span></div>'
+    +'<div><div class="h3" style="margin-top:0;">'+(o.name||'')+'</div>'
+    +(o.roleLine?'<p style="color:'+(o.accentColor||'#F5A623')+';font-size:12px;font-weight:700;margin:2px 0 0;">'+o.roleLine+'</p>':'')
+    +(addr?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📍 '+addr+'</p>':'')
+    +(o.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+o.phone+'</p>':'')
+    +'</div></div>';
+}
 function renderShopperHome() {
   var nm=(S.user&&S.user.name)||'Shopper';
   var u=(S.user)||{};
@@ -5397,14 +5454,7 @@ function renderShopperHome() {
   document.getElementById('shopper-body').innerHTML = `
     <div style="background:linear-gradient(180deg,rgba(184,120,0,.1) 0%,transparent 50%);padding:52px 22px 0;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
-        <div style="display:flex;gap:12px;align-items:center;">
-          <div onclick="uploadShopperPic()" style="width:52px;height:52px;border-radius:15px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img style="display:${u.avatarUrl?'block':'none'};width:52px;height:52px;object-fit:cover;position:absolute;" src="${u.avatarUrl||''}" /><span style="display:${u.avatarUrl?'none':'block'};">🛒</span></div>
-          <div>
-            <div class="h3" style="margin-top:0;">${nm}</div>
-            <p style="color:#F5A623;font-size:12px;font-weight:700;margin:2px 0 0;">Shopper @ ${u.market||'Market not set'}${u.state?', '+u.state:''}</p>
-            ${u.address?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📍 '+u.address+'</p>':''}
-          </div>
-        </div>
+        ${fullProfileHeader({avatarUrl:u.avatarUrl,uploadFn:'uploadShopperPic()',icon:'🛒',name:nm,roleLine:'Shopper @ '+(u.market||'Market not set'),address:u.address,lga:u.lga,state:u.state,phone:u.phone})}
         <button class="online-pill" id="shopper-pill" onclick="toggleShopperOnline()" style="border-color:${isShopperOnline?'#2ECC71':'#2A2850'};background:${isShopperOnline?'rgba(46,204,113,0.10)':'#242424'};flex-shrink:0;">
           <div class="status-dot ${isShopperOnline?'online':'offline'}" id="shopper-dot"></div>
           <span style="font-size:14px;font-weight:700;color:${isShopperOnline?'#2ECC71':'#9A9390'};" id="shopper-label">${isShopperOnline?'Online':'Go Online'}</span>
@@ -5907,7 +5957,9 @@ function buildShopperProfile(){
     +'<div onclick="uploadShopperPic()" style="width:64px;height:64px;border-radius:18px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="shopper-pic-img" style="display:'+(S.user&&S.user.avatarUrl?'block':'none')+';width:64px;height:64px;object-fit:cover;position:absolute;" src="'+((S.user&&S.user.avatarUrl)||'')+'" /><span id="shopper-pic-icon" style="display:'+(S.user&&S.user.avatarUrl?'none':'block')+';">&#x1F6D2;</span>'
     +'<div style="position:absolute;bottom:-4px;right:-4px;width:20px;height:20px;background:#F5A623;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid #18140C;">&#x1F4F7;</div></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
-    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Live Shopper &bull; Since 2024</div>'
+    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Live Shopper'+((S.user&&S.user.market)?' @ '+S.user.market:'')+'</div>'
+    +((S.user&&[S.user.address,S.user.lga,S.user.state].filter(Boolean).length)?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[S.user.address,S.user.lga,S.user.state].filter(Boolean).join(', ')+'</p>':'')
+    +((S.user&&S.user.phone)?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+S.user.phone+'</p>':'')
     +'<div style="display:flex;gap:6px;margin-top:6px;">'
     +'<span style="background:rgba(46,204,113,.25);color:#4ADE80;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x2705; Verified</span>'
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
@@ -6261,6 +6313,13 @@ function eGo(scr){
   if(scr==='home'){
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
     var hn=document.getElementById('e-home-name');if(hn&&S.user)hn.textContent=S.user.name;
+    var hx=document.getElementById('e-home-header-extra');
+    if(hx&&S.user){
+      var cu=S.user;
+      var lines=[cu.address,cu.lga,cu.state].filter(Boolean).join(', ');
+      hx.innerHTML=(lines?'<p style="color:#9A9390;font-size:12px;margin:0 0 2px">&#x1F4CD; '+lines+'</p>':'')
+        +(cu.phone?'<p style="color:#9A9390;font-size:12px;margin:0">&#x1F4DE; '+cu.phone+'</p>':'');
+    }
     renderFeaturedCooks();renderFeaturedEP();
   }
   if(scr==='cooks'){window._HC_DATA=D.cooks||[];renderCooks(D.cooks);}
@@ -6274,6 +6333,15 @@ function eGo(scr){
   if(scr==='track'&&typeof renderEtrack==='function'){renderEtrack();}
   if(scr==='profile'&&typeof loadEscrowWalletCard==='function'){loadEscrowWalletCard();}
   if(scr==='profile'){var rss=document.getElementById('role-switcher-slot');if(rss)rss.innerHTML=renderRoleSwitcher();}
+  if(scr==='profile'){
+    var px=document.getElementById('pcontact-extra');
+    if(px&&S.user){
+      var pu=S.user;
+      var plines=[pu.address,pu.lga,pu.state].filter(Boolean).join(', ');
+      px.innerHTML=(plines?'<p style="color:#9A9390;font-size:12px;margin:0 0 2px">&#x1F4CD; '+plines+'</p>':'')
+        +(pu.phone?'<p style="color:#9A9390;font-size:12px;margin:0">&#x1F4DE; '+pu.phone+'</p>':'');
+    }
+  }
 }
 
 function go(scr){
@@ -6289,6 +6357,16 @@ function go(scr){
 }
 
 // ── ROLE PICKER ───────────────────────────────────────────────────────────────
+// Guest access only ever creates a CUSTOMER account (see guestLogin()) —
+// the button should only be offered while the Customer tile is selected,
+// not under a role tile that requires real registration. Called from both
+// pickRole() (role changes) and setLTab() (tab changes), since both affect
+// whether #login-extras should be visible at all.
+function updateGuestExtrasVisibility(){
+  var le=document.getElementById('login-extras');
+  if(!le)return;
+  le.style.display=(S.ltab==='reg')?'none':(_eRole==='customer'?'block':'none');
+}
 function pickRole(r){
   _eRole=r;S.role=r;
   var colors={customer:'#E8392E',cook:'#9B59B6',event_planner:'#2ECC71',rider:'#F5A623',shopper:'#3B9FE8'};
@@ -6308,6 +6386,7 @@ function pickRole(r){
   var titles={customer:'Register as Customer',cook:'Register as Home Cook',event_planner:'Register as Event Planner',rider:'Register as Rider',shopper:'Register as Shopper'};
   if(rht)rht.textContent=titles[r]||'Register';
   if(S.ltab==='reg')buildRegForm();
+  updateGuestExtrasVisibility();
 }
 
 // Backend Role/vtype -> the frontend's own 5-way role picker bucket.
@@ -6354,6 +6433,12 @@ async function doAuth(){
   if(!idf){showToast&&showToast('Please enter your phone or email','warning');return;}
   if(!pw){showToast&&showToast('Please enter your password','warning');return;}
   var btn=document.getElementById('auth-btn');if(btn)btn.disabled=true;
+  // Clear any stale token from a PREVIOUS account on this browser before the
+  // network call starts — otherwise a page refresh in the window between
+  // clicking Sign In and the login response arriving restores that old
+  // token via tryRestoreSession() and silently logs the page back in as
+  // whoever was last signed in on this browser, not the account just typed.
+  setAccessToken(null);
   try{
     var loginBody=idf.indexOf('@')>-1?{email:idf,password:pw}:{phone:idf,password:pw};
     var data=await api('/auth/login',{method:'POST',body:JSON.stringify(loginBody)});
@@ -6385,6 +6470,7 @@ async function doRegister(){
   else if(_eRole==='shopper'){body.role='SHOPPER';}
   else{body.role='CUSTOMER';}
   var btn=document.getElementById('auth-btn');if(btn)btn.disabled=true;
+  setAccessToken(null); // same reasoning as doAuth() — don't let a mid-request refresh restore a stale prior session
   try{
     var data=await api('/auth/register',{method:'POST',body:JSON.stringify(body)});
     setAccessToken(data.accessToken);
@@ -6448,7 +6534,7 @@ function setLTab(t){
       le=document.getElementById('login-extras'),rh=document.getElementById('reg-back-header');
   if(rw)rw.style.display=t==='reg'?'none':'block';
   if(tw)tw.style.display=t==='reg'?'none':'flex';
-  if(le)le.style.display=t==='reg'?'none':'block';
+  updateGuestExtrasVisibility();
   if(rh)rh.style.display=t==='reg'?'flex':'none';
   var btn=document.getElementById('auth-btn');if(!btn)return;
   var r=_eRole;
@@ -6490,8 +6576,10 @@ function vendorAvatarCircle(v,size,fs,bgGrad){
 function renderCooks(list){
   var el=document.getElementById('cook-list')||document.getElementById('e-cook-list');if(!el)return;
   if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:40px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🧑‍🍳</p><p>No home cooks available</p></div>';return;}
-  el.innerHTML=list.map(function(c){
-    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid #2a2a2a;margin-bottom:16px">'
+  var sorted=list.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
+  el.innerHTML=sorted.map(function(c){
+    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid '+(c.promo?'#F5A623':'#2a2a2a')+';margin-bottom:16px;position:relative'+(c.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'
+      +(c.promo?'<div class="promo-tag">⭐ FEATURED</div>':'')
       +vendorHeaderMedia(c,'linear-gradient(135deg,#2d0d2d,#111)',90,60)
       +'<div style="padding:16px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div><b style="color:#F2EDE8">'+c.nm+'</b><p style="color:#9B59B6;font-size:12px;margin:0">'+c.sp+'</p></div><span onclick="openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
       +'<p style="color:#9A9390;font-size:12px;margin:0 0 6px">📍 '+c.dist+' • '+c.addr+'</p>'
@@ -6505,8 +6593,10 @@ function renderCooks(list){
 function renderEP(list){
   var el=document.getElementById('e-ep-list')||document.getElementById('ep-list');if(!el)return;
   if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:40px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🎊</p><p>No event planners available</p></div>';return;}
-  el.innerHTML=list.map(function(ep){
-    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid #2a2a2a;margin-bottom:16px">'
+  var sorted=list.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
+  el.innerHTML=sorted.map(function(ep){
+    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid '+(ep.promo?'#F5A623':'#2a2a2a')+';margin-bottom:16px;position:relative'+(ep.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'
+      +(ep.promo?'<div class="promo-tag">⭐ FEATURED</div>':'')
       +vendorHeaderMedia(ep,'linear-gradient(135deg,#0d2d1a,#111)',90,60)
       +'<div style="padding:16px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><b style="color:#F2EDE8">'+ep.nm+'</b><span onclick="openRatingsModal(\''+ep.userId+'\',\'VENDOR\',\''+ep.id+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+ep.rt+'</span></div>'
       +'<p style="color:#9A9390;font-size:12px;margin:0 0 6px">📍 '+ep.dist+' • '+ep.loc+'</p>'
@@ -6518,10 +6608,15 @@ function renderEP(list){
 
 function renderFeaturedCooks(){
   var el=document.getElementById('e-featured-cooks');if(!el||!D.cooks)return;
-  el.innerHTML=(D.cooks||[]).slice(0,3).map(function(c){
-    return '<div onclick="openCookBooking(\''+c.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
+  // Real curation: vendors currently paying for a feature boost
+  // (VendorProfile.featuredUntil, see payToFeature()) sort first, same as
+  // the backend's own GET /vendors ordering — falls back to next-best by
+  // rating so this section is never empty even with zero active boosts.
+  var sortedCooks=(D.cooks||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
+  el.innerHTML=sortedCooks.slice(0,3).map(function(c){
+    return '<div onclick="openCookBooking(\''+c.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(c.promo?'#F5A623':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
       +vendorAvatarCircle(c,52,30,'linear-gradient(135deg,#2d0d2d,#111)')
-      +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+c.nm+'</div>'
+      +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(c.promo?'⭐ ':'')+c.nm+'</div>'
       +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+c.sp+' · <span onclick="event.stopPropagation();openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
       +'<div style="font-size:11px;color:#9B59B6;margin-top:2px;font-weight:700">₦'+Number(c.rate).toLocaleString()+' '+c.period+'</div></div>'
       +'<span style="background:#9B59B6;color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px">Book</span></div>';
@@ -6530,10 +6625,11 @@ function renderFeaturedCooks(){
 
 function renderFeaturedEP(){
   var el=document.getElementById('e-featured-ep');if(!el||!D.ep)return;
-  el.innerHTML=(D.ep||[]).slice(0,3).map(function(ep){
-    return '<div onclick="openEPBooking(\''+ep.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
+  var sortedEp=(D.ep||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
+  el.innerHTML=sortedEp.slice(0,3).map(function(ep){
+    return '<div onclick="openEPBooking(\''+ep.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(ep.promo?'#F5A623':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
       +vendorAvatarCircle(ep,52,30,'linear-gradient(135deg,#0d2d1a,#111)')
-      +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+ep.nm+'</div>'
+      +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(ep.promo?'⭐ ':'')+ep.nm+'</div>'
       +'<div style="font-size:12px;color:#9A9390;margin-top:2px"><span onclick="event.stopPropagation();openRatingsModal(\''+ep.userId+'\',\'VENDOR\',\''+ep.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+ep.rt+'</span> · '+ep.loc+'</div></div>'
       +'<span style="background:#2ECC71;color:#111;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px">Book</span></div>';
   }).join('');
@@ -6556,12 +6652,9 @@ async function renderVendorDashboard(kind){
   var u=S.user||{};
   var vLabel=isCook?'Home Cook':'Event Planner';
   var h='<div style="padding:14px 16px 80px">';
-  h+='<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">';
-  h+='<div onclick="uploadVendorPic()" style="width:52px;height:52px;border-radius:15px;background:'+accent+'33;border:2px solid '+accent+'66;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img style="display:'+(u.avatarUrl?'block':'none')+';width:52px;height:52px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span style="display:'+(u.avatarUrl?'none':'block')+';">'+icon+'</span></div>';
-  h+='<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+'</div>';
-  h+='<p style="color:'+accent+';font-size:12px;font-weight:700;margin:2px 0 0;">'+vLabel+' @ '+(u.bizName||'Not set')+'</p>';
-  h+=(u.address?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📍 '+u.address+'</p>':'');
-  h+='</div></div>';
+  h+='<div style="margin-bottom:16px;">';
+  h+=fullProfileHeader({avatarUrl:u.avatarUrl,uploadFn:'uploadVendorPic()',icon:icon,name:u.name||vLabel,roleLine:vLabel+' @ '+(u.bizName||'Not set'),address:u.address,lga:u.lga,state:u.state,phone:u.phone,accentRgb:isCook?'155,89,182':'46,204,113',accentColor:accent});
+  h+='</div>';
   h+='<div style="background:linear-gradient(135deg,'+accent+'26,rgba(59,159,232,.08));border:1.5px solid '+accent+'4d;border-radius:16px;padding:16px;margin-bottom:16px">';
   h+='<p style="color:'+accent+';font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Weekly Commission (10%)</p>';
   h+='<div id="vendor-commission-row" style="display:flex;justify-content:space-between;align-items:center"><div><p style="font-size:22px;font-weight:900;color:#F2EDE8;margin:0" id="vendor-commission-amt">₦…</p><p style="color:#9A9390;font-size:11px;margin:0">Due every Sunday</p></div>';
