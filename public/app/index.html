@@ -6256,9 +6256,9 @@ function buildShopperProfile(){
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
     +'</div></div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
-    +'<div style="background:rgba(255,255,255,.07);border-radius:11px;padding:10px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Sessions</div><div style="font-weight:900;font-size:18px;color:#F2EDE8;">312</div></div>'
+    +'<div style="background:rgba(255,255,255,.07);border-radius:11px;padding:10px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Sessions</div><div style="font-weight:900;font-size:18px;color:#F2EDE8;" id="shopper-sessions-count">—</div></div>'
     +'<div onclick="openRatingsModal(\''+((S.user&&S.user.id)||'')+'\',\'SHOPPER\',\''+((S.user&&S.user.shopperProfileId)||'')+'\')" style="background:rgba(255,255,255,.07);border-radius:11px;padding:10px;text-align:center;cursor:pointer;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:900;font-size:18px;color:#FFD700;text-decoration:underline;text-decoration-style:dotted;">&#x2605;'+((S.user&&S.user.rating)||'New')+'</div></div>'
-    +'<div style="background:rgba(255,255,255,.07);border-radius:11px;padding:10px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Accept</div><div style="font-weight:900;font-size:18px;color:#4ADE80;">96%</div></div>'
+    +'<div style="background:rgba(255,255,255,.07);border-radius:11px;padding:10px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Reviews</div><div style="font-weight:900;font-size:18px;color:#4ADE80;">'+((S.user&&S.user.ratingCount)||0)+'</div></div>'
     +'</div></div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:16px;margin-bottom:14px;">'
     +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:12px;">&#x1F464; Personal Information</div>'
@@ -6289,6 +6289,10 @@ function buildShopperProfile(){
   body.innerHTML=html;
   loadRegisteredSellers().then(renderSellerRegistryList);
   refreshKycSection('shopper');
+  api('/shop-sessions?as=shopper').then(function(res){
+    var el=document.getElementById('shopper-sessions-count');
+    if(el) el.textContent=(res.sessions||[]).filter(function(s){return s.status==='COMPLETED';}).length;
+  }).catch(function(){});
 }
 
 
