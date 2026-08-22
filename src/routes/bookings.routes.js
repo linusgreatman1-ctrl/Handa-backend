@@ -13,6 +13,7 @@ router.post("/:id/accept", ctrl.acceptBooking);
 router.post("/:id/decline", ctrl.declineBooking);
 router.post("/:id/pay", ctrl.payBooking);
 router.post("/:id/complete", ctrl.completeBooking);
+router.post("/:id/confirm-complete", ctrl.confirmBookingCompletion);
 router.post("/:id/cancel", ctrl.cancelBooking);
 
 module.exports = router;

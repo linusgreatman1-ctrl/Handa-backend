@@ -409,6 +409,14 @@ model Booking {
   reminder24SentAt DateTime?
   reminder2SentAt  DateTime?
 
+  // Two-sided completion: the vendor marks their side done first, then the
+  // customer either confirms (both set -> COMPLETED, escrow releases) or
+  // disputes (neither the booking's status nor these fields change — a
+  // SupportTicket with context BOOKING carries the dispute instead, see
+  // completeBooking/confirmBookingCompletion in bookings.controller.js).
+  vendorConfirmedCompleteAt   DateTime?
+  customerConfirmedCompleteAt DateTime?
+
   escrowHolds EscrowHold[]
   ratings     Rating[]
 
@@ -824,6 +832,7 @@ enum TicketContext {
   RIDER
   VENDOR
   CUSTOMER
+  BOOKING
   GENERAL
 }
 
@@ -857,6 +866,13 @@ model SupportTicket {
   requestedRefundKobo Int?
   refundAmountKobo    Int?
   refundedAt          DateTime?
+
+  // The other party's side of a dispute (e.g. the vendor responding to a
+  // customer's "booking not completed" report) — one response, added by
+  // whoever ISN'T the ticket's own userId. Admin sees both sides on the
+  // one ticket rather than needing to correlate two separate tickets.
+  secondPartyResponse    String?
+  secondPartyRespondedAt DateTime?
 
   @@index([userId])
   @@index([status])

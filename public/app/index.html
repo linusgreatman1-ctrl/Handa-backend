@@ -6640,6 +6640,7 @@ async function openVendorBookingDetail(id){
   try{
     var res=await api('/bookings/'+id);
     var b=res.booking;
+    var dt=res.disputeTicket;
     var c=b.customer||{};
     var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
     var rows=[
@@ -6665,10 +6666,102 @@ async function openVendorBookingDetail(id){
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(b.phone||c.phone||'—')+'</span></div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12px;color:#9A9390;">Address</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;max-width:60%;">'+(c.address||'—')+(c.state?', '+c.state:'')+'</span></div>'
       +'</div>'
-      +'<button onclick="showReportIssue(\'customer\',\''+b.id+'\')" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
+      +(dt?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Customer Disputed This Booking</div>'
+        +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">'+dt.category+'</div>'
+        +'<div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+(dt.description||'')+'</div>'
+        +(dt.secondPartyResponse
+          ? '<div style="background:#1C1C1C;border-radius:10px;padding:10px;font-size:12px;color:#9A9390;"><b style="color:#F2EDE8;">Your response:</b> '+dt.secondPartyResponse+'</div>'
+          : '<button onclick="openVendorDisputeResponseModal(\''+dt.id+'\',\''+b.id+'\')" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid rgba(245,166,35,.4);background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Add Your Side</button>')
+        +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Payment stays held until an admin resolves this.</div>'
+        +'</div>'
+      ):(b.status==='CONFIRMED'?(
+        b.vendorConfirmedCompleteAt
+          ? '<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>'
+          : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Order/Booking Completed</button>'
+      ):''))
+      +'<button onclick="showReportIssue(\'customer\',\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
     showBottomSheet('Booking Details',content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
+  }
+}
+async function customerConfirmBookingComplete(id,completed){
+  if(completed){
+    try{
+      await api('/bookings/'+id+'/confirm-complete',{method:'POST',body:JSON.stringify({completed:true})});
+      showToast&&showToast('Booking completed — payment released to the vendor.','success');
+      closeBottomSheet&&closeBottomSheet();
+      if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
+    }catch(err){
+      showToast&&showToast(err.message||'Could not confirm this booking','warning');
+    }
+    return;
+  }
+  _disputeBookingId=id;
+  showProcedureModal(
+    '<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">What happened?</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Your payment stays safely in escrow while this is looked into. The vendor will be notified and can add their own side.</p>'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Category</label>'
+    +'<select id="disp-category" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
+    +['Never showed up / delivered','Not as described','Poor quality','Other'].map(function(c){return '<option>'+c+'</option>';}).join('')
+    +'</select>'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Describe what happened</label>'
+    +'<textarea id="disp-desc" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:90px;" placeholder="Tell us what happened..."></textarea>'
+    +'<button onclick="submitBookingDispute()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Submit Report</button>'
+    +'</div>'
+  );
+}
+var _disputeBookingId=null;
+async function submitBookingDispute(){
+  var cat=(document.getElementById('disp-category')||{}).value||'Other';
+  var desc=(document.getElementById('disp-desc')||{}).value||'';
+  if(!desc.trim()){showToast&&showToast('Please describe what happened','warning');return;}
+  try{
+    await api('/bookings/'+_disputeBookingId+'/confirm-complete',{method:'POST',body:JSON.stringify({completed:false,disputeCategory:cat,disputeDescription:desc.trim()})});
+    showToast&&showToast('Report submitted — payment stays in escrow until this is resolved.','success');
+    closeProcedureModal();
+    if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
+  }catch(err){
+    showToast&&showToast(err.message||'Could not submit report','warning');
+  }
+}
+function openVendorDisputeResponseModal(ticketId,bookingId){
+  closeBottomSheet&&closeBottomSheet();
+  showProcedureModal(
+    '<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Your Side of the Story</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">This is shown to the admin reviewing the customer\'s report.</p>'
+    +'<textarea id="vdr-text" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:110px;" placeholder="Tell us what happened from your side..."></textarea>'
+    +'<button onclick="submitVendorDisputeResponse(\''+ticketId+'\',\''+bookingId+'\')" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Submit Response</button>'
+    +'</div>'
+  );
+}
+async function submitVendorDisputeResponse(ticketId,bookingId){
+  var text=(document.getElementById('vdr-text')||{}).value||'';
+  if(!text.trim()){showToast&&showToast('Please describe what happened','warning');return;}
+  try{
+    await api('/support/tickets/'+ticketId+'/respond',{method:'POST',body:JSON.stringify({response:text.trim()})});
+    showToast&&showToast('Response sent to the admin.','success');
+    closeProcedureModal();
+    openVendorBookingDetail(bookingId);
+  }catch(err){
+    showToast&&showToast(err.message||'Could not submit your response','warning');
+  }
+}
+async function vendorMarkBookingComplete(id){
+  try{
+    await api('/bookings/'+id+'/complete',{method:'POST'});
+    showToast&&showToast('Marked complete — waiting on the customer to confirm.','success');
+    openVendorBookingDetail(id);
+  }catch(err){
+    showToast&&showToast(err.message||'Could not mark this booking complete','warning');
   }
 }
 // Customer's own History detail — covers both a Booking (home cook/event
@@ -6709,10 +6802,20 @@ async function openCustomerHistoryDetail(kind,id){
       ['Total',N(Math.round(b.totalKobo/100))],
     ];
     var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (!b.eventDate || new Date(b.eventDate).getTime()>Date.now());
+    var needsCompletionResponse=b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
+      +(needsCompletionResponse?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:4px;">The vendor marked this complete</div>'
+        +'<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">Confirm so payment can be released, or let us know if it wasn\'t actually completed.</div>'
+        +'<div style="display:flex;gap:10px;">'
+        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',false)" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">No — Not Completed</button>'
+        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true)" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes — Completed</button>'
+        +'</div></div>'
+      ):'')
       +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
       +'<button onclick="showReportIssue(\'order\',\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
     showBottomSheet('Booking Details',content);

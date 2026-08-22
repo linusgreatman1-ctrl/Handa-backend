@@ -3,12 +3,15 @@ const wallet = require("./wallet.service");
 
 const AUTO_RELEASE_HOURS = Number(process.env.ESCROW_AUTO_RELEASE_HOURS || 24);
 
-// Platform's cut, taken automatically out of a Shop-For-Me shopper's or
-// rider's payout the moment their hold releases — not a separate weekly
-// invoice like vendor CommissionPeriod, a real-time deduction. VENDOR
-// (booking) holds aren't listed here; that commission is deducted
-// separately at booking completion (bookings.controller.js), not here.
-const PLATFORM_COMMISSION_RATES = { SHOPPER: 0.2, RIDER: 0.2 };
+// Platform's cut, taken automatically out of a payout the moment its hold
+// releases — a real-time deduction, not a separate weekly invoice.
+// VENDOR here covers Booking (home cook / event planner) completions at
+// 10%, matching the explicit "deduct 10% platform charges" behavior
+// requested for booking completion — note this means the older weekly
+// CommissionPeriod debt-invoice system (src/services/commission.service.js)
+// now overlaps with this for the same bookings; reconciling/retiring that
+// separately is flagged as a known follow-up, not solved here.
+const PLATFORM_COMMISSION_RATES = { SHOPPER: 0.2, RIDER: 0.2, VENDOR: 0.1 };
 
 // Every booking/session is paid into escrow up front (real money already
 // collected from the customer via Paystack — see payments.service) and

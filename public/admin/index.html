@@ -495,7 +495,8 @@ async function renderTickets() {
           + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\')">Resolve with Refund</button>' : '')
           + (t.isDispute && t.status === 'OPEN' ? ' <button class="action-btn" onclick="investigateTicket(\'' + t.id + '\')">Investigate</button>' : '')
         : '';
-      return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '<br><small>' + disputeInfo + '</small></td>' +
+      const secondSide = t.secondPartyResponse ? '<br><small><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + '</small>' : '';
+      return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '<br><small>' + disputeInfo + '</small>' + secondSide + '</td>' +
         '<td>' + pill(t.status) + '</td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');

@@ -130,7 +130,15 @@ async function getBooking(req, res, next) {
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isCustomer && !isVendor && req.user.role !== "ADMIN") return res.status(403).json({ error: "You do not have access to this booking." });
 
-    res.json({ booking });
+    // Surfaces an in-progress dispute ticket (if any) so either party can
+    // see/respond to it without a separate lookup — most recent first,
+    // in the rare case more than one was ever filed on this booking.
+    const disputeTicket = await prisma.supportTicket.findFirst({
+      where: { context: "BOOKING", contextId: booking.id, isDispute: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ booking, disputeTicket });
   } catch (err) {
     next(err);
   }
@@ -282,18 +290,92 @@ async function payBooking(req, res, next) {
   }
 }
 
+// Two-sided completion, step 1: the vendor (home cook or event planner)
+// marks their side done. This does NOT complete the booking or release any
+// escrow by itself — it just asks the customer to confirm. See
+// confirmBookingCompletion for step 2.
 async function completeBooking(req, res, next) {
   try {
-    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { customer: { select: { id: true } } } });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
-    const isCustomer = booking.customerId === req.user.id;
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
-    if (!isCustomer && !isVendor) return res.status(403).json({ error: "You do not have access to this booking." });
-    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before it can be completed." });
+    if (!isVendor) return res.status(403).json({ error: "Only the vendor on this booking can mark it complete." });
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before it can be marked complete." });
+    if (booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "You already marked this booking complete — waiting on the customer to confirm." });
 
-    await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking marked complete" });
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: new Date() } });
+    await notify(
+      req.app.get("io"),
+      booking.customerId,
+      "ORDER_UPDATE",
+      "Confirm your booking is complete",
+      `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
+      { bookingId: booking.id }
+    );
     res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Two-sided completion, step 2: the customer's Yes/No response.
+// Yes -> booking COMPLETED, escrow releases (10% platform cut, same
+// mechanism as Shop-For-Me's shopper/rider releases — see
+// escrow.service.js's PLATFORM_COMMISSION_RATES).
+// No -> booking stays CONFIRMED, a real dispute ticket is opened
+// (context BOOKING) and every HELD hold on this booking is pulled out of
+// the auto-release sweep via escrow.disputeHold() — the vendor is notified
+// and can add their own side via POST /support/tickets/:id/respond; an
+// admin resolving that ticket is what finally releases (or doesn't) the
+// held funds.
+async function confirmBookingCompletion(req, res, next) {
+  try {
+    const { completed, disputeCategory, disputeDescription } = req.body;
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "This booking isn't awaiting completion confirmation." });
+    if (!booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "The vendor hasn't marked this booking complete yet." });
+    if (booking.customerConfirmedCompleteAt) return res.status(409).json({ error: "You already responded to this booking's completion." });
+
+    if (completed) {
+      await prisma.booking.update({ where: { id: booking.id }, data: { customerConfirmedCompleteAt: new Date() } });
+      await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking completion confirmed by customer" });
+      const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+      const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
+      if (vendor) {
+        await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Booking completed", `The customer confirmed booking #${booking.bookingNumber} — payment has been released.`, { bookingId: booking.id });
+      }
+      return res.json({ booking: updated });
+    }
+
+    // Disputed — nothing about the booking's own status/holds changes
+    // directly here; disputeHold() below is what actually protects the
+    // funds from auto-releasing while this is investigated.
+    const ticket = await prisma.supportTicket.create({
+      data: {
+        userId: req.user.id,
+        context: "BOOKING",
+        contextId: booking.id,
+        category: disputeCategory || "Booking dispute",
+        description: disputeDescription || null,
+        isDispute: true,
+      },
+    });
+    const holds = await prisma.escrowHold.findMany({ where: { contextType: "BOOKING", bookingId: booking.id, status: "HELD" } });
+    for (const hold of holds) await escrow.disputeHold(hold.id);
+
+    const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
+    if (vendor) {
+      await notify(
+        req.app.get("io"),
+        vendor.userId,
+        "ORDER_UPDATE",
+        "Customer disputed booking completion",
+        `The customer said booking #${booking.bookingNumber} was not completed. Please add your side of what happened.`,
+        { bookingId: booking.id, ticketId: ticket.id }
+      );
+    }
+    res.json({ booking, ticket });
   } catch (err) {
     next(err);
   }
@@ -315,4 +397,4 @@ async function cancelBooking(req, res, next) {
   }
 }
 
-module.exports = { createBooking, listBookings, getBooking, updateBooking, acceptBooking, declineBooking, payBooking, completeBooking, cancelBooking };
+module.exports = { createBooking, listBookings, getBooking, updateBooking, acceptBooking, declineBooking, payBooking, completeBooking, confirmBookingCompletion, cancelBooking };

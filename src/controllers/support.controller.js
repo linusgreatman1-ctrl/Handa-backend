@@ -120,6 +120,20 @@ async function updateTicketStatus(req, res, next) {
       data.refundedAt = new Date();
     }
 
+    // Resolving a booking dispute WITHOUT issuing the customer a refund
+    // means the admin decided the vendor's side was correct — release
+    // whatever's still held for that booking (10% platform cut applies
+    // the same as a normal completion, see escrow.service.js). If a
+    // refund WAS issued, the customer's side won instead and the vendor's
+    // holds are left alone (a future admin action, not automatic here).
+    if (status === "RESOLVED" && existing.isDispute && existing.context === "BOOKING" && existing.contextId && !data.refundAmountKobo) {
+      await escrow.releaseAllHoldsForContext(
+        { contextType: "BOOKING", bookingId: existing.contextId },
+        { description: `Dispute resolved in the vendor's favor — ${resolution || "admin decision"}` }
+      );
+      await prisma.booking.update({ where: { id: existing.contextId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => {});
+    }
+
     const ticket = await prisma.supportTicket.update({ where: { id: existing.id }, data });
     if (existing.isDispute || data.refundAmountKobo) {
       await logAdminAction(
@@ -136,4 +150,37 @@ async function updateTicketStatus(req, res, next) {
   }
 }
 
-module.exports = { createTicket, uploadEvidence, listMyTickets, getTicket, listAllTickets, updateTicketStatus };
+// Lets the OTHER party on a dispute (e.g. the vendor, when the customer
+// filed the ticket) add their own side — one response, not a thread.
+// Currently only meaningful for BOOKING-context disputes, where the
+// other party is unambiguous (the booking's vendor or customer, whichever
+// isn't the ticket's own userId) — kept generic in case other dispute
+// contexts want this later.
+async function respondToTicket(req, res, next) {
+  try {
+    const { response } = req.body;
+    if (!response || !response.trim()) return res.status(400).json({ error: "response is required." });
+
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: req.params.id } });
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    if (ticket.userId === req.user.id) return res.status(403).json({ error: "You already filed this ticket — this is for the other party's response." });
+    if (ticket.secondPartyResponse) return res.status(409).json({ error: "A response has already been added to this ticket." });
+
+    if (ticket.context === "BOOKING" && ticket.contextId) {
+      const booking = await prisma.booking.findUnique({ where: { id: ticket.contextId }, select: { customerId: true, vendorId: true } });
+      const isVendorSide = req.user.vendorProfile && booking && booking.vendorId === req.user.vendorProfile.id;
+      const isCustomerSide = booking && booking.customerId === req.user.id;
+      if (!isVendorSide && !isCustomerSide) return res.status(403).json({ error: "You are not a party to this booking's dispute." });
+    }
+
+    const updated = await prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: { secondPartyResponse: response.trim(), secondPartyRespondedAt: new Date() },
+    });
+    res.json({ ticket: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { createTicket, uploadEvidence, listMyTickets, getTicket, listAllTickets, updateTicketStatus, respondToTicket };

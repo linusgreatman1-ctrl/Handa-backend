@@ -72,4 +72,38 @@ async function sendUpcomingReminders(io) {
   return sent;
 }
 
-module.exports = { sendUpcomingReminders, combineDateAndTime };
+// 2 hours after a booking's own scheduled time has elapsed, if it still
+// hasn't reached COMPLETED (i.e. the vendor-marks-complete /
+// customer-confirms two-sided flow in bookings.controller.js hasn't
+// finished), nudge both sides every sweep tick — repeating, not one-shot,
+// matching "popping up... reminding... until the booking is confirmed."
+// A booking that's disputed (still CONFIRMED, but vendorConfirmedCompleteAt
+// is already set) also keeps getting reminded, since it's genuinely not
+// resolved yet either.
+async function sendCompletionReminders(io) {
+  const now = Date.now();
+  const bookings = await prisma.booking.findMany({
+    where: {
+      status: { in: ["ACCEPTED", "CONFIRMED"] },
+      eventDate: { not: null },
+    },
+    include: { vendor: { select: { userId: true } } },
+  });
+
+  let sent = 0;
+  for (const booking of bookings) {
+    const eventInstant = combineDateAndTime(booking.eventDate, booking.eventTime).getTime();
+    if (now - eventInstant < REMINDER_2H_MS) continue; // not yet 2h past
+
+    if (!booking.vendorConfirmedCompleteAt) {
+      await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Confirm this booking is complete", `Booking #${booking.bookingNumber}'s scheduled time has passed — please mark it complete.`, { bookingId: booking.id });
+      sent++;
+    } else if (!booking.customerConfirmedCompleteAt) {
+      await notify(io, booking.customerId, "ORDER_UPDATE", "Confirm your booking is complete", `The vendor marked booking #${booking.bookingNumber} complete — please confirm.`, { bookingId: booking.id });
+      sent++;
+    }
+  }
+  return sent;
+}
+
+module.exports = { sendUpcomingReminders, sendCompletionReminders, combineDateAndTime };

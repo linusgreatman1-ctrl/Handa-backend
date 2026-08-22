@@ -196,6 +196,13 @@ function attachLiveSocket(httpServer) {
     bookingRemindersSvc.sendUpcomingReminders(io).catch((err) => console.error("[booking] reminder sweep failed:", err));
   }, sweepMs);
 
+  // Once a booking's own scheduled time is 2h in the past and it still
+  // isn't COMPLETED, keep nudging whichever side hasn't acted yet — every
+  // tick, not just once, until the two-sided completion flow finishes.
+  setInterval(() => {
+    bookingRemindersSvc.sendCompletionReminders(io).catch((err) => console.error("[booking] completion reminder sweep failed:", err));
+  }, sweepMs);
+
   return io;
 }
 
