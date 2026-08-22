@@ -1067,6 +1067,17 @@ async function markAllNotificationsRead(){
 // (bookingId / eventRequestId / threadId / shopSessionId) -- routes to
 // that real detail screen instead of just marking read with nowhere to go,
 // matching "delivered through history for things peculiar to history."
+// CRITICAL: never force-navigate the user to a DIFFERENT role's screen.
+// The previous version always called eGo('history') -- the customer's
+// history screen -- for any booking/session notification, regardless of
+// which role dashboard was actually open. A cook, rider, shopper, or event
+// planner clicking their own real notification (e.g. "Booking accepted")
+// got yanked out of their own dashboard into the customer's screen, which
+// is exactly what "accounts switching with each other" describes -- this
+// was happening live, with no refresh involved, any time a real
+// notification for the current session was opened. Every branch below
+// stays within the CURRENT role; if there's nowhere sensible to deep-link
+// for that role, it just marks read and leaves the screen alone.
 async function openNotification(id){
   try{
     var res=await api('/notifications');
@@ -1075,10 +1086,20 @@ async function openNotification(id){
     if(!n.read){ await api('/notifications/'+id+'/read',{method:'PATCH'}); setNotifBadge(Math.max(0,_notifUnread-1)); }
     closeNotificationsModal();
     var d=n.data||{};
-    if(d.bookingId&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('booking',d.bookingId);}
-    else if(d.eventRequestId&&typeof openEventRequestDetailModal==='function'){openEventRequestDetailModal(d.eventRequestId);}
-    else if(d.shopSessionId&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
-    else if(typeof eGo==='function'){eGo('history');}
+    var isVendor=S.role==='vendor';
+    var isCustomer=!isVendor&&S.role!=='rider'&&S.role!=='shopper';
+    if(d.bookingId){
+      if(isVendor&&typeof vendorNav==='function'&&typeof openVendorBookingDetail==='function'){vendorNav('orders');openVendorBookingDetail(d.bookingId);}
+      else if(isCustomer&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('booking',d.bookingId);}
+      // rider/shopper: bookings aren't their concern -- stay put, already marked read.
+    }else if(d.eventRequestId&&typeof openEventRequestDetailModal==='function'){
+      openEventRequestDetailModal(d.eventRequestId); // a floating modal, not a screen swap -- safe for any role.
+    }else if(d.shopSessionId){
+      if(isCustomer&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
+      else if(S.role==='shopper'&&typeof eGo==='function'){eGo('shopper');}
+      else if(S.role==='rider'&&typeof eGo==='function'){eGo('rider');}
+    }
+    // No matching data: nothing to deep-link to -- leave the current screen alone.
   }catch(err){
     showToast&&showToast(err.message||'Could not open notification','warning');
   }
@@ -6754,6 +6775,20 @@ function eGo(scr){
   // exactly the "accounts switching with each other" symptom reported.
   if(['home','shopper','cook','homecook','event_planner','rider'].indexOf(scr)>=0){
     try{sessionStorage.setItem('handa_active_role',scr);}catch(e){}
+    // Each role dashboard renders into its own persistent container
+    // (#shopper-body/#vendor-body/#ep-vendor-body/#rider-body) that's never
+    // torn down on switch -- its old content (including its own embedded
+    // role-switcher, e.g. still saying "Rider — current") just sits there,
+    // correctly hidden behind display:none on the parent screen, but stale
+    // and wasteful. Clear every OTHER role's container on every real role
+    // navigation so there's never leftover markup from a previous role.
+    var _roleBodies={shopper:'shopper-body',cook:'vendor-body',homecook:'vendor-body',event_planner:'ep-vendor-body',rider:'rider-body'};
+    var _keepBody=_roleBodies[scr];
+    Object.keys(_roleBodies).forEach(function(k){
+      if(_roleBodies[k]===_keepBody)return;
+      var el=document.getElementById(_roleBodies[k]);
+      if(el)el.innerHTML='';
+    });
   }
   document.querySelectorAll('.ntab').forEach(function(b){b.classList.remove('active');});
   var navMap={home:'nav-home',history:'nav-history',track:'nav-track',profile:'nav-profile'};
@@ -7379,8 +7414,22 @@ async function openCustomerHistoryDetail(kind,id){
       ['Package',b.servicePackage?b.servicePackage.label:'—'],
       ['Total',N(Math.round(b.totalKobo/100))],
     ];
-    var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (!b.eventDate || new Date(b.eventDate).getTime()>Date.now());
-    var cancellable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
+    // Combines eventDate + eventTime (a separate "HH:MM" string) into a real
+    // instant -- comparing eventDate alone treats the whole day as "not yet
+    // passed" until midnight, hours after the actual scheduled time.
+    var _jobInstant=null;
+    if(b.eventDate){
+      _jobInstant=new Date(b.eventDate);
+      if(b.eventTime){
+        var _tm=/^(\d{1,2}):(\d{2})/.exec(b.eventTime);
+        if(_tm)_jobInstant.setHours(parseInt(_tm[1],10),parseInt(_tm[2],10),0,0);
+      }
+    }
+    var _jobNotPassed=!_jobInstant||_jobInstant.getTime()>Date.now();
+    // Edit and Cancel share the exact same window: only while the booking is
+    // still pre-completion AND the scheduled job time hasn't passed yet.
+    var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
+    var cancellable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
     var needsCompletionResponse=b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
     var awaitingVendor=b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     var isEP=b.type==='EVENT_PLANNING';
@@ -7406,8 +7455,12 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
         +'<button onclick="openBookingWhatsApp()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>WhatsApp</button>'
       +'</div>'
-      +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
-      +(cancellable?'<button onclick="customerCancelBooking(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel Booking</button>':'')
+      +((editable||cancellable)?(
+        '<div style="display:flex;gap:10px;margin-top:10px;">'
+        +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="flex:1;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
+        +(cancellable?'<button onclick="customerCancelBooking(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel Booking</button>':'')
+        +'</div>'
+      ):'')
       +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
     showBottomSheet('Booking Details',content);
   }catch(err){
