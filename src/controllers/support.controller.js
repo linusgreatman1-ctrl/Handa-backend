@@ -46,6 +46,27 @@ async function uploadEvidence(req, res, next) {
   }
 }
 
+// Lets the counter-disputing party (e.g. the vendor responding to a
+// customer's dispute) attach their own evidence photo -- previously only
+// the original filer had a real evidence field (evidenceUrl); the other
+// side had text only, no way to actually prove their claim.
+async function uploadSecondPartyEvidence(req, res, next) {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No image uploaded." });
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: req.params.id } });
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    if (ticket.userId === req.user.id) return res.status(403).json({ error: "You already filed this ticket — this is for the other party's evidence." });
+
+    const updated = await prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: { secondPartyEvidenceUrl: `/uploads/${req.file.filename}` },
+    });
+    res.json({ ticket: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listMyTickets(req, res, next) {
   try {
     const tickets = await prisma.supportTicket.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: "desc" } });
@@ -175,7 +196,7 @@ async function respondToTicket(req, res, next) {
 
     const updated = await prisma.supportTicket.update({
       where: { id: ticket.id },
-      data: { secondPartyResponse: response.trim(), secondPartyRespondedAt: new Date() },
+      data: { secondPartyResponse: response.trim(), secondPartyRespondedAt: new Date(), secondPartyUserId: req.user.id },
     });
     res.json({ ticket: updated });
   } catch (err) {
@@ -183,4 +204,4 @@ async function respondToTicket(req, res, next) {
   }
 }
 
-module.exports = { createTicket, uploadEvidence, listMyTickets, getTicket, listAllTickets, updateTicketStatus, respondToTicket };
+module.exports = { createTicket, uploadEvidence, uploadSecondPartyEvidence, listMyTickets, getTicket, listAllTickets, updateTicketStatus, respondToTicket };

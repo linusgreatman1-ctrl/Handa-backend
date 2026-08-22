@@ -1009,6 +1009,29 @@ async function listChatThreadsForAdmin(req, res, next) {
   }
 }
 
+// Lets an admin PROACTIVELY open (not just wait for) a real support chat
+// with a specific user -- the entry point for "whoever disputes and
+// whoever counter-disputes should each have a real chat with admin,"
+// callable straight from a Support Ticket row for either the filer or the
+// party they're disputing against. Mirrors chat.controller.js's
+// openSupportThread's find-or-create shape exactly.
+async function openSupportThreadForUser(req, res, next) {
+  try {
+    const targetUserId = req.params.userId;
+    const user = await prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!user) return res.status(404).json({ error: "User not found." });
+    let thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId: targetUserId } });
+    if (!thread) {
+      thread = await prisma.chatThread.create({
+        data: { contextType: "SUPPORT", contextId: targetUserId, participants: { create: [{ userId: targetUserId }] } },
+      });
+    }
+    res.status(201).json({ thread });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getChatThreadMessagesForAdmin(req, res, next) {
   try {
     const messages = await prisma.chatMessage.findMany({
@@ -1031,7 +1054,8 @@ async function sendAdminChatMessage(req, res, next) {
     const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
     if (!thread) return res.status(404).json({ error: "Thread not found." });
     const body = (req.body.body || "").trim();
-    if (!body) return res.status(400).json({ error: "Message body is required." });
+    const attachmentUrl = req.body.attachmentUrl || null;
+    if (!body && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
 
     await prisma.chatParticipant.upsert({
       where: { threadId_userId: { threadId: thread.id, userId: req.user.id } },
@@ -1039,7 +1063,7 @@ async function sendAdminChatMessage(req, res, next) {
       create: { threadId: thread.id, userId: req.user.id },
     });
 
-    const message = await prisma.chatMessage.create({ data: { threadId: thread.id, senderId: req.user.id, body } });
+    const message = await prisma.chatMessage.create({ data: { threadId: thread.id, senderId: req.user.id, body, attachmentUrl } });
 
     if (!thread.handledByAdminId) {
       await prisma.chatThread.update({ where: { id: thread.id }, data: { handledByAdminId: req.user.id } });
@@ -1048,12 +1072,28 @@ async function sendAdminChatMessage(req, res, next) {
     const io = req.app.get("io");
     io?.to(`chat:${thread.id}`).emit("chat:message", message);
 
+    const notifyText = body || "📎 Sent a photo";
     const others = await prisma.chatParticipant.findMany({ where: { threadId: thread.id, userId: { not: req.user.id } } });
     for (const p of others) {
-      await notify(io, p.userId, "CHAT", "Support replied", body.slice(0, 120), { threadId: thread.id });
+      await notify(io, p.userId, "CHAT", "Support replied", notifyText.slice(0, 120), { threadId: thread.id });
     }
 
     res.status(201).json({ message });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Lets an admin attach evidence/proof of their own into a dispute
+// conversation (e.g. a screenshot of a payment record) — same real upload
+// as the user-facing chat.controller.js's uploadChatAttachment, just under
+// the admin-gated route.
+async function uploadAdminChatAttachment(req, res, next) {
+  try {
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
+    if (!thread) return res.status(404).json({ error: "Thread not found." });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    res.status(201).json({ url: `/uploads/${req.file.filename}` });
   } catch (err) {
     next(err);
   }
@@ -1095,8 +1135,10 @@ module.exports = {
   sendBulkEmail,
   listAiConversations,
   listChatThreadsForAdmin,
+  openSupportThreadForUser,
   getChatThreadMessagesForAdmin,
   sendAdminChatMessage,
+  uploadAdminChatAttachment,
   listKycDocumentsForAdmin,
   reviewKycDocument,
   listWithdrawalsForAdmin,

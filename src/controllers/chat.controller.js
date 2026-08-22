@@ -152,18 +152,19 @@ async function sendMessage(req, res, next) {
   try {
     await assertParticipant(req.params.id, req.user.id);
     const { body, attachmentUrl } = req.body;
-    if (!body || !body.trim()) return res.status(400).json({ error: "Message body is required." });
+    if ((!body || !body.trim()) && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
 
     const message = await prisma.chatMessage.create({
-      data: { threadId: req.params.id, senderId: req.user.id, body, attachmentUrl },
+      data: { threadId: req.params.id, senderId: req.user.id, body: body || "", attachmentUrl },
     });
 
     const io = req.app.get("io");
     io?.to(`chat:${req.params.id}`).emit("chat:message", message);
 
+    const notifyText = body && body.trim() ? body.slice(0, 120) : "📎 Sent a photo";
     const others = await prisma.chatParticipant.findMany({ where: { threadId: req.params.id, userId: { not: req.user.id } } });
     for (const p of others) {
-      await notify(io, p.userId, "CHAT", "New message", body.slice(0, 120), { threadId: req.params.id });
+      await notify(io, p.userId, "CHAT", "New message", notifyText, { threadId: req.params.id });
     }
 
     res.status(201).json({ message });
@@ -174,4 +175,18 @@ async function sendMessage(req, res, next) {
   }
 }
 
-module.exports = { openThread, listThreads, listMessages, sendMessage, openSupportThread };
+// Real evidence/proof upload for a chat thread (e.g. a dispute discussion
+// in the account's own SUPPORT thread) — returns a URL only; the frontend
+// then calls sendMessage with that URL as attachmentUrl so it goes through
+// the normal message/notify/AI-reply pipeline like any other message.
+async function uploadChatAttachment(req, res, next) {
+  try {
+    await assertParticipant(req.params.id, req.user.id);
+    if (!req.file) return res.status(400).json({ error: "No file uploaded." });
+    res.status(201).json({ url: `/uploads/${req.file.filename}` });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { openThread, listThreads, listMessages, sendMessage, openSupportThread, uploadChatAttachment };

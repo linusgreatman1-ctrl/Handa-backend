@@ -52,7 +52,36 @@ async function main() {
           isOnline: true, isVerified: true,
           hourlyRateKobo: 500000,
           ratePeriod: "per session",
-          menuItems: { create: [{ name: "Ofe Nsala Special", priceKobo: 450000, emoji: "🍲", popular: true }] },
+          // A real, generous menu (not just one dish) -- the meal-picker
+          // packages (3-Day/Weekly/Multiple Meals/Event Catering) read
+          // real menu items with no cap of their own, so a demo account
+          // with only 1-2 items can't actually demonstrate "pick 3 of many"
+          // or "pick 7 of many". This gives every package real variety to
+          // choose from.
+          menuItems: {
+            create: [
+              { name: "Ofe Nsala Special", priceKobo: 450000, emoji: "🍲", popular: true },
+              { name: "Jollof Rice & Chicken", priceKobo: 350000, emoji: "🍚", popular: true },
+              { name: "Egusi Soup & Pounded Yam", priceKobo: 400000, emoji: "🍛", popular: true },
+              { name: "Efo Riro & Semovita", priceKobo: 380000, emoji: "🥬" },
+              { name: "Fried Rice & Turkey", priceKobo: 420000, emoji: "🍗" },
+              { name: "Ogbono Soup & Fufu", priceKobo: 390000, emoji: "🍲" },
+              { name: "Afang Soup & Garri", priceKobo: 450000, emoji: "🥘" },
+              { name: "Pepper Soup (Goat Meat)", priceKobo: 320000, emoji: "🌶️" },
+              { name: "Beans & Plantain (Ewa Agoyin)", priceKobo: 250000, emoji: "🫘" },
+              { name: "Yam Porridge (Asaro)", priceKobo: 280000, emoji: "🍠" },
+              { name: "Moi Moi & Rice", priceKobo: 220000, emoji: "🍱" },
+              { name: "Suya Platter", priceKobo: 300000, emoji: "🍢" },
+              { name: "Ofada Rice & Ayamase Sauce", priceKobo: 400000, emoji: "🍚" },
+              { name: "Okra Soup & Semo", priceKobo: 370000, emoji: "🥣" },
+              { name: "Banga Soup & Starch", priceKobo: 430000, emoji: "🍲" },
+              { name: "Grilled Fish & Jollof Rice", priceKobo: 480000, emoji: "🐟" },
+              { name: "Nkwobi", priceKobo: 350000, emoji: "🍖" },
+              { name: "Chin Chin (Snack)", priceKobo: 150000, emoji: "🍪" },
+              { name: "Puff Puff (Snack)", priceKobo: 120000, emoji: "🍩" },
+              { name: "Zobo Drink", priceKobo: 100000, emoji: "🥤" },
+            ],
+          },
         },
       },
     },

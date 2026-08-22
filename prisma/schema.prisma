@@ -880,8 +880,14 @@ model SupportTicket {
   // customer's "booking not completed" report) — one response, added by
   // whoever ISN'T the ticket's own userId. Admin sees both sides on the
   // one ticket rather than needing to correlate two separate tickets.
+  // secondPartyUserId records exactly WHO responded (not stored before —
+  // admin had no way to open a real chat with them specifically) and
+  // secondPartyEvidenceUrl gives the counter-disputing party the same real
+  // photo-evidence option the original filer already had via evidenceUrl.
   secondPartyResponse    String?
   secondPartyRespondedAt DateTime?
+  secondPartyUserId      String?
+  secondPartyEvidenceUrl String?
 
   @@index([userId])
   @@index([status])

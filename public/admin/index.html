@@ -492,12 +492,16 @@ async function renderTickets() {
           + (t.requestedRefundKobo ? 'Requested: ' + money(t.requestedRefundKobo) : '')
           + (t.refundAmountKobo ? ' · Refunded: ' + money(t.refundAmountKobo) : '')
         : '';
-      const actions = t.status !== 'RESOLVED'
+      const actions = (t.status !== 'RESOLVED'
         ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">Resolve</button>'
           + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\')">Resolve with Refund</button>' : '')
           + (t.isDispute && t.status === 'OPEN' ? ' <button class="action-btn" onclick="investigateTicket(\'' + t.id + '\')">Investigate</button>' : '')
+        : '')
+        + '<br><button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.userId + '\')">&#128172; Chat filer</button>'
+        + (t.secondPartyUserId ? ' <button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.secondPartyUserId + '\')">&#128172; Chat other side</button>' : '');
+      const secondSide = t.secondPartyResponse
+        ? '<br><small><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + (t.secondPartyEvidenceUrl ? ' · <a href="' + t.secondPartyEvidenceUrl + '" target="_blank">Their evidence</a>' : '') + '</small>'
         : '';
-      const secondSide = t.secondPartyResponse ? '<br><small><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + '</small>' : '';
       return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '<br><small>' + disputeInfo + '</small>' + secondSide + '</td>' +
         '<td>' + pill(t.status) + '</td>' +
         '<td>' + actions + '</td></tr>';
@@ -507,6 +511,19 @@ async function renderTickets() {
       : '<div class="empty">No support tickets.</div>';
   } catch (e) {
     document.getElementById('tickets-table').textContent = e.message;
+  }
+}
+// Proactively opens (finds-or-creates) a real support chat with a specific
+// user straight from a ticket row — the disputing party and whoever they're
+// disputing against each get a real admin conversation, not just static
+// ticket text.
+async function openTicketPartyChat(userId) {
+  if (!userId) { alert('No user to chat with.'); return; }
+  try {
+    const data = await api('/admin/chat-threads/for-user/' + userId, { method: 'POST' });
+    renderChatThreadDetail(data.thread.id);
+  } catch (e) {
+    alert(e.message);
   }
 }
 async function resolveTicket(id) {
@@ -1504,34 +1521,39 @@ async function renderChatThreadDetail(id) {
   const main = document.getElementById('main');
   main.innerHTML =
     '<button class="action-btn" style="margin-bottom:14px" onclick="stopChatThreadAutoRefresh();switchTab(\'chatthreads\')">&larr; Back to list</button>' +
-    '<h2>Support Chat</h2><div id="chat-thread-body" class="empty">Loading...</div>';
+    '<h2>Support Chat</h2>' +
+    '<div id="chat-thread-msgs" class="empty" style="background:#181818;border:1px solid #2A2850;border-radius:12px;padding:16px;margin-bottom:12px;max-height:420px;overflow-y:auto;">Loading...</div>' +
+    '<input type="file" id="chat-thread-attach-inp" accept="image/*" style="display:none" onchange="sendChatThreadAttachment(\'' + id + '\', this)">' +
+    '<div style="display:flex;gap:8px;">' +
+    '<button class="action-btn" onclick="document.getElementById(\'chat-thread-attach-inp\').click()" title="Attach evidence/photo">&#128206;</button>' +
+    '<input id="chat-thread-reply" placeholder="Type a reply..." style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #2A2850;background:#1C1C1C;color:#F2EDE8;" onkeydown="if(event.key===\'Enter\'){sendChatThreadReply(\'' + id + '\');}">' +
+    '<button class="action-btn" onclick="sendChatThreadReply(\'' + id + '\')">Send</button></div>';
   window._chatThreadDetailId = id;
   await loadChatThreadDetail(id);
   if (window._chatThreadRefreshTimer) clearInterval(window._chatThreadRefreshTimer);
   window._chatThreadRefreshTimer = setInterval(() => { if (window._chatThreadDetailId === id) loadChatThreadDetail(id); }, 8000);
 }
 
+// Only touches the messages pane, never the reply input/attach controls --
+// the 8s auto-refresh used to rebuild the whole panel every tick, wiping
+// out whatever the admin was mid-typing in the reply box.
 async function loadChatThreadDetail(id) {
-  const wrap = document.getElementById('chat-thread-body');
-  if (!wrap) return;
+  const msgsEl = document.getElementById('chat-thread-msgs');
+  if (!msgsEl) return;
   try {
     const data = await api('/admin/chat-threads/' + id + '/messages');
     const bubbles = data.messages.map(m => {
       const mine = m.sender.role === 'ADMIN';
+      const img = m.attachmentUrl ? ('<a href="' + m.attachmentUrl + '" target="_blank"><img src="' + m.attachmentUrl + '" style="max-width:160px;max-height:160px;border-radius:8px;display:block;' + (m.body ? 'margin-bottom:6px;' : '') + '"></a>') : '';
       return '<div style="max-width:70%;margin-bottom:8px;' + (mine ? 'margin-left:auto;text-align:right;' : '') + '">' +
         '<div style="font-size:11px;color:#9A9390;margin-bottom:2px;">' + escHtml(m.sender.name) + '</div>' +
-        '<div style="display:inline-block;padding:9px 12px;border-radius:10px;text-align:left;background:' + (mine ? '#2ECC71' : '#242424') + ';color:' + (mine ? '#111' : '#F2EDE8') + ';font-size:13px;">' + escHtml(m.body) + '</div></div>';
+        '<div style="display:inline-block;padding:9px 12px;border-radius:10px;text-align:left;background:' + (mine ? '#2ECC71' : '#242424') + ';color:' + (mine ? '#111' : '#F2EDE8') + ';font-size:13px;">' + img + (m.body ? escHtml(m.body) : '') + '</div></div>';
     }).join('');
-    wrap.innerHTML =
-      '<div id="chat-thread-msgs" style="background:#181818;border:1px solid #2A2850;border-radius:12px;padding:16px;margin-bottom:12px;max-height:420px;overflow-y:auto;">' +
-      (bubbles || '<div class="empty">No messages yet.</div>') + '</div>' +
-      '<div style="display:flex;gap:8px;">' +
-      '<input id="chat-thread-reply" placeholder="Type a reply..." style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #2A2850;background:#1C1C1C;color:#F2EDE8;" onkeydown="if(event.key===\'Enter\'){sendChatThreadReply(\'' + id + '\');}">' +
-      '<button class="action-btn" onclick="sendChatThreadReply(\'' + id + '\')">Send</button></div>';
-    const msgsEl = document.getElementById('chat-thread-msgs');
-    if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+    msgsEl.classList.remove('empty');
+    msgsEl.innerHTML = bubbles || '<div class="empty">No messages yet.</div>';
+    msgsEl.scrollTop = msgsEl.scrollHeight;
   } catch (e) {
-    wrap.textContent = e.message;
+    msgsEl.textContent = e.message;
   }
 }
 
@@ -1545,6 +1567,28 @@ async function sendChatThreadReply(id) {
     await loadChatThreadDetail(id);
   } catch (e) {
     alert(e.message);
+  }
+}
+
+// Real evidence/proof upload for the admin's side of a dispute
+// conversation — mirrors the customer app's sendChatAttachment.
+async function sendChatThreadAttachment(id, inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const upRes = await fetch(API + '/admin/chat-threads/' + id + '/attachment', {
+      method: 'POST', headers: authHeaders(), body: fd,
+    });
+    const upData = await upRes.json().catch(() => ({}));
+    if (!upRes.ok) throw new Error(upData.error || 'Could not upload the photo');
+    await api('/admin/chat-threads/' + id + '/messages', { method: 'POST', body: JSON.stringify({ attachmentUrl: upData.url }) });
+    await loadChatThreadDetail(id);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    inputEl.value = '';
   }
 }
 

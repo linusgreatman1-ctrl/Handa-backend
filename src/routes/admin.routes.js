@@ -1,5 +1,6 @@
 const express = require("express");
 const { requireAuth, requireRole, requireSuperAdmin, requireContentOrSuperAdmin } = require("../middleware/auth");
+const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/admin.controller");
 const adminMgmt = require("../controllers/adminManagement.controller");
 const adminFiles = require("../controllers/adminFiles.controller");
@@ -78,8 +79,10 @@ router.get("/ai-conversations", requireContentOrSuperAdmin, ctrl.listAiConversat
 // Live Chat: SUPPORT-context threads real customers open via "Chat with
 // Support" — real AI auto-replies until an admin sends a real message.
 router.get("/chat-threads", requireContentOrSuperAdmin, ctrl.listChatThreadsForAdmin);
+router.post("/chat-threads/for-user/:userId", requireContentOrSuperAdmin, ctrl.openSupportThreadForUser);
 router.get("/chat-threads/:id/messages", requireContentOrSuperAdmin, ctrl.getChatThreadMessagesForAdmin);
 router.post("/chat-threads/:id/messages", requireContentOrSuperAdmin, ctrl.sendAdminChatMessage);
+router.post("/chat-threads/:id/attachment", requireContentOrSuperAdmin, upload.single("file"), ctrl.uploadAdminChatAttachment);
 
 // Admin management + audit trail — super-admin only.
 router.get("/admins", requireSuperAdmin, adminMgmt.listAdmins);

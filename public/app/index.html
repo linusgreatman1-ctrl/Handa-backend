@@ -898,6 +898,8 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
   </div>
   <div class="chat-msgs" id="chat-msgs"></div>
   <div class="chat-ft">
+    <input type="file" id="chat-attach-inp" accept="image/*" style="display:none;" onchange="sendChatAttachment(this)">
+    <button class="chat-sb" style="background:#242424;" onclick="document.getElementById('chat-attach-inp').click()" title="Attach evidence/photo">📎</button>
     <input class="chat-in" id="chat-inp" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendMsg()">
     <button class="chat-sb" onclick="sendMsg()">➤</button>
   </div>
@@ -2249,6 +2251,14 @@ function renderSteps(){
 // (contextType, contextId) pair, backed by the same /chat/threads API
 // Shop-For-Me already proved out (see sfmEnsureChatThread above).
 function escHtmlApp(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+// Shared bubble renderer so a real photo attachment (evidence/proof for a
+// dispute, or any chat) shows as a real clickable image, not just a dead
+// attachmentUrl field nothing ever displayed.
+function chatBubbleHtml(m,myId){
+  var mine=m.senderId===myId;
+  var img=m.attachmentUrl?('<img src="'+m.attachmentUrl+'" style="max-width:180px;max-height:180px;border-radius:10px;display:block;cursor:pointer;'+(m.body?'margin-bottom:6px;':'')+'" onclick="window.open(\''+m.attachmentUrl+'\',\'_blank\')">'):'';
+  return '<div class="bub '+(mine?'m':'t')+'">'+img+(m.body?escHtmlApp(m.body):'')+'</div>';
+}
 window._activeChatThreadId=null;
 async function openChat(p){
   if(!p||!p.otherUserId){showToast&&showToast('Chat is not available for this contact yet.','warning');return;}
@@ -2264,9 +2274,7 @@ async function openChat(p){
     if(_socket)_socket.emit('chat:join',{threadId:tres.thread.id});
     var mres=await api('/chat/threads/'+tres.thread.id+'/messages');
     var myId=(S.user||{}).id;
-    msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){
-      return '<div class="bub '+(m.senderId===myId?'m':'t')+'">'+escHtmlApp(m.body)+'</div>';
-    }).join(''):'<div class="bub t">Say hello \ud83d\udc4b</div>';
+    msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">Say hello \ud83d\udc4b</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
     bindAppChatSocketListener();
   }catch(err){
@@ -2291,9 +2299,7 @@ async function openSupportChat(){
     if(_socket)_socket.emit('chat:join',{threadId:tres.thread.id});
     var mres=await api('/chat/threads/'+tres.thread.id+'/messages');
     var myId=(S.user||{}).id;
-    msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){
-      return '<div class="bub '+(m.senderId===myId?'m':'t')+'">'+escHtmlApp(m.body)+'</div>';
-    }).join(''):'<div class="bub t">Hi! How can we help you today?</div>';
+    msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">Hi! How can we help you today?</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
     bindAppChatSocketListener();
   }catch(err){
@@ -2308,10 +2314,8 @@ function bindAppChatSocketListener(){
     var myId=(S.user||{}).id;
     if(msg.senderId===myId)return;
     var msgsEl=document.getElementById('chat-msgs');if(!msgsEl)return;
-    var d=document.createElement('div');
-    d.className='bub t';
-    d.textContent=msg.body;
-    msgsEl.appendChild(d);msgsEl.scrollTop=msgsEl.scrollHeight;
+    msgsEl.insertAdjacentHTML('beforeend',chatBubbleHtml(msg,myId));
+    msgsEl.scrollTop=msgsEl.scrollHeight;
   });
 }
 function closeChat(){document.getElementById('chat-ov').classList.remove('on');window._activeChatThreadId=null;}
@@ -2324,6 +2328,27 @@ async function sendMsg(){
     await api('/chat/threads/'+window._activeChatThreadId+'/messages',{method:'POST',body:JSON.stringify({body:txt})});
     var d=document.createElement('div');d.className='bub m';d.textContent=txt;msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;
   }catch(err){showToast&&showToast(err.message||'Could not send message','warning');}
+}
+// Real evidence/proof upload for a dispute (or any) conversation \u2014 uploads
+// the file, then sends a real chat message carrying its URL through the
+// normal message pipeline (notify + AI-reply-if-no-admin-yet all apply).
+async function sendChatAttachment(inputEl){
+  var file=inputEl.files[0]; if(!file){return;}
+  if(!window._activeChatThreadId){showToast&&showToast('Chat not ready yet \u2014 try again in a moment.','warning');inputEl.value='';return;}
+  var msgs=document.getElementById('chat-msgs');
+  try{
+    var fd=new FormData(); fd.append('file',file);
+    var upRes=await fetch(API_BASE+'/chat/threads/'+window._activeChatThreadId+'/attachment',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+    var upData=await upRes.json().catch(function(){return {};});
+    if(!upRes.ok) throw new Error(upData.error||'Could not upload the photo');
+    await api('/chat/threads/'+window._activeChatThreadId+'/messages',{method:'POST',body:JSON.stringify({attachmentUrl:upData.url})});
+    if(msgs){ msgs.insertAdjacentHTML('beforeend',chatBubbleHtml({senderId:(S.user||{}).id,body:'',attachmentUrl:upData.url},(S.user||{}).id)); msgs.scrollTop=msgs.scrollHeight; }
+    showToast&&showToast('Photo sent','success');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not send the photo','warning');
+  }finally{
+    inputEl.value='';
+  }
 }
 async function toggleOnline(){
   var goingOnline=!S.rdrOnline;
@@ -5936,7 +5961,6 @@ function openProfilePhotoUpload(role) {
 
 
 
-function openHelpSupportModal(){ toast('Help & Support: contact support@citychef.ng'); }
 function showScreen(screenId){ shopperNav('home'); }
 
 
@@ -7071,15 +7095,26 @@ function openVendorDisputeResponseModal(ticketId,bookingId){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Your Side of the Story</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">This is shown to the admin reviewing the customer\'s report.</p>'
     +'<textarea id="vdr-text" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:110px;" placeholder="Tell us what happened from your side..."></textarea>'
+    +'<div style="margin-top:10px;">'
+    +'<label for="vdr-evidence" id="vdr-evidence-label" style="display:flex;align-items:center;gap:8px;width:100%;padding:11px;background:#242424;border:1.5px dashed #2A2850;border-radius:10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:12px;cursor:pointer;box-sizing:border-box;"><span style="font-size:16px;">📷</span><span id="vdr-evidence-label-text">Attach a photo (optional proof)</span></label>'
+    +'<input id="vdr-evidence" type="file" accept="image/*" style="display:none;" onchange="var t=document.getElementById(\'vdr-evidence-label-text\');if(t)t.textContent=this.files[0]?this.files[0].name:\'Attach a photo (optional proof)\';">'
+    +'</div>'
     +'<button onclick="submitVendorDisputeResponse(\''+ticketId+'\',\''+bookingId+'\')" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Submit Response</button>'
+    +'<button onclick="closeProcedureModal();openSupportChat();" style="width:100%;margin-top:8px;background:transparent;border:1.5px solid rgba(59,159,232,.35);border-radius:14px;padding:12px;font-size:13px;font-weight:700;color:#3B9FE8;cursor:pointer;">💬 Chat live with support instead</button>'
     +'</div>'
   );
 }
 async function submitVendorDisputeResponse(ticketId,bookingId){
   var text=(document.getElementById('vdr-text')||{}).value||'';
   if(!text.trim()){showToast&&showToast('Please describe what happened','warning');return;}
+  var fileEl=document.getElementById('vdr-evidence');
+  var file=fileEl&&fileEl.files[0];
   try{
     await api('/support/tickets/'+ticketId+'/respond',{method:'POST',body:JSON.stringify({response:text.trim()})});
+    if(file){
+      var fd=new FormData();fd.append('evidence',file);
+      await fetch(API_BASE+'/support/tickets/'+ticketId+'/second-party-evidence',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+    }
     showToast&&showToast('Response sent to the admin.','success');
     closeProcedureModal();
     openVendorBookingDetail(bookingId);
@@ -8325,31 +8360,15 @@ function addNewCard(){
 }
 
 // 3. Help & Support - Live Chat and Call
+// Opens the REAL support chat (openSupportChat -- real ChatThread, real
+// admin visibility, real credential-gated AI auto-reply). This used to be
+// a fully decorative modal (a textarea whose "Start Chat" button just
+// closed itself and showed a canned "Support agent connected!" toast --
+// nothing was ever sent anywhere) — every "Help & Support"/"Live Chat"
+// entry point across the app now routes here instead.
 function openLiveChat(){
-  showProcedureModal(
-    '<div style="padding:0 0 24px">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
-    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
-    +'<p style="font-size:16px;font-weight:800;margin:0">💬 Live Chat Support</p></div>'
-    +'<p style="color:#9A9390;font-size:13px;margin-bottom:16px">Average response time: 2 minutes</p>'
-    +'<div style="background:#1C1C1C;border-radius:12px;padding:14px;margin-bottom:16px">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
-    +'<div style="width:36px;height:36px;border-radius:50%;background:rgba(46,204,113,.2);display:flex;align-items:center;justify-content:center">🤝</div>'
-    +'<div><div style="font-weight:700;font-size:13px">Handa Support</div><div style="color:#2ECC71;font-size:11px">● Online now</div></div></div>'
-    +'<textarea id="chat-issue" class="if" rows="3" placeholder="Describe your issue..." style="width:100%;display:block;margin:0"></textarea>'
-    +'</div>'
-    +'<button id="start-chat-btn" style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">Start Chat</button>'
-    +'</div>'
-  );
-  setTimeout(function(){
-    var btn=document.getElementById('start-chat-btn');
-    if(btn)btn.onclick=function(){
-      var msg=(document.getElementById('chat-issue')||{}).value||'';
-      if(!msg.trim()){showToast&&showToast('Please describe your issue','warning');return;}
-      closeProcedureModal();
-      showToast&&showToast('Support agent connected! You\'ll receive a response shortly.','success');
-    };
-  },50);
+  if(typeof closeProcedureModal==='function') closeProcedureModal();
+  openSupportChat();
 }
 function callSupport(){
   showProcedureModal(
