@@ -246,6 +246,20 @@ function switchTab(tab) {
   renderers[tab]();
 }
 
+// Every tab switch and every "click an item to see its detail" view (renderVendorDetail,
+// renderChatThreadDetail, etc.) replaces #main's innerHTML -- there are 50+ call sites for
+// that, so rather than add a scroll-reset to each one individually, watch #main itself and
+// snap the page back to the top whenever its content changes.
+(function () {
+  const mainEl = document.getElementById('main');
+  if (!mainEl) return;
+  const observer = new MutationObserver(() => {
+    window.scrollTo(0, 0);
+    mainEl.scrollTop = 0;
+  });
+  observer.observe(mainEl, { childList: true });
+})();
+
 const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red', EXPIRED: 'grey' };
 function pill(status) { return '<span class="pill ' + (STATUS_PILL[status] || 'grey') + '">' + status + '</span>'; }
 

@@ -6581,6 +6581,10 @@ function eGo(scr){
   if(el){
     var flex=['screen-liveshop','screen-shopperdash','screen-homecookdash','screen-epdash','screen-riderdash'].indexOf(id)>=0;
     el.style.display=flex?'flex':'block';el.classList.add('active');
+    // Each .escreen is its own overflow-y:auto scroll container -- without this,
+    // a screen shown after being scrolled down previously (or right after login)
+    // reopens wherever it was last left, not at the top.
+    el.scrollTop=0;
   }
   S.curScreen=scr;
   document.querySelectorAll('.ntab').forEach(function(b){b.classList.remove('active');});
