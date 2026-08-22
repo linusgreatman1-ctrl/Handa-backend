@@ -38,7 +38,7 @@ async function verifyPayment(req, res, next) {
     if (data.status !== "success") {
       return res.status(402).json({ error: "Payment was not successful.", status: data.status });
     }
-    const result = await applyVerifiedPayment(data);
+    const result = await applyVerifiedPayment(data, req.app.get("io"));
     res.json({ success: true, ...result });
   } catch (err) {
     next(err);
@@ -47,14 +47,14 @@ async function verifyPayment(req, res, next) {
 
 // Routes a confirmed Paystack payment to whatever it was actually for,
 // based on the metadata.purpose set when the transaction was initialized.
-async function applyVerifiedPayment(data) {
+async function applyVerifiedPayment(data, io) {
   const purpose = data.metadata?.purpose;
   if (purpose === "WALLET_DEPOSIT") {
     await wallet.creditWallet(data.metadata.userId, data.amount, "DEPOSIT", { reference: data.reference, description: "Wallet top-up via Paystack" });
     return { purpose };
   }
   if (purpose === "BOOKING_PAYMENT") {
-    await orderFlow.confirmBookingPayment(data.metadata.bookingId, data.reference);
+    await orderFlow.confirmBookingPayment(data.metadata.bookingId, data.reference, io);
     return { purpose, bookingId: data.metadata.bookingId };
   }
   if (purpose === "SHOP_SESSION_PAYMENT") {
@@ -102,7 +102,7 @@ async function webhook(req, res, next) {
     await prisma.paymentWebhookEvent.create({ data: { eventRef, payload: event } });
 
     if (event.event === "charge.success") {
-      await applyVerifiedPayment(event.data);
+      await applyVerifiedPayment(event.data, req.app.get("io"));
     } else if (event.event === "transfer.success" || event.event === "transfer.failed" || event.event === "transfer.reversed") {
       await orderFlow.applyTransferWebhook(event);
     }

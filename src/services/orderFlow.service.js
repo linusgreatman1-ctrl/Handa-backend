@@ -8,12 +8,18 @@
 const prisma = require("../config/db");
 const escrow = require("./escrow.service");
 const wallet = require("./wallet.service");
+const { notify } = require("./notifications.service");
 
-async function confirmBookingPayment(bookingId, reference) {
+// Home Cook bookings are paid immediately when the customer sends the
+// request, before the vendor has decided -- not after acceptance like they
+// used to be. PAID marks that "paid, awaiting vendor decision" window;
+// acceptBooking/declineBooking (bookings.controller.js) are what move a
+// PAID booking on to CONFIRMED or (with a refund) DECLINED.
+async function confirmBookingPayment(bookingId, reference, io) {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: true } });
   if (!booking) throw Object.assign(new Error("Booking not found."), { status: 404 });
-  if (booking.status !== "ACCEPTED") {
-    throw Object.assign(new Error("This booking has not been accepted by the vendor yet."), { status: 409 });
+  if (booking.status !== "REQUESTED") {
+    throw Object.assign(new Error("This booking is not awaiting payment."), { status: 409 });
   }
 
   const existingHold = await prisma.escrowHold.findFirst({ where: { bookingId, payeeRole: "VENDOR" } });
@@ -28,7 +34,9 @@ async function confirmBookingPayment(bookingId, reference) {
     amountKobo: booking.totalKobo,
   });
 
-  return prisma.booking.update({ where: { id: bookingId }, data: { status: "CONFIRMED", confirmedAt: new Date() } });
+  const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: "PAID", confirmedAt: new Date() } });
+  await notify(io, booking.vendor.userId, "ORDER_UPDATE", "New paid booking request", `A customer paid for a ${booking.type === "EVENT_PLANNING" ? "event planning" : "home cook"} booking -- accept or decline it.`, { bookingId }).catch(() => {});
+  return updated;
 }
 
 // A ShopSession's deposit covers the session fee (released to the shopper

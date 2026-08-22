@@ -7193,13 +7193,19 @@ async function renderVendorDashboard(kind){
     if(!listEl)return;
     if(!res.bookings.length){listEl.innerHTML='<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:40px;margin:0 0 8px">'+icon+'</p><p>No bookings yet</p></div>';return;}
     listEl.innerHTML=res.bookings.map(function(b){
-      var statusColors={REQUESTED:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#9A9390'};
+      var statusColors={REQUESTED:'#9A9390',PAID:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#9A9390'};
       var sc=statusColors[b.status]||'#9A9390';
       var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
       var sub=isCook?('📍 '+(b.venue||'Address TBD')):('🎊 '+(b.servicePackage?b.servicePackage.label:'Custom')+' • 📍 '+(b.venue||'Venue TBD'));
-      var actions=b.status==='REQUESTED'
+      // Event Planner never takes payment through the app -- a request is
+      // actionable as soon as it arrives (REQUESTED). Home Cook now collects
+      // payment BEFORE the vendor ever sees it (see payBooking), so a
+      // REQUESTED cook booking just means "customer hasn't paid yet" --
+      // nothing to accept/decline until it reaches PAID.
+      var actionableStatus=isCook?'PAID':'REQUESTED';
+      var actions=b.status===actionableStatus
         ?'<div style="display:flex;gap:8px;margin-top:10px"><button onclick="event.stopPropagation();vendorBookingAction(\''+b.id+'\',\'accept\')" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">Accept</button><button onclick="event.stopPropagation();vendorBookingAction(\''+b.id+'\',\'decline\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer">Decline</button></div>'
-        :'';
+        :(isCook&&b.status==='REQUESTED'?'<div style="margin-top:10px;padding:8px;border-radius:9px;background:rgba(154,147,144,.1);color:#9A9390;font-size:11px;font-weight:700;text-align:center;">Awaiting customer payment</div>':'');
       return '<div onclick="openVendorBookingDetail(\''+b.id+'\')" style="background:#1C1C1C;border-radius:14px;padding:14px;margin-bottom:10px;border:1.5px solid #2A2850;cursor:pointer"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="color:#F2EDE8">'+(b.customer?b.customer.name:'Customer')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px">'+b.status+'</span></div><p style="color:#9A9390;font-size:12px;margin:0 0 2px">'+sub+'</p><p style="color:#9A9390;font-size:12px;margin:0">📅 '+when+(b.eventTime?' at '+b.eventTime:'')+' • ₦'+Number(Math.round(b.totalKobo/100)).toLocaleString()+'</p>'+actions+'</div>';
     }).join('');
   }catch(err){
@@ -7428,8 +7434,8 @@ async function openCustomerHistoryDetail(kind,id){
     var _jobNotPassed=!_jobInstant||_jobInstant.getTime()>Date.now();
     // Edit and Cancel share the exact same window: only while the booking is
     // still pre-completion AND the scheduled job time hasn't passed yet.
-    var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
-    var cancellable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
+    var editable=['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
+    var cancellable=['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
     var needsCompletionResponse=b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
     var awaitingVendor=b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     var isEP=b.type==='EVENT_PLANNING';
@@ -8120,8 +8126,12 @@ async function cookBkConfirmBooking(){
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
     _cb.bookingNumber=res.booking.bookingNumber;
-    cookBkRender('confirmed');
-    showToast&&showToast('Booking sent to '+_cb.cook.nm+'! Ref '+res.booking.bookingNumber,'success');
+    // Payment now happens immediately when the request is sent, before the
+    // vendor decides -- not after acceptance. The confirmation screen only
+    // shows once payment actually succeeds; if the customer backs out of
+    // the escrow modal, the booking sits unpaid (REQUESTED) and can still
+    // be paid later via the "Pay Now" retry button in History.
+    payForBooking(res.booking.id, res.booking.totalKobo, function(){ cookBkRender('confirmed'); });
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
   }
@@ -8560,7 +8570,12 @@ async function renderEHistory(){
 function renderEHistoryItems(orders){
   if(!orders.length)return '<div style="text-align:center;padding:40px;color:#9A9390"><p>No orders in this category</p></div>';
   return orders.map(function(o){
-    var payBtn = (o.bookingId && o.status==='ACCEPTED')
+    // Home Cook only -- Event Planner bookings also start at REQUESTED but
+    // never take payment through the app at all. Payment now happens right
+    // after the request is sent (see cookBkConfirmBooking), so this is
+    // really a retry path for someone who backed out of that first prompt,
+    // not the primary way to pay.
+    var payBtn = (o.bookingId && o.status==='REQUESTED' && o.type==='Home Cook')
       ? '<button onclick="event.stopPropagation();payForBooking(\''+o.bookingId+'\','+o.totalKobo+')" style="margin-top:6px;padding:6px 12px;border-radius:8px;border:none;background:#E8392E;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">Pay Now</button>'
       : '';
     var detailClick=o.bookingId?"openCustomerHistoryDetail('booking','"+o.bookingId+"')":(o.sessionId?"openCustomerHistoryDetail('session','"+o.sessionId+"')":'');
@@ -8579,23 +8594,32 @@ function renderEHistoryItems(orders){
 // checkout in a new tab and polls the booking until it leaves ACCEPTED
 // (webhook confirms payment → status flips to CONFIRMED), so the customer
 // is brought back to where they left off automatically.
-function payForBooking(bookingId, totalKobo){
+// Home Cook bookings are paid immediately when the request is sent, before
+// the vendor decides -- not after acceptance. onSuccess lets the fresh
+// booking-creation flow (cookBkConfirmBooking) render its own confirmation
+// screen instead of always jumping to History, which is only what should
+// happen for the History list's own retry-payment button.
+function payForBooking(bookingId, totalKobo, onSuccess){
   openEscrowModal(Math.round(totalKobo/100), async function(){
     try{
       var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
       var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
       var res=await api('/bookings/'+bookingId+'/pay',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
-      if(res.paid){showToast&&showToast('Payment successful — booking confirmed!','success');renderEHistory();return;}
+      if(res.paid){
+        showToast&&showToast('Payment successful — sent to the vendor for review.','success');
+        if(onSuccess)onSuccess(); else renderEHistory();
+        return;
+      }
       if(res.authorizationUrl){
         window.open(res.authorizationUrl,'_blank');
         showToast&&showToast('Complete payment in the new tab, then return here.','success');
         var pollIv=setInterval(async function(){
           try{
             var r=await api('/bookings/'+bookingId);
-            if(r.booking.status!=='ACCEPTED'){
+            if(r.booking.status!=='REQUESTED'){
               clearInterval(pollIv);
-              if(r.booking.status==='CONFIRMED')showToast&&showToast('Payment confirmed — booking is set!','success');
-              if(S.curScreen==='history')renderEHistory();
+              if(r.booking.status==='PAID')showToast&&showToast('Payment confirmed — sent to the vendor for review.','success');
+              if(onSuccess)onSuccess(); else if(S.curScreen==='history')renderEHistory();
             }
           }catch(e){}
         },4000);

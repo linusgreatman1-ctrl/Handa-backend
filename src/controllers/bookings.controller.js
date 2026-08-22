@@ -172,7 +172,7 @@ async function updateBooking(req, res, next) {
     });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     if (booking.customerId !== req.user.id) return res.status(403).json({ error: "Only the customer who made this booking can edit it." });
-    if (!["REQUESTED", "ACCEPTED", "CONFIRMED"].includes(booking.status)) {
+    if (!["REQUESTED", "PAID", "ACCEPTED", "CONFIRMED"].includes(booking.status)) {
       return res.status(400).json({ error: "This booking can no longer be edited." });
     }
     if (booking.eventDate && new Date(booking.eventDate).getTime() <= Date.now()) {
@@ -236,26 +236,31 @@ function assertVendorOwnsBooking(req, booking) {
   }
 }
 
-// Home Cook bookings are paid through the app (escrow) -- acceptance
-// moves them to ACCEPTED and the customer is prompted to pay next, same
-// as before. Event Planner bookings are paid directly between customer
-// and planner, outside the app -- there's nothing for the customer to
-// pay here, so acceptance goes straight to CONFIRMED (the same status
-// Home Cook only reaches after payment), which is what already unlocks
-// the vendor's "Order/Booking Completed" button and the customer's
-// eventual Yes/No confirmation, unchanged.
+// Event Planner bookings still go REQUESTED -> accept -> CONFIRMED directly
+// (no payment ever happens through the app). Home Cook bookings now pay
+// FIRST (REQUESTED -> payBooking -> PAID), so by the time a vendor can act
+// on one it's already funded -- accept requires PAID, not REQUESTED, and
+// moves straight to CONFIRMED (the old separate "wait for payment" step is
+// gone, since payment already happened before the vendor ever saw it).
+function requiredStatusForVendorDecision(type) {
+  return type === "EVENT_PLANNING" ? "REQUESTED" : "PAID";
+}
+
 async function acceptBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     assertVendorOwnsBooking(req, booking);
-    if (booking.status !== "REQUESTED") return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
+    const required = requiredStatusForVendorDecision(booking.type);
+    if (booking.status !== required) {
+      return res.status(409).json({ error: required === "PAID" && booking.status === "REQUESTED" ? "This booking hasn't been paid for yet." : `Booking is already ${booking.status.toLowerCase()}.` });
+    }
 
     const isEventPlanning = booking.type === "EVENT_PLANNING";
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: isEventPlanning ? "CONFIRMED" : "ACCEPTED" } });
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CONFIRMED" } });
     const message = isEventPlanning
       ? "Your event planning booking was accepted! Payment is arranged directly with your planner, outside the app."
-      : "Your home cook booking was accepted. Pay to confirm your date.";
+      : "Your home cook booking was accepted and confirmed.";
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", message, { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -263,30 +268,46 @@ async function acceptBooking(req, res, next) {
   }
 }
 
+// Home Cook: the customer already paid into escrow before the vendor ever
+// saw this (see payBooking/confirmBookingPayment), so declining now has to
+// refund it -- there was nothing to refund back when decline only ever
+// happened pre-payment. Event Planner: unchanged, nothing was ever held.
 async function declineBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     assertVendorOwnsBooking(req, booking);
-    if (booking.status !== "REQUESTED") return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
+    const required = requiredStatusForVendorDecision(booking.type);
+    if (booking.status !== required) {
+      return res.status(409).json({ error: required === "PAID" && booking.status === "REQUESTED" ? "This booking hasn't been paid for yet." : `Booking is already ${booking.status.toLowerCase()}.` });
+    }
 
+    if (booking.type !== "EVENT_PLANNING") {
+      await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking declined by vendor" });
+    }
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "DECLINED" } });
-    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking declined", `Your ${booking.type.toLowerCase().replace("_", " ")} booking request was declined.`, { bookingId: booking.id });
+    const message =
+      booking.type === "EVENT_PLANNING"
+        ? "Your event planning booking request was declined."
+        : "Your home cook booking request was declined -- your payment has been refunded to your wallet.";
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking declined", message, { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
   }
 }
 
-// Payment only happens once the vendor has accepted and quoted/confirmed
-// the engagement — matches the frontend's booking flow (select package →
-// details → payment → confirmation) ending on a vendor-approved request.
+// Payment happens immediately when the customer sends the request, before
+// the vendor has decided -- not after acceptance. Matches Shop-For-Me's own
+// pattern (pay upfront, before a shopper is even matched) and means the
+// vendor never sees an unfunded request: by the time it reaches their
+// dashboard (status PAID), the money is already held in escrow.
 async function payBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
     if (booking.type === "EVENT_PLANNING") return res.status(400).json({ error: "Event planning bookings are paid directly with the planner, not through the app." });
-    if (booking.status !== "ACCEPTED") return res.status(409).json({ error: "This booking has not been accepted by the vendor yet." });
+    if (booking.status !== "REQUESTED") return res.status(409).json({ error: "This booking isn't awaiting payment." });
 
     // The customer can choose their payment method here, at actual pay
     // time -- not be locked into whatever was recorded when the booking
@@ -300,7 +321,7 @@ async function payBooking(req, res, next) {
       await prisma.$transaction(async (tx) => {
         await walletSvc.debitWallet(req.user.id, booking.totalKobo, "ESCROW_HOLD", { contextType: "BOOKING", contextId: booking.id, description: "Booking payment" }, tx);
       });
-      await orderFlow.confirmBookingPayment(booking.id);
+      await orderFlow.confirmBookingPayment(booking.id, null, req.app.get("io"));
       const updated = await prisma.booking.findUnique({ where: { id: booking.id } });
       return res.json({ booking: updated, paid: true });
     }
@@ -429,7 +450,12 @@ async function cancelBooking(req, res, next) {
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
     if (["COMPLETED", "CANCELLED"].includes(booking.status)) return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
 
-    if (booking.status === "CONFIRMED") {
+    // PAID: the customer paid at request time and the vendor hasn't decided
+    // yet. CONFIRMED: vendor already accepted (also already paid, for Home
+    // Cook). Either way there's real money held that needs refunding --
+    // Event Planner bookings never hold anything, so this is always a safe
+    // no-op for them (refundAllHoldsForContext handles zero holds cleanly).
+    if (["PAID", "CONFIRMED"].includes(booking.status)) {
       await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking cancelled by customer" });
     }
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });

@@ -364,9 +364,10 @@ enum BookingType {
 
 enum BookingStatus {
   REQUESTED
-  ACCEPTED
+  PAID // Home Cook only: customer paid into escrow immediately on request, before the vendor has decided -- refunded automatically if the vendor declines
+  ACCEPTED // legacy value from before payment moved to request-time; no longer produced by createBooking's flow, kept for old rows
   DECLINED
-  CONFIRMED // deposit paid into escrow
+  CONFIRMED // vendor accepted (Home Cook: already paid via PAID; Event Planner: never paid through the app at all)
   COMPLETED
   CANCELLED
 }

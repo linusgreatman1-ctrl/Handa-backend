@@ -260,7 +260,7 @@ function switchTab(tab) {
   observer.observe(mainEl, { childList: true });
 })();
 
-const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red', EXPIRED: 'grey' };
+const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red', EXPIRED: 'grey', PAID: 'amber', REQUESTED: 'grey', ACCEPTED: 'amber', CONFIRMED: 'green', DECLINED: 'red' };
 function pill(status) { return '<span class="pill ' + (STATUS_PILL[status] || 'grey') + '">' + status + '</span>'; }
 
 async function renderDashboard() {
