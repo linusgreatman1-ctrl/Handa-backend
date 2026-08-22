@@ -57,6 +57,13 @@ async function maybeSendAiReply(threadId, senderUserId, io) {
     return;
   }
 
+  // Re-check right before writing -- the AI network call above can take
+  // several seconds, a real enough window for an admin to send their own
+  // reply (stamping handledByAdminId) while this was in flight. Without
+  // this, the AI's reply could still land after a human already took over.
+  const stillUnhandled = await prisma.chatThread.findUnique({ where: { id: threadId }, select: { handledByAdminId: true } });
+  if (!stillUnhandled || stillUnhandled.handledByAdminId) return;
+
   const aiMessage = await prisma.chatMessage.create({ data: { threadId, senderId: aiUser.id, body: replyText } });
   io?.to(`chat:${threadId}`).emit("chat:message", aiMessage);
   await notify(io, senderUserId, "CHAT", "Support replied", replyText.slice(0, 120), { threadId }).catch(() => {});

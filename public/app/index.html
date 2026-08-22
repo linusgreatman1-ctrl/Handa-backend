@@ -3363,8 +3363,13 @@ function sfmBindWebrtcListeners(){
   _socket.on('webrtc:peer-left', function(p){
     var rtc=window._rtc;
     if(!rtc||rtc.sessionId!==p.sessionId) return;
+    // Give the side that DIDN'T initiate the exit the same "Rejoin Call"
+    // recovery UI the exiting side already gets from sfmSoftExitCall,
+    // instead of leaving them with a frozen frame and a now-inert Exit
+    // button (rtc would already be null by the time they clicked it).
+    var frameId = rtc.role==='caller' ? 'shopper-video-frame' : 'sfm-video-frame';
     showToast&&showToast('The other side left the call','warning');
-    sfmEndCall();
+    sfmSoftExitCall(frameId);
   });
 }
 
@@ -3650,7 +3655,14 @@ async function completeConfirmCallGeneric(sessionId){
       if(window._shopperSession&&window._shopperSession.id===sessionId) window._shopperSession=Object.assign({},window._shopperSession,res.session);
       if(window._riderActiveSession&&window._riderActiveSession.id===sessionId) window._riderActiveSession=Object.assign({},window._riderActiveSession,res.session);
     }
-  }catch(err){ showToast&&showToast(err.message||'Could not complete the confirm call','warning'); }
+  }catch(err){
+    // Do NOT fall through on failure — the handover button must stay
+    // locked if the backend never actually recorded the call as complete,
+    // otherwise the shopper could disburse seller payouts believing
+    // handover is cleared while the rider's own gate is still blocked.
+    showToast&&showToast(err.message||'Could not complete the confirm call','warning');
+    return;
+  }
   confirmCallLeave();
   showToast&&showToast('Confirm call done','success');
   unlockShopperHandoverIfReady();
@@ -3931,10 +3943,12 @@ function renderShopperPhase(phase) {
         </div>
       </div>
 
-      <!-- Joint item checklist — both shopper and rider tick each item -->
+      <!-- Real items from this session -- go through these with the rider
+           before the 3-way call below; the call itself is the real gate,
+           this is just an honest read-only list, not a separate mechanic. -->
       <div class="card" style="margin-bottom:14px;">
-        <div style="font-weight:800;font-size:14px;margin-bottom:4px;">📋 Joint Item Check</div>
-        <div style="font-size:12px;color:#9A9390;margin-bottom:12px;">You and ${_rNm} must confirm each item together before handover</div>
+        <div style="font-weight:800;font-size:14px;margin-bottom:4px;">📋 Items Being Handed Over</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:12px;">Go through these with ${_rNm} before starting the confirm call</div>
         <div id="joint-confirm-list"></div>
       </div>
 
@@ -4191,9 +4205,6 @@ async function shopperCallFindRider(){
   renderShopperPhase('riderSearch');
 }
 
-// ── Joint confirm checklist (shopper + rider tick off together) ──────────
-let jointConfirmed = [false,false,false];
-
 async function sendShopperChat() {
   const inp=document.getElementById('shopper-chat-inp'); if(!inp||!inp.value.trim()) return;
   const msgs=document.getElementById('shopper-chat-msgs'); if(!msgs) return;
@@ -4241,7 +4252,6 @@ async function shopperAcceptSession(sessionId) {
       var sum=document.getElementById('active-session-summary');
       if(sum)sum.textContent=(full.session.customer?full.session.customer.name:'Customer')+' • '+(full.session.deliveryAddress||'Address pending')+' • ₦'+Number(Math.round((full.session.depositKobo-full.session.sessionFeeKobo)/100)).toLocaleString()+' budget';
     }
-    jointConfirmed = [false,false,false];
     renderShopperPhase('accepted');
     showToast('Session accepted! 🛒','success');
   } catch(err) {
@@ -4282,6 +4292,7 @@ async function shopperStartConfirmCall(){
     var res=await api('/shop-sessions/'+s.id+'/confirm-call/start',{method:'POST'});
     if(res&&res.session) window._shopperSession=Object.assign({},s,res.session);
   }catch(err){ showToast&&showToast(err.message||'Could not start the confirm call','warning'); return; }
+  dismissConfirmCallInvite(); // the server's own broadcast echoes back to the initiator's own socket too
   confirmCallJoin(s.id,'shopper');
   showConfirmCallPanel('shopper');
   var statusEl=document.getElementById('shopper-confirmcall-status');
@@ -5503,28 +5514,18 @@ function updateCheckoutBtn() {
   if(counter) counter.textContent=`${shopItems.filter(x=>x.approved).length}/${shopItems.length} approved`;
 }
 
+// Real, read-only list of this session's actual approved items -- used to
+// be a fake hardcoded 3-item checklist with its own local "confirm" state
+// that never touched the real handover gate (the real gate is the 3-way
+// confirm call above; this is honest reference info, not a second gate).
 function renderJointConfirmList() {
   const list = document.getElementById('joint-confirm-list'); if(!list) return;
-  const items = ['2kg tomatoes','Large onions (5 pcs)','Fresh pepper – ₦500 worth'];
-  list.innerHTML = items.map((t,i)=>`
+  const items = ((window._shopperSession&&window._shopperSession.items)||[]).filter(function(it){return it.approved;});
+  list.innerHTML = items.length ? items.map((it,i)=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;${i<items.length-1?'border-bottom:1px solid #2A2850;':''}">
-      <span style="font-size:13px;flex:1;">${t}</span>
-      <button onclick="jointConfirm(${i},this)" style="background:${jointConfirmed[i]?'#2ECC71':'#1C1C1C'};border:1.5px solid ${jointConfirmed[i]?'#2ECC71':'#2A2850'};border-radius:9px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;color:${jointConfirmed[i]?'white':'#9A9390'};font-family:\'DM Sans\',sans-serif;transition:all .2s;">
-        ${jointConfirmed[i]?'✓ Confirmed':'Confirm'}
-      </button>
-    </div>`).join('');
-  const btn = document.getElementById('confirm-handover-btn');
-  if(btn && jointConfirmed.every(x=>x)){
-    btn.style.opacity='1'; btn.style.pointerEvents='auto';
-  }
-}
-
-function jointConfirm(idx, btn) {
-  jointConfirmed[idx] = true;
-  btn.style.background='#2ECC71'; btn.style.color='white'; btn.style.borderColor='#2ECC71';
-  btn.textContent='✓ Confirmed';
-  renderJointConfirmList();
-  if(jointConfirmed.every(x=>x)) showToast('All items confirmed! Ready to hand over ✅','success');
+      <span style="font-size:13px;flex:1;">${escHtmlApp(it.text)}</span>
+      <span style="font-size:13px;font-weight:700;color:#9A9390;">${it.priceKobo?N(Math.round(it.priceKobo/100)):''}</span>
+    </div>`).join('') : '<div style="font-size:12px;color:#9A9390;padding:6px 0;">No approved items on this session.</div>';
 }
 
 
@@ -7113,7 +7114,14 @@ async function submitVendorDisputeResponse(ticketId,bookingId){
     await api('/support/tickets/'+ticketId+'/respond',{method:'POST',body:JSON.stringify({response:text.trim()})});
     if(file){
       var fd=new FormData();fd.append('evidence',file);
-      await fetch(API_BASE+'/support/tickets/'+ticketId+'/second-party-evidence',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+      var evRes=await fetch(API_BASE+'/support/tickets/'+ticketId+'/second-party-evidence',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+      if(!evRes.ok){
+        var evData=await evRes.json().catch(function(){return {};});
+        showToast&&showToast('Response sent, but the photo failed to upload: '+(evData.error||'try again from booking detail.'),'warning');
+        closeProcedureModal();
+        openVendorBookingDetail(bookingId);
+        return;
+      }
     }
     showToast&&showToast('Response sent to the admin.','success');
     closeProcedureModal();

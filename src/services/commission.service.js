@@ -9,11 +9,18 @@ function startOfWeek(date) {
   return d;
 }
 
-// Home cooks & event planners owe a weekly 10% commission on completed
-// bookings, separate from per-order escrow (they're paid the full booking
-// amount, then owe this back to the platform — matches the frontend's
-// "Weekly commission due" card, which is a debt notice, not a deduction
-// taken automatically at payout).
+// Historically this billed a weekly 10% debt invoice on every completed
+// booking, on the assumption the vendor was paid the FULL booking amount
+// and owed the commission back separately. That's no longer true: every
+// booking that reaches COMPLETED does so through confirmBookingCompletion
+// (bookings.controller.js), which already deducts the platform's 10% cut
+// in real time out of escrow at release (see PLATFORM_COMMISSION_RATES.VENDOR
+// in escrow.service.js) — the only path that ever sets a booking to
+// COMPLETED. Re-billing the full undiscounted totalKobo here on top of
+// that would double-charge the vendor for the same booking. The weekly
+// period record is kept (the vendor dashboard's "commission" card and the
+// admin Reports/Commissions tabs still read it) but always reflects 0 due
+// for bookings, since nothing is actually owed after real-time deduction.
 async function getOrCreateCurrentPeriod(vendorId) {
   const periodStart = startOfWeek(new Date());
   const periodEnd = new Date(periodStart);
@@ -22,12 +29,7 @@ async function getOrCreateCurrentPeriod(vendorId) {
   let period = await prisma.commissionPeriod.findFirst({ where: { vendorId, periodStart } });
   if (period) return period;
 
-  const completed = await prisma.booking.findMany({
-    where: { vendorId, status: "COMPLETED", completedAt: { gte: periodStart, lt: periodEnd } },
-  });
-  const amountDueKobo = Math.round(completed.reduce((sum, b) => sum + b.totalKobo, 0) * (COMMISSION_PERCENT / 100));
-
-  return prisma.commissionPeriod.create({ data: { vendorId, periodStart, periodEnd, amountDueKobo } });
+  return prisma.commissionPeriod.create({ data: { vendorId, periodStart, periodEnd, amountDueKobo: 0 } });
 }
 
 // Periodic sweep (see src/realtime/live.js, same interval as the escrow
