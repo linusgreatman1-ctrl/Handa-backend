@@ -6862,7 +6862,7 @@ function renderCooks(list){
   if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:40px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🧑‍🍳</p><p>No home cooks available</p></div>';return;}
   var sorted=list.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
   el.innerHTML=sorted.map(function(c){
-    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid '+(c.promo?'#F5A623':'#2a2a2a')+';margin-bottom:16px;position:relative'+(c.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'
+    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid #2a2a2a;margin-bottom:16px;position:relative">'
       +(c.promo?'<div class="promo-tag">⭐ FEATURED</div>':'')
       +vendorHeaderMedia(c,'linear-gradient(135deg,#2d0d2d,#111)',90,60)
       +'<div style="padding:16px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div><b style="color:#F2EDE8">'+c.nm+'</b><p style="color:#9B59B6;font-size:12px;margin:0">'+c.sp+'</p></div><span onclick="openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
@@ -6879,7 +6879,7 @@ function renderEP(list){
   if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:40px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🎊</p><p>No event planners available</p></div>';return;}
   var sorted=list.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
   el.innerHTML=sorted.map(function(ep){
-    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid '+(ep.promo?'#F5A623':'#2a2a2a')+';margin-bottom:16px;position:relative'+(ep.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'
+    return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid #2a2a2a;margin-bottom:16px;position:relative">'
       +(ep.promo?'<div class="promo-tag">⭐ FEATURED</div>':'')
       +vendorHeaderMedia(ep,'linear-gradient(135deg,#0d2d1a,#111)',90,60)
       +'<div style="padding:16px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><b style="color:#F2EDE8">'+ep.nm+'</b><span onclick="openRatingsModal(\''+ep.userId+'\',\'VENDOR\',\''+ep.id+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+ep.rt+'</span></div>'
@@ -6898,7 +6898,7 @@ function renderFeaturedCooks(){
   // rating so this section is never empty even with zero active boosts.
   var sortedCooks=(D.cooks||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
   el.innerHTML=sortedCooks.slice(0,3).map(function(c){
-    return '<div onclick="openCookBooking(\''+c.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(c.promo?'#F5A623':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
+    return '<div onclick="openCookBooking(\''+c.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
       +vendorAvatarCircle(c,52,30,'linear-gradient(135deg,#2d0d2d,#111)')
       +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(c.promo?'⭐ ':'')+c.nm+'</div>'
       +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+c.sp+' · <span onclick="event.stopPropagation();openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
@@ -6911,7 +6911,7 @@ function renderFeaturedEP(){
   var el=document.getElementById('e-featured-ep');if(!el||!D.ep)return;
   var sortedEp=(D.ep||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
   el.innerHTML=sortedEp.slice(0,3).map(function(ep){
-    return '<div onclick="openEPBooking(\''+ep.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(ep.promo?'#F5A623':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
+    return '<div onclick="openEPBooking(\''+ep.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
       +vendorAvatarCircle(ep,52,30,'linear-gradient(135deg,#0d2d1a,#111)')
       +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(ep.promo?'⭐ ':'')+ep.nm+'</div>'
       +'<div style="font-size:12px;color:#9A9390;margin-top:2px"><span onclick="event.stopPropagation();openRatingsModal(\''+ep.userId+'\',\'VENDOR\',\''+ep.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+ep.rt+'</span> · '+ep.loc+'</div></div>'
