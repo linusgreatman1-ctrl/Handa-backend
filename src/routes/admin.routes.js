@@ -71,6 +71,8 @@ router.post("/announcements", requireSuperAdmin, ctrl.sendAnnouncement);
 // inboxes and can't be un-sent.
 router.get("/bulk-email", requireContentOrSuperAdmin, ctrl.listBulkEmails);
 router.post("/bulk-email", requireSuperAdmin, ctrl.sendBulkEmail);
+router.get("/bulk-sms", requireContentOrSuperAdmin, ctrl.listBulkSms);
+router.post("/bulk-sms", requireSuperAdmin, ctrl.sendBulkSms);
 
 // AI Meal Planner conversation log — content admin or super admin. Empty
 // until a real AI provider is wired up (see AiConversationLog comment).

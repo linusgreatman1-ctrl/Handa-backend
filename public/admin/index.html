@@ -102,6 +102,7 @@
     <button class="nav-item" data-tab="appsettings" data-elevated="1" onclick="switchTab('appsettings')">App Settings</button>
     <button class="nav-item" data-tab="announcements" data-elevated="1" onclick="switchTab('announcements')">Announcements</button>
     <button class="nav-item" data-tab="bulkemail" data-elevated="1" onclick="switchTab('bulkemail')">Bulk Email</button>
+    <button class="nav-item" data-tab="bulksms" data-elevated="1" onclick="switchTab('bulksms')">Bulk SMS</button>
     <button class="nav-item" data-tab="aiconversations" data-elevated="1" onclick="switchTab('aiconversations')">AI Conversations</button>
     <button class="nav-item" data-tab="chatthreads" data-elevated="1" onclick="switchTab('chatthreads')">Live Chat</button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
@@ -191,7 +192,7 @@ function switchTab(tab) {
   if (window._codesDirty && !confirm('You have unsaved edits in the Codes tab. Leave without saving?')) return;
   window._codesDirty = false;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, bulksms: renderBulkSms, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
   if (tab !== 'chatthreads') stopChatThreadAutoRefresh();
   renderers[tab]();
 }
@@ -1460,6 +1461,110 @@ async function loadBulkEmailHistory() {
       : '<div class="empty">No bulk emails sent yet.</div>';
   } catch (e) {
     document.getElementById('bulkemail-table').textContent = e.message;
+  }
+}
+
+// ── Bulk SMS — exact mirror of the Bulk Email tab above, against real
+// phone numbers via africastalking.service.js (same real send the
+// single-user "Message" button on a user's detail view already uses). ──
+let _bsSelected = {};
+function renderBulkSms() {
+  const main = document.getElementById('main');
+  const canSend = currentUser.isSuperAdmin;
+  _bsSelected = {};
+  main.innerHTML =
+    '<h2>Bulk SMS</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Sends a real SMS (not just an in-app notification) to all active users, a hand-picked list, or a single user. Requires Africa\'s Talking to be configured on the server.</p>' +
+    (canSend ?
+      '<div class="card" style="margin-bottom:20px">' +
+      '<div class="field"><label>Message</label><textarea id="bs-body" style="width:100%;min-height:90px;background:#2D2D2D;border:2px solid #333;border-radius:10px;padding:11px 13px;color:#F2EDE8;font-size:14px" maxlength="459"></textarea></div>' +
+      '<div class="field"><label>Recipients</label>' +
+      '<div style="display:flex;gap:14px;margin-bottom:10px">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="radio" name="bs-scope" value="all" checked onchange="bsToggleScope()"> All active users</label>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="radio" name="bs-scope" value="pick" onchange="bsToggleScope()"> Specific user(s)</label>' +
+      '</div>' +
+      '<div id="bs-picker" style="display:none">' +
+      '<input id="bs-search" placeholder="Search users by name/email/phone…" style="width:100%;box-sizing:border-box;margin-bottom:8px" oninput="bsSearchUsers(this.value)">' +
+      '<div id="bs-search-results" style="max-height:160px;overflow-y:auto;margin-bottom:10px"></div>' +
+      '<div style="font-size:12px;color:#9A9390;margin-bottom:4px">Selected:</div>' +
+      '<div id="bs-selected-chips" style="display:flex;flex-wrap:wrap;gap:6px">' + '<span style="color:#6B6560;font-size:12px">None yet — search above.</span>' + '</div>' +
+      '</div>' +
+      '</div>' +
+      '<button class="btn" style="width:auto;padding:8px 16px" onclick="sendBulkSmsFromForm()">Send</button>' +
+      '<div class="err" id="bs-err"></div></div>'
+      : '') +
+    '<h2>History</h2><div id="bulksms-table" class="empty">Loading...</div>';
+  loadBulkSmsHistory();
+}
+function bsToggleScope() {
+  const pick = document.querySelector('input[name="bs-scope"]:checked').value === 'pick';
+  document.getElementById('bs-picker').style.display = pick ? 'block' : 'none';
+}
+let _bsSearchTimer = null;
+function bsSearchUsers(q) {
+  clearTimeout(_bsSearchTimer);
+  const el = document.getElementById('bs-search-results');
+  if (!q || q.trim().length < 2) { el.innerHTML = ''; return; }
+  _bsSearchTimer = setTimeout(async () => {
+    try {
+      const data = await api('/admin/users?q=' + encodeURIComponent(q.trim()) + '&pageSize=15');
+      el.innerHTML = data.users.length
+        ? data.users.map(u => '<div style="padding:6px 8px;cursor:pointer;border-radius:6px" onmouseover="this.style.background=\'#242424\'" onmouseout="this.style.background=\'\'" onclick="bsSelectUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ',' + JSON.stringify(u.phone || '') + ')">' + u.name + ' — ' + (u.phone || u.email || 'no contact') + ' <span style="color:#6B6560">(' + u.role + ')</span></div>').join('')
+        : '<div style="color:#6B6560;font-size:12px;padding:4px">No matches.</div>';
+    } catch (e) { el.textContent = e.message; }
+  }, 300);
+}
+function bsSelectUser(id, name, phone) {
+  if (!phone) { alert(name + ' has no phone number on file — cannot receive SMS.'); return; }
+  _bsSelected[id] = { id, name, phone };
+  bsRenderChips();
+  document.getElementById('bs-search').value = '';
+  document.getElementById('bs-search-results').innerHTML = '';
+}
+function bsRemoveUser(id) {
+  delete _bsSelected[id];
+  bsRenderChips();
+}
+function bsRenderChips() {
+  const ids = Object.keys(_bsSelected);
+  const el = document.getElementById('bs-selected-chips');
+  el.innerHTML = ids.length
+    ? ids.map(id => '<span style="background:#242424;border:1px solid #2A2850;border-radius:20px;padding:4px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px">' + _bsSelected[id].name + ' <span style="cursor:pointer;color:#E8392E" onclick="bsRemoveUser(\'' + id + '\')">&times;</span></span>').join('')
+    : '<span style="color:#6B6560;font-size:12px">None yet — search above.</span>';
+}
+async function sendBulkSmsFromForm() {
+  const body = document.getElementById('bs-body').value.trim();
+  const scope = document.querySelector('input[name="bs-scope"]:checked').value;
+  const errEl = document.getElementById('bs-err');
+  errEl.textContent = '';
+  if (!body) { errEl.textContent = 'Message is required.'; return; }
+  const userIds = scope === 'pick' ? Object.keys(_bsSelected) : undefined;
+  if (scope === 'pick' && !userIds.length) { errEl.textContent = 'Select at least one recipient, or switch to "All active users".'; return; }
+  const confirmMsg = scope === 'pick' ? 'Send this SMS to ' + userIds.length + ' selected user(s)?' : 'Send this SMS to ALL active users with a phone number on file?';
+  if (!confirm(confirmMsg)) return;
+  try {
+    const data = await api('/admin/bulk-sms', { method: 'POST', body: JSON.stringify({ body, userIds }) });
+    alert('Sent to ' + data.bulkSms.sentCount + ' recipient(s)' + (data.bulkSms.failedCount ? ', ' + data.bulkSms.failedCount + ' failed' : '') + '.');
+    document.getElementById('bs-body').value = '';
+    _bsSelected = {};
+    renderBulkSms();
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+async function loadBulkSmsHistory() {
+  try {
+    const data = await api('/admin/bulk-sms');
+    const rows = data.messages.map(m =>
+      '<tr><td style="max-width:320px">' + m.body + '</td>' +
+      '<td>' + m.sentCount + (m.failedCount ? ' (' + m.failedCount + ' failed)' : '') + '</td>' +
+      '<td>' + m.sentByName + '</td><td>' + new Date(m.createdAt).toLocaleString() + '</td></tr>'
+    ).join('');
+    document.getElementById('bulksms-table').outerHTML = data.messages.length
+      ? '<table><thead><tr><th>Message</th><th>Sent</th><th>Sent By</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No bulk SMS sent yet.</div>';
+  } catch (e) {
+    document.getElementById('bulksms-table').textContent = e.message;
   }
 }
 

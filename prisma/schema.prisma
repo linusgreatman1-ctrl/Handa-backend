@@ -1054,6 +1054,24 @@ model BulkEmail {
   @@index([createdAt])
 }
 
+// Same shape as BulkEmail, one row per admin-triggered bulk/single SMS send
+// (real Africa's Talking send, same credential-gated service the existing
+// single-user "Message" button on a user's admin detail view already uses
+// — this is that same real sendSms() call, just fanned out to many
+// recipients in one admin action instead of one at a time).
+model BulkSms {
+  id              String   @id @default(uuid())
+  body            String
+  recipientPhones String[] @default([])
+  sentCount       Int
+  failedCount     Int      @default(0)
+  sentById        String
+  sentByName      String
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // Generic key/value config store for the admin "App Settings" screen.
 // Nothing in the running app reads from this yet — it exists so a super
 // admin has somewhere to record/adjust platform config (feature flags,

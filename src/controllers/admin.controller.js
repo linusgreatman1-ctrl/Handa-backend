@@ -962,6 +962,54 @@ async function sendBulkEmail(req, res, next) {
   }
 }
 
+// ── Bulk SMS — exact mirror of listBulkEmails/sendBulkEmail above, just
+// against phone numbers via the same real africastalking.service.js the
+// existing single-user "Message" button already uses (smsUserForAdmin).
+// Same credential-gated 503 if AFRICASTALKING_API_KEY/USERNAME aren't set. ──
+async function listBulkSms(req, res, next) {
+  try {
+    const messages = await prisma.bulkSms.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+    res.json({ messages });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function sendBulkSms(req, res, next) {
+  try {
+    africastalking.requireConfig(); // throws a clear 503 immediately if not configured, before doing any DB work
+    const { body, userIds } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: "body is required." });
+
+    const recipients = Array.isArray(userIds) && userIds.length
+      ? await prisma.user.findMany({ where: { id: { in: userIds }, phone: { not: null } }, select: { id: true, phone: true, name: true } })
+      : await prisma.user.findMany({ where: { status: "ACTIVE", phone: { not: null } }, select: { id: true, phone: true, name: true } });
+    if (!recipients.length) return res.status(400).json({ error: "No recipients with a real phone number found." });
+
+    const bodyTrim = body.trim();
+    let sentCount = 0;
+    let failedCount = 0;
+    const sentPhones = [];
+    for (const r of recipients) {
+      try {
+        await africastalking.sendSms(r.phone, bodyTrim);
+        sentCount++;
+        sentPhones.push(r.phone);
+      } catch (err) {
+        failedCount++;
+      }
+    }
+
+    const record = await prisma.bulkSms.create({
+      data: { body: bodyTrim, recipientPhones: sentPhones, sentCount, failedCount, sentById: req.user.id, sentByName: req.user.name },
+    });
+    await logAdminAction(req.user, "BULK_SMS_SENT", "BulkSms", record.id, `to ${sentCount} recipient(s)${failedCount ? `, ${failedCount} failed` : ""}`);
+    res.status(201).json({ bulkSms: record });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── AI Conversations: viewer for the AI Meal Planner's question/answer
 // log. Empty today — the meal planner is still the frontend's hardcoded
 // demo, nothing writes to AiConversationLog yet. Ready the moment a real
@@ -1133,6 +1181,8 @@ module.exports = {
   sendAnnouncement,
   listBulkEmails,
   sendBulkEmail,
+  listBulkSms,
+  sendBulkSms,
   listAiConversations,
   listChatThreadsForAdmin,
   openSupportThreadForUser,

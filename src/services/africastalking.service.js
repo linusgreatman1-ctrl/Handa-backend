@@ -87,4 +87,10 @@ async function initiateCall(toPhone) {
   return atFetch(VOICE_BASE, { username, from: fromNumber, to: toPhone });
 }
 
-module.exports = { sendSms, initiateCall };
+// Exported so a caller (e.g. bulk SMS) can fail fast with a clean 503
+// before doing any DB/loop work, same as email.service.js's requireConfig.
+function requireConfig() {
+  requireCreds();
+}
+
+module.exports = { sendSms, initiateCall, requireConfig };
