@@ -4296,7 +4296,8 @@ async function shopperStartConfirmCall(){
   confirmCallJoin(s.id,'shopper');
   showConfirmCallPanel('shopper');
   var statusEl=document.getElementById('shopper-confirmcall-status');
-  if(statusEl) statusEl.innerHTML='<div style="font-size:12px;color:#3B9FE8;font-weight:700;">📞 Call in progress — waiting for the rider and customer...</div>';
+  if(statusEl) statusEl.innerHTML='<div style="font-size:12px;color:#3B9FE8;font-weight:700;margin-bottom:8px;">📞 Call in progress — waiting for the rider and customer...</div>'
+    +'<button onclick="shopperStartConfirmCall()" style="width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F501; Resend invite (if they missed it)</button>';
 }
 
 // Unlocks the shopper's "Confirm Handover to Rider" button the moment the
