@@ -88,6 +88,15 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
      changing the base rule, so mobile is untouched. */
   .ibtn{width:36px !important;height:36px !important;font-size:15px !important}
   .bkbtn{width:32px !important;height:32px !important;font-size:15px !important}
+  /* The opposite direction from the back-arrow rule above: the
+     notification bell/badge and list modal were sized for a ~400px
+     mobile viewport and read as cramped/tiny against an ~820px desktop
+     reading column. Scale them up here. */
+  #notif-bell{width:52px !important;height:52px !important;font-size:22px !important;top:20px !important;right:24px !important}
+  #notif-bell-badge{min-width:20px !important;height:20px !important;font-size:11px !important;line-height:20px !important}
+  #notif-modal>div{max-width:600px !important;padding:26px !important;margin-top:80px !important}
+  #notif-modal .notif-row-title{font-size:15px !important}
+  #notif-modal .notif-row-body{font-size:13.5px !important}
 }
 .screen{display:none;min-height:100vh;padding-bottom:84px;overflow-y:auto;-webkit-overflow-scrolling:touch}.screen.active{display:block;animation:fi .22s ease}.screen.active.flex-screen{display:flex !important;flex-direction:column;}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -1033,10 +1042,16 @@ async function openNotificationsModal(){
     var list=document.getElementById('notif-list');
     if(!res.notifications.length){list.innerHTML='<div style="text-align:center;padding:24px;">No notifications yet.</div>';return;}
     list.innerHTML=res.notifications.map(function(n){
-      return '<div onclick="openNotification('+JSON.stringify(n.id)+')" style="background:'+(n.read?'#1C1C1C':'#242424')+';border:1.5px solid '+(n.read?'#2A2850':'rgba(59,159,232,.35)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;">'
+      // n.id is a server-generated UUID (never contains a quote), so a plain
+      // single-quoted embed is safe -- JSON.stringify(n.id) here produced a
+      // double-quoted string inside this already-double-quoted onclick
+      // attribute, which the browser terminates at the first bare '"',
+      // silently breaking every notification click (same bug class fixed
+      // in the admin panel and avoided in the booking-detail buttons).
+      return '<div onclick="openNotification(\''+n.id+'\')" style="background:'+(n.read?'#1C1C1C':'#242424')+';border:1.5px solid '+(n.read?'#2A2850':'rgba(59,159,232,.35)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;">'
         +'<span style="font-size:18px;flex-shrink:0;">'+_notifIcon(n.type)+'</span>'
-        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+n.title+(n.read?'':' <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3B9FE8;margin-left:4px;"></span>')+'</div>'
-        +'<div style="font-size:12px;color:#9A9390;margin-top:2px;">'+n.body+'</div>'
+        +'<div style="flex:1;min-width:0;"><div class="notif-row-title" style="font-weight:700;font-size:13px;color:#F2EDE8;">'+n.title+(n.read?'':' <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3B9FE8;margin-left:4px;"></span>')+'</div>'
+        +'<div class="notif-row-body" style="font-size:12px;color:#9A9390;margin-top:2px;">'+n.body+'</div>'
         +'<div style="font-size:10px;color:#666;margin-top:4px;">'+_notifTimeAgo(n.createdAt)+'</div></div>'
         +'</div>';
     }).join('');
@@ -7201,7 +7216,7 @@ async function openVendorBookingDetail(id){
       ):(b.status==='CONFIRMED'?(
         b.vendorConfirmedCompleteAt
           ? '<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>'
-          : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Completed</button>'
+          : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>'
       ):''));
     showBottomSheet('Booking Details',content);
   }catch(err){
@@ -7367,19 +7382,23 @@ async function openCustomerHistoryDetail(kind,id){
     var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (!b.eventDate || new Date(b.eventDate).getTime()>Date.now());
     var cancellable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var needsCompletionResponse=b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
+    var awaitingVendor=b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     var isEP=b.type==='EVENT_PLANNING';
     var confirmCopy=isEP?'Confirm so it can be recorded, or let us know if it wasn\'t actually completed.':'Confirm so payment can be released, or let us know if it wasn\'t actually completed.';
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
+      +(awaitingVendor?(
+        '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Job To Be Completed</div>'
+      ):'')
       +(needsCompletionResponse?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:4px;">The vendor marked this complete</div>'
         +'<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">'+confirmCopy+'</div>'
         +'<div style="display:flex;gap:10px;">'
-        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',false,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">No — Not Completed</button>'
-        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes — Completed</button>'
+        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',false,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">No - Job Not Complete</button>'
+        +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes - Complete</button>'
         +'</div></div>'
       ):'')
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'
