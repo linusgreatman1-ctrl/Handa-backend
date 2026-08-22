@@ -7,6 +7,16 @@
 <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
 <style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+/* Suppresses the browser/OS default focus ring (renders as a jarring
+   yellow/gold outline around cards, buttons, and clickable divs on
+   Windows/Edge) app-wide, replacing it with an on-brand outline that only
+   appears for real keyboard navigation (:focus-visible) — a mouse/touch
+   click never shows it, matching how every other control in this app
+   already gives its own visual feedback (border-color change, background
+   tint, etc.) instead of relying on the browser's default. */
+button,a,[onclick],input,select,textarea,.card,.ibtn,.bkbtn{outline:none}
+button:focus-visible,a:focus-visible,[onclick]:focus-visible,.card:focus-visible,.ibtn:focus-visible,.bkbtn:focus-visible{outline:2px solid #E8392E;outline-offset:2px;border-radius:inherit}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #E8392E;outline-offset:1px}
 /* Mobile (<600px): body IS the viewport, unchanged from the original
    design — nothing in this block touches it.
    Tablet (600-1023px): body widens into a centered card with a branded
@@ -903,10 +913,30 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 // wired up. Screens not yet wired still fall back to the original literal
 // D object below, so the app doesn't crash mid-migration.
 var API_BASE = '/api';
-var _accessToken = localStorage.getItem('handa_token') || null;
+// sessionStorage, not localStorage -- localStorage is shared across every
+// tab of the same browser, so logging into a different demo account in
+// one tab would silently overwrite the token every other open tab reads
+// on its next refresh (real bug: "my customer tab turned into a rider
+// tab after a refresh" -- caused by testing multiple role accounts in
+// separate tabs of the same browser). sessionStorage is per-tab: each tab
+// keeps its own login and a refresh only ever restores THAT tab's own
+// session, never another tab's.
+var _accessToken = sessionStorage.getItem('handa_token') || null;
 var _socket = null;
 
-function setAccessToken(t){ _accessToken = t; if(t) localStorage.setItem('handa_token', t); else localStorage.removeItem('handa_token'); }
+function setAccessToken(t){ _accessToken = t; if(t) sessionStorage.setItem('handa_token', t); else sessionStorage.removeItem('handa_token'); }
+
+// Reads a JWT's payload without verifying the signature — only ever used
+// to compare "which user does this token claim to be," never trusted for
+// actual authentication (the server always re-verifies).
+function decodeJwtSub(token){
+  try{
+    var payload = token.split('.')[1];
+    payload = payload.replace(/-/g,'+').replace(/_/g,'/');
+    while(payload.length%4) payload+='=';
+    return JSON.parse(atob(payload)).sub || null;
+  }catch(e){ return null; }
+}
 
 async function api(path, opts){
   opts = opts || {};
@@ -916,8 +946,21 @@ async function api(path, opts){
   var data = {};
   try { data = await res.json(); } catch(e){}
   if (res.status === 401 && _accessToken) {
-    // Access token expired — try the refresh cookie once, then retry.
+    // Access token expired — try the refresh cookie once, then retry. The
+    // refresh cookie is shared across every tab of this browser (cookies
+    // are domain-scoped, not tab-scoped), so if a DIFFERENT account logged
+    // in from another tab in the meantime, this refresh could hand back a
+    // token for THAT account instead — comparing the token's own "sub"
+    // claim before/after catches that instead of silently continuing as
+    // the wrong user.
+    var expectedSub = decodeJwtSub(_accessToken);
     var refreshed = await api('/auth/refresh', { method: 'POST' }).catch(function(){ return null; });
+    if (refreshed && refreshed.accessToken && expectedSub && decodeJwtSub(refreshed.accessToken)!==expectedSub){
+      setAccessToken(null);
+      showToast&&showToast('Your session changed in another tab. Please sign in again.','warning');
+      setTimeout(function(){ location.reload(); }, 1200);
+      throw new Error('Session changed in another tab.');
+    }
     if (refreshed && refreshed.accessToken) {
       setAccessToken(refreshed.accessToken);
       headers['Authorization'] = 'Bearer ' + refreshed.accessToken;
