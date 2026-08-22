@@ -7002,7 +7002,7 @@ async function openVendorBookingDetail(id){
       ['Guests',b.guestCount||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:'—'],
       ['Total',N(Math.round(b.totalKobo/100))],
-      ['Payment Method',b.paymentMethod||'—'],
+      ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with you (not via the app)':(b.paymentMethod||'—')],
     ];
     var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
@@ -8038,7 +8038,7 @@ function epBkRender(phase){
       +'<button onclick="epBkRender(\'confirmed\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
       +'<p style="color:#E8392E;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cancel Booking</p>'
       +'<h2 style="font-size:20px;font-weight:900;margin:0 0 4px">Reason for Cancellation</h2>'
-      +'<p style="color:#9A9390;font-size:13px;margin:0">Funds will remain in your escrow wallet.</p></div>'
+      +'<p style="color:#9A9390;font-size:13px;margin:0">Event planning bookings are paid directly with your planner, so there\'s nothing held in escrow to worry about.</p></div>'
       +'<div style="padding:16px 16px 80px">'
       +reasons.map(function(r,i){
         return '<div onclick="selectEPCancelReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:12px">'

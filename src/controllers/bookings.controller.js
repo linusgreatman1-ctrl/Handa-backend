@@ -2,6 +2,7 @@ const prisma = require("../config/db");
 const paystack = require("../services/paystack.service");
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
+const commissionSvc = require("../services/commission.service");
 const orderFlow = require("../services/orderFlow.service");
 const { notify } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
@@ -220,6 +221,14 @@ function assertVendorOwnsBooking(req, booking) {
   }
 }
 
+// Home Cook bookings are paid through the app (escrow) -- acceptance
+// moves them to ACCEPTED and the customer is prompted to pay next, same
+// as before. Event Planner bookings are paid directly between customer
+// and planner, outside the app -- there's nothing for the customer to
+// pay here, so acceptance goes straight to CONFIRMED (the same status
+// Home Cook only reaches after payment), which is what already unlocks
+// the vendor's "Order/Booking Completed" button and the customer's
+// eventual Yes/No confirmation, unchanged.
 async function acceptBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
@@ -227,8 +236,12 @@ async function acceptBooking(req, res, next) {
     assertVendorOwnsBooking(req, booking);
     if (booking.status !== "REQUESTED") return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
 
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "ACCEPTED" } });
-    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", `Your ${booking.type.toLowerCase().replace("_", " ")} booking was accepted. Pay to confirm your date.`, { bookingId: booking.id });
+    const isEventPlanning = booking.type === "EVENT_PLANNING";
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: isEventPlanning ? "CONFIRMED" : "ACCEPTED" } });
+    const message = isEventPlanning
+      ? "Your event planning booking was accepted! Payment is arranged directly with your planner, outside the app."
+      : "Your home cook booking was accepted. Pay to confirm your date.";
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", message, { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -257,6 +270,7 @@ async function payBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (booking.type === "EVENT_PLANNING") return res.status(400).json({ error: "Event planning bookings are paid directly with the planner, not through the app." });
     if (booking.status !== "ACCEPTED") return res.status(409).json({ error: "This booking has not been accepted by the vendor yet." });
 
     // The customer can choose their payment method here, at actual pay
@@ -319,15 +333,22 @@ async function completeBooking(req, res, next) {
 }
 
 // Two-sided completion, step 2: the customer's Yes/No response.
-// Yes -> booking COMPLETED, escrow releases (10% platform cut, same
-// mechanism as Shop-For-Me's shopper/rider releases — see
-// escrow.service.js's PLATFORM_COMMISSION_RATES).
+// Yes -> booking COMPLETED. For Home Cook, escrow releases (10% platform
+// cut, same mechanism as Shop-For-Me's shopper/rider releases — see
+// escrow.service.js's PLATFORM_COMMISSION_RATES). For Event Planner,
+// there's no escrow to release (payment happened directly with the
+// planner, outside the app) -- releaseAllHoldsForContext safely no-ops
+// with zero holds, and instead the platform's 10% commission is added
+// onto the vendor's own weekly CommissionPeriod (commission.service.js's
+// addBookingCommission), which their dashboard already has a real "Pay
+// Now" button for.
 // No -> booking stays CONFIRMED, a real dispute ticket is opened
 // (context BOOKING) and every HELD hold on this booking is pulled out of
 // the auto-release sweep via escrow.disputeHold() — the vendor is notified
 // and can add their own side via POST /support/tickets/:id/respond; an
 // admin resolving that ticket is what finally releases (or doesn't) the
-// held funds.
+// held funds. (For Event Planner this loop is a no-op since there's
+// nothing held, but the dispute ticket + notification still matter.)
 async function confirmBookingCompletion(req, res, next) {
   try {
     const { completed, disputeCategory, disputeDescription } = req.body;
@@ -340,10 +361,16 @@ async function confirmBookingCompletion(req, res, next) {
     if (completed) {
       await prisma.booking.update({ where: { id: booking.id }, data: { customerConfirmedCompleteAt: new Date() } });
       await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking completion confirmed by customer" });
+      if (booking.type === "EVENT_PLANNING") {
+        await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
+      }
       const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: new Date() } });
       const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
       if (vendor) {
-        await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Booking completed", `The customer confirmed booking #${booking.bookingNumber} — payment has been released.`, { bookingId: booking.id });
+        const completeMessage = booking.type === "EVENT_PLANNING"
+          ? `The customer confirmed booking #${booking.bookingNumber} as completed. Your 10% platform commission for it is now due on your dashboard.`
+          : `The customer confirmed booking #${booking.bookingNumber} — payment has been released.`;
+        await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Booking completed", completeMessage, { bookingId: booking.id });
       }
       return res.json({ booking: updated });
     }

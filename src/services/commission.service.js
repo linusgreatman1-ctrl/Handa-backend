@@ -47,4 +47,22 @@ async function markOverduePeriods() {
   return count;
 }
 
-module.exports = { getOrCreateCurrentPeriod, markOverduePeriods };
+// Event Planner bookings have no escrow at all -- the customer pays the
+// planner directly, outside the app (see bookings.controller.js's
+// acceptBooking/confirmBookingCompletion) -- so there is no real-time
+// escrow deduction to collect the platform's cut the way there is for
+// Home Cook. This is EP's only commission-collection path: called once a
+// customer confirms an EP booking complete, it adds 10% of the booking
+// total onto the vendor's current weekly CommissionPeriod, which the
+// vendor's own dashboard already surfaces with a real "Pay Now" button
+// (Wallet or Paystack, src/controllers/payments.controller.js).
+async function addBookingCommission(vendorId, bookingTotalKobo) {
+  const period = await getOrCreateCurrentPeriod(vendorId);
+  const amountKobo = Math.round((bookingTotalKobo * COMMISSION_PERCENT) / 100);
+  return prisma.commissionPeriod.update({
+    where: { id: period.id },
+    data: { amountDueKobo: { increment: amountKobo } },
+  });
+}
+
+module.exports = { getOrCreateCurrentPeriod, markOverduePeriods, addBookingCommission };
