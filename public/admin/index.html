@@ -376,9 +376,7 @@ async function renderUsers() {
         : '';
       const viewBtn = '<button class="action-btn" onclick="renderCustomerDetail(\'' + u.id + '\')">View</button> ';
       return '<tr><td>' + u.name + '</td><td>' + contactCell(u.email, u.phone, u.address) + '</td><td>' + u.role + '</td><td>' + (u.state || '—') + '</td><td>' + extra + '</td><td>' + pill(u.status) + '</td>' +
-        '<td>' + viewBtn + (u.status === 'ACTIVE'
-          ? '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'SUSPENDED\')">Suspend</button>'
-          : '<button class="action-btn" onclick="setUserStatus(\'' + u.id + '\',\'ACTIVE\')">Activate</button>') + ' ' + verifyBtn + outreachBtns + '</td></tr>';
+        '<td>' + viewBtn + statusToggleBtn(u, 'renderUsers()') + ' ' + verifyBtn + outreachBtns + '</td></tr>';
     }).join('');
     const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
     const pager = '<div class="toolbar" style="margin-top:12px">'
@@ -392,10 +390,6 @@ async function renderUsers() {
   } catch (e) {
     document.getElementById('users-table').textContent = e.message;
   }
-}
-async function setUserStatus(id, status) {
-  try { await api('/admin/users/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }); renderUsers(); }
-  catch (e) { alert(e.message); }
 }
 async function renderCustomerDetail(id) {
   const main = document.getElementById('main');
@@ -423,7 +417,7 @@ async function renderCustomerDetail(id) {
       '</div>' +
       '<div class="toolbar" style="margin-top:10px">' +
         (u.phone ? '<button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button> ' : '') +
-        statusToggleBtn(u, "renderCustomerDetail('" + id + "')") +
+        statusToggleBtn(u, "renderCustomerDetail('" + id + "')", "switchTab('users')") +
       '</div>' +
       '<h2 style="margin-top:24px">Bookings (' + a.totalBookings + ')</h2>' + (bookings ? '<table><thead><tr><th>Date</th><th>Vendor</th><th>Total</th><th>Status</th></tr></thead><tbody>' + bookings + '</tbody></table>' : '<div class="empty">No bookings yet.</div>') +
       '<h2 style="margin-top:24px">Shop-For-Me Sessions (' + a.totalShopSessions + ')</h2>' + (sessions ? '<table><thead><tr><th>Date</th><th>Type</th><th>Total</th><th>Status</th></tr></thead><tbody>' + sessions + '</tbody></table>' : '<div class="empty">No shop sessions yet.</div>') +
@@ -440,10 +434,57 @@ async function setUserStatusThenReload(userId, status, reload) {
   try { await api('/admin/users/' + userId + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }); reload(); }
   catch (e) { alert(e.message); }
 }
-function statusToggleBtn(u, reloadFnCall) {
-  return u.status === 'ACTIVE'
-    ? '<button class="action-btn" onclick="setUserStatusThenReload(\'' + u.id + '\',\'SUSPENDED\',function(){' + reloadFnCall + '})">Suspend</button>'
-    : '<button class="action-btn" onclick="setUserStatusThenReload(\'' + u.id + '\',\'ACTIVE\',function(){' + reloadFnCall + '})">Activate</button>';
+// backFnCall: where to navigate once the account is actually gone (a detail
+// view for a deleted user has nothing left to show) -- defaults to
+// reloadFnCall for list rows, where reloading the same list is correct
+// either way.
+function statusToggleBtn(u, reloadFnCall, backFnCall) {
+  if (u.status === 'SUSPENDED') {
+    return '<span style="position:relative;display:inline-block">'
+      + '<button class="action-btn" onclick="toggleSuspendedMenu(this,\'' + u.id + '\',' + JSON.stringify(u.name || 'this account') + ',function(){' + reloadFnCall + '},function(){' + (backFnCall || reloadFnCall) + '})">Suspended &#9662;</button>'
+      + '</span>';
+  }
+  return '<button class="action-btn" onclick="setUserStatusThenReload(\'' + u.id + '\',\'SUSPENDED\',function(){' + reloadFnCall + '})">Suspend</button>';
+}
+function toggleSuspendedMenu(btnEl, id, name, reload, goBack) {
+  document.querySelectorAll('.suspend-menu').forEach(function (m) { m.remove(); });
+  var wrap = btnEl.parentElement;
+  var menu = document.createElement('div');
+  menu.className = 'suspend-menu';
+  menu.style.cssText = 'position:absolute;top:100%;left:0;margin-top:4px;background:#1C1C1C;border:1.5px solid #333;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:9999;min-width:180px;overflow:hidden';
+
+  var reactivateBtn = document.createElement('button');
+  reactivateBtn.textContent = '↺ Reactivate';
+  reactivateBtn.style.cssText = 'display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;color:#F2EDE8;font-size:13px;cursor:pointer';
+  reactivateBtn.onmouseover = function () { this.style.background = '#2a2a2a'; };
+  reactivateBtn.onmouseout = function () { this.style.background = 'none'; };
+  reactivateBtn.onclick = function (e) { e.stopPropagation(); menu.remove(); setUserStatusThenReload(id, 'ACTIVE', reload); };
+  menu.appendChild(reactivateBtn);
+
+  if (currentUser.isSuperAdmin) {
+    var deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '🗑 Delete Account';
+    deleteBtn.style.cssText = 'display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;color:#E8392E;font-size:13px;cursor:pointer;border-top:1px solid #2a2a2a';
+    deleteBtn.onmouseover = function () { this.style.background = '#2a1414'; };
+    deleteBtn.onmouseout = function () { this.style.background = 'none'; };
+    deleteBtn.onclick = function (e) { e.stopPropagation(); menu.remove(); confirmDeleteUser(id, name, goBack); };
+    menu.appendChild(deleteBtn);
+  }
+
+  wrap.appendChild(menu);
+  setTimeout(function () {
+    document.addEventListener('click', function closeMenu(ev) {
+      if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
+    });
+  }, 0);
+}
+async function confirmDeleteUser(id, name, goBack) {
+  if (!confirm('Permanently delete ' + name + '\'s account?\n\nThis removes their profile from the platform for good and cannot be undone. If they have booking, rating, or order history other users depend on, the account will instead be permanently deactivated and logged out.')) return;
+  try {
+    const res = await api('/admin/users/' + id, { method: 'DELETE' });
+    alert(res.message || (name + '\'s account was deleted.'));
+    goBack();
+  } catch (e) { alert(e.message); }
 }
 async function openSmsModal(userId, name) {
   const message = prompt('Send an SMS to ' + name + ':');
@@ -473,9 +514,7 @@ async function renderVendors() {
       '<tr><td>' + v.bizName + '</td><td>' + v.vtype + '</td><td>' + v.user.name + '</td><td>' + contactCell(v.user.email, v.user.phone, v.user.address) + '</td><td>' + (v.user.state || '—') + '</td>' +
       '<td>' + (v.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
       '<td><button class="action-btn" onclick="renderVendorDetail(\'' + v.id + '\')">View</button> <button class="action-btn" onclick="setVendorVerified(\'' + v.id + '\',' + (!v.isVerified) + ')">' + (v.isVerified ? 'Unverify' : 'Verify') + '</button> ' +
-      (v.user.status === 'ACTIVE'
-        ? '<button class="action-btn" onclick="setUserStatus(\'' + v.user.id + '\',\'SUSPENDED\');setTimeout(renderVendors,300)">Suspend</button>'
-        : '<button class="action-btn" onclick="setUserStatus(\'' + v.user.id + '\',\'ACTIVE\');setTimeout(renderVendors,300)">Activate</button>') + '</td></tr>'
+      statusToggleBtn(v.user, 'renderVendors()') + '</td></tr>'
     ).join('');
     document.getElementById('vendors-table').outerHTML = data.vendors.length
       ? '<table><thead><tr><th>Business</th><th>Type</th><th>Owner</th><th>Contact</th><th>State</th><th>Verified</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
@@ -518,7 +557,7 @@ async function renderVendorDetail(id) {
       '</div>' +
       '<div class="toolbar" style="margin-top:10px">' +
         (u.phone ? '<button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button> ' : '') +
-        statusToggleBtn(u, "renderVendorDetail('" + id + "')") +
+        statusToggleBtn(u, "renderVendorDetail('" + id + "')", "switchTab('vendors')") +
       '</div>' +
       '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
         card('Paid Out', money(f.paidKobo), 'Released into wallet') +
@@ -1024,9 +1063,7 @@ async function renderRiders() {
       '<td>' + (r.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td>' +
       '<td>' + r.deliveries + '</td><td>' + (r.ratingAvg || 0).toFixed(1) + '</td>' +
       '<td><button class="action-btn" onclick="renderRiderDetail(\'' + r.id + '\')">View</button> <button class="action-btn" onclick="setRiderVerified(\'' + r.id + '\',' + (!r.isVerified) + ')">' + (r.isVerified ? 'Unverify' : 'Verify') + '</button> ' +
-      (r.user.status === 'ACTIVE'
-        ? '<button class="action-btn" onclick="setUserStatus(\'' + r.user.id + '\',\'SUSPENDED\');setTimeout(renderRiders,300)">Suspend</button>'
-        : '<button class="action-btn" onclick="setUserStatus(\'' + r.user.id + '\',\'ACTIVE\');setTimeout(renderRiders,300)">Activate</button>') + '</td></tr>'
+      statusToggleBtn(r.user, 'renderRiders()') + '</td></tr>'
     ).join('');
     document.getElementById('riders-table').outerHTML = data.riders.length
       ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Vehicle</th><th>State</th><th>Online</th><th>Verified</th><th>Deliveries</th><th>Rating</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
@@ -1063,7 +1100,7 @@ async function renderRiderDetail(id) {
       '</div>' +
       '<div class="toolbar" style="margin-top:10px">' +
         (u.phone ? '<button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button> ' : '') +
-        statusToggleBtn(u, "renderRiderDetail('" + id + "')") +
+        statusToggleBtn(u, "renderRiderDetail('" + id + "')", "switchTab('riders')") +
       '</div>' +
       '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
         card('Wallet Balance', money(f.balanceKobo), '') +
@@ -1090,9 +1127,7 @@ async function renderShoppers() {
       '<td>' + (s.isOnline ? pill('ONLINE') : '<span class="pill grey">Offline</span>') + '</td>' +
       '<td>' + (s.isVerified ? pill('ACTIVE') : pill('PENDING')) + '</td><td>' + (s.ratingAvg || 0).toFixed(1) + '</td>' +
       '<td><button class="action-btn" onclick="renderShopperDetail(\'' + s.id + '\')">View</button> <button class="action-btn" onclick="setShopperVerified(\'' + s.id + '\',' + (!s.isVerified) + ')">' + (s.isVerified ? 'Unverify' : 'Verify') + '</button> ' +
-      (s.user.status === 'ACTIVE'
-        ? '<button class="action-btn" onclick="setUserStatus(\'' + s.user.id + '\',\'SUSPENDED\');setTimeout(renderShoppers,300)">Suspend</button>'
-        : '<button class="action-btn" onclick="setUserStatus(\'' + s.user.id + '\',\'ACTIVE\');setTimeout(renderShoppers,300)">Activate</button>') + '</td></tr>'
+      statusToggleBtn(s.user, 'renderShoppers()') + '</td></tr>'
     ).join('');
     document.getElementById('shoppers-table').outerHTML = data.shoppers.length
       ? '<table><thead><tr><th>Name</th><th>Contact</th><th>Market</th><th>State</th><th>Online</th><th>Verified</th><th>Rating</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
@@ -1129,7 +1164,7 @@ async function renderShopperDetail(id) {
       '</div>' +
       '<div class="toolbar" style="margin-top:10px">' +
         (u.phone ? '<button class="action-btn" onclick="openSmsModal(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Message ' + u.name + '</button> <button class="action-btn" onclick="callUser(\'' + u.id + '\',' + JSON.stringify(u.name) + ')">Call ' + u.name + '</button> ' : '') +
-        statusToggleBtn(u, "renderShopperDetail('" + id + "')") +
+        statusToggleBtn(u, "renderShopperDetail('" + id + "')", "switchTab('shoppers')") +
       '</div>' +
       '<h2 style="margin-top:24px">Finance</h2><div class="grid">' +
         card('Wallet Balance', money(f.balanceKobo), '') +

@@ -323,6 +323,51 @@ async function deleteServicePackageForAdmin(req, res, next) {
   }
 }
 
+// Deleting a suspended user's account -- offered from the "Suspended" state
+// of the Suspend/Activate toggle in the Users/Vendors/Riders/Shoppers tabs.
+// A real hard delete is attempted first; if the account has real history
+// other users legitimately depend on (a booking a vendor needs in their own
+// earnings record, a rating, a support ticket, a chat message), Postgres's
+// foreign key constraint blocks it -- rather than erroring out with no
+// resolution, that case falls back to permanently deactivating + logging
+// the account out (same mechanism the super-admin "remove admin" flow
+// already uses), so the account still stops existing for every practical
+// purpose (can't log in, no longer listed as active) without silently
+// corrupting someone else's records.
+async function deleteUserForAdmin(req, res, next) {
+  try {
+    if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account." });
+
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, name: true, email: true } });
+    if (!target) return res.status(404).json({ error: "User not found." });
+    if (target.role === "ADMIN") {
+      return res.status(400).json({ error: "Admin accounts are removed from the Admins tab, not here." });
+    }
+
+    try {
+      await prisma.user.delete({ where: { id: target.id } });
+      await logAdminAction(req.user, "USER_DELETED", "User", target.id, `Permanently deleted ${target.name} (${target.email || "no email"})`);
+      return res.json({ success: true, hardDeleted: true });
+    } catch (deleteErr) {
+      if (deleteErr.code === "P2003" || deleteErr.code === "P2014") {
+        await prisma.$transaction([
+          prisma.user.update({ where: { id: target.id }, data: { status: "DELETED" } }),
+          prisma.refreshToken.updateMany({ where: { userId: target.id, revoked: false }, data: { revoked: true } }),
+        ]);
+        await logAdminAction(req.user, "USER_DELETED", "User", target.id, `${target.name} (${target.email || "no email"}) has booking/order history so couldn't be fully erased -- permanently deactivated and logged out instead`);
+        return res.json({
+          success: true,
+          hardDeleted: false,
+          message: "This account has booking, rating, or order history tied to other users, so it can't be fully erased without breaking their records. It has been permanently deactivated and logged out instead.",
+        });
+      }
+      throw deleteErr;
+    }
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Riders/shoppers have no CommissionPeriod-style debt concept (that's
 // vendor-only — a weekly amount they owe the platform). What they have
 // instead is a real per-delivery/per-session payout history: EscrowHold
@@ -1152,6 +1197,7 @@ module.exports = {
   getReports,
   listUsers,
   updateUserStatus,
+  deleteUserForAdmin,
   listVendorsForAdmin,
   getVendorDetailForAdmin,
   getCustomerDetailForAdmin,

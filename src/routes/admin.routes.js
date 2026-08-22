@@ -15,6 +15,7 @@ router.get("/reports", requireContentOrSuperAdmin, ctrl.getReports);
 router.get("/users", ctrl.listUsers);
 router.get("/users/:id", requireContentOrSuperAdmin, ctrl.getCustomerDetailForAdmin);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
+router.delete("/users/:id", requireSuperAdmin, ctrl.deleteUserForAdmin);
 
 router.get("/vendors", ctrl.listVendorsForAdmin);
 router.get("/vendors/:id", requireContentOrSuperAdmin, ctrl.getVendorDetailForAdmin);
