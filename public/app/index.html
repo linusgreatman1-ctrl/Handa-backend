@@ -2438,10 +2438,12 @@ function renderShopPhase(phase) {
         <div style="font-size:11px;color:#9A9390;margin-top:8px;">+₦2,000 per additional 30 minutes beyond that.</div>
       </div>
       <div style="background:rgba(232,71,10,.07);border:1px solid rgba(232,71,10,.2);border-radius:12px;padding:11px 14px;margin-bottom:16px;font-size:13px;color:#9A9390;line-height:1.55;">
-        📹 <strong>The live video call starts when you tap below.</strong> You must approve or reject each item during the call. Rejected items are not bought. Escrow is only released after the rider collects your items.
+        📹 <strong>Only your shopper can start the live call</strong> — you'll join automatically the moment they do. You must approve or reject each item during the call. Rejected items are not bought. Escrow is only released after the rider collects your items.
       </div>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#B31010,#8A0000);margin-bottom:9px;" onclick="renderShopPhase('liveCall')">📹 Start Live Shopping Session</button>
-      <button class="btn btn-outline" onclick="renderShopPhase('buildList')">← Back</button>
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:14px;border-radius:12px;background:#1C1C1C;border:1.5px solid #2A2850;margin-bottom:9px;color:#9A9390;font-size:13px;font-weight:700;">
+        <span class="spin" style="display:inline-block;width:16px;height:16px;border:2px solid #2A2850;border-top-color:#E8392E;border-radius:50%;animation:spin 1s linear infinite;"></span>
+        Waiting for your shopper to start the call…
+      </div>
     </div>`;
 
   // ── PHASE 4: LIVE VIDEO CALL — item approval ───────────────────────────
@@ -2451,14 +2453,14 @@ function renderShopPhase(phase) {
         <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s ease-in-out infinite;flex-shrink:0;"></div>
         <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
         <span style="font-size:12px;color:#9A9390;margin-left:auto;">${sfmShopperName()} ★${sfmShopperRating()}</span>
-        <button onclick="sfmEndCall();showToast('Call ended','warning');renderShopPhase('buildList')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">End</button>
+        <button onclick="sfmSoftExitCall('sfm-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
       </div>
-      <div class="video-frame" style="margin-bottom:14px;height:185px;">
+      <div class="video-frame" id="sfm-video-frame" style="margin-bottom:14px;height:185px;">
         <video id="rtc-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
         <div class="scanline"></div>
         <div class="live-badge"><div class="live-dot"></div>LIVE</div>
         <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;">
-          ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker','']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;border-radius:10px;padding:7px 10px;font-size:17px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+          ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['&#x26F6;','Full','toggleRtcFullscreen(\'sfm-video-frame\')']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;border-radius:10px;padding:7px 10px;font-size:17px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
         </div>
       </div>
 
@@ -3311,6 +3313,46 @@ async function flipRtcCamera(){
   }
 }
 
+// Ends THIS side's peer connection but remembers enough (session id, role,
+// video element ids, the frame's original markup) to reconnect later --
+// stepping away from a call shouldn't force a full teardown+renavigate.
+function sfmSoftExitCall(frameId){
+  var rtc=window._rtc;
+  if(!rtc){ showToast&&showToast('Call already ended','info'); return; }
+  window._rtcRejoin = { sessionId: rtc.sessionId, role: rtc.role, localVideoElId: rtc.localVideoElId, remoteVideoElId: rtc.remoteVideoElId, frameId: frameId };
+  var frame=document.getElementById(frameId);
+  if(frame && !frame.hasAttribute('data-orig-html')) frame.setAttribute('data-orig-html', frame.innerHTML);
+  sfmEndCall();
+  if(frame){
+    frame.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:#9A9390;">'+
+      '<div style="font-size:13px;">You left the call</div>'+
+      '<button onclick="sfmRejoinCall()" style="padding:10px 22px;border-radius:10px;border:none;background:#E8392E;color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x21bb; Rejoin Call</button>'+
+    '</div>';
+  }
+  showToast&&showToast('You left the call — rejoin anytime','info');
+}
+
+function sfmRejoinCall(){
+  var rj=window._rtcRejoin;
+  if(!rj) return;
+  var frame=document.getElementById(rj.frameId);
+  if(frame){
+    var orig=frame.getAttribute('data-orig-html');
+    if(orig) frame.innerHTML=orig;
+  }
+  sfmStartCall(rj.sessionId, rj.role, rj.localVideoElId, rj.remoteVideoElId);
+}
+
+function toggleRtcFullscreen(frameId){
+  var el=document.getElementById(frameId);
+  if(!el) return;
+  if(!document.fullscreenElement){
+    (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el);
+  }else{
+    (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
+  }
+}
+
 async function sendLiveChat() {
   const inp=document.getElementById('live-chat-inp'); if(!inp||!inp.value.trim()) return;
   const msgs=document.getElementById('live-chat-msgs'); if(!msgs) return;
@@ -3426,16 +3468,17 @@ function renderShopperPhase(phase) {
         <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s infinite;flex-shrink:0;"></div>
         <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
         <span style="font-size:12px;color:#9A9390;margin-left:auto;">${live.customer?live.customer.name:'Customer'}</span>
+        <button onclick="sfmSoftExitCall('shopper-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
       </div>
 
       <!-- User's camera (small PiP) + shopper's main camera -->
       <div style="position:relative;margin-bottom:14px;">
-        <div class="video-frame" style="height:180px;">
+        <div class="video-frame" id="shopper-video-frame" style="height:180px;">
           <video id="rtc-local-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
           <div class="scanline"></div>
           <div class="live-badge"><div class="live-dot"></div>LIVE</div>
           <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:9px;">
-            ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['🔄','Flip','flipRtcCamera()']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,.15);border:none;border-radius:9px;padding:6px 9px;font-size:16px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+            ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['🔄','Flip','flipRtcCamera()'],['&#x26F6;','Full','toggleRtcFullscreen(\'shopper-video-frame\')']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,.15);border:none;border-radius:9px;padding:6px 9px;font-size:16px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
           </div>
           <!-- User's PiP -->
           <video id="rtc-remote-video" autoplay playsinline style="position:absolute;top:10px;right:10px;width:70px;height:55px;object-fit:cover;background:rgba(0,0,0,.6);border-radius:10px;border:1.5px solid rgba(255,255,255,.2);"></video>
