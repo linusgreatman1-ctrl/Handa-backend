@@ -942,7 +942,7 @@ function mapApiUser(u){
     avatarUrl: u.avatarUrl || '',
     balance: u.wallet ? Math.round(u.wallet.balanceKobo/100) : 0,
   };
-  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; }
+  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; }
   if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
   if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; }
   return mapped;
@@ -1679,6 +1679,39 @@ function autoSuggestFoodEmoji(name){
   if(!el||window._emojiManuallySet)return; // never clobber a manual choice
   var guess=guessFoodEmoji(name);
   if(guess)el.value=guess;
+}
+var VENDOR_CUISINE_TAGS=['Nigerian','Continental','Pastry','Vegetarian'];
+function openEditVendorTagsModal(){
+  var cur=(S.user&&S.user.tags)||[];
+  showProcedureModal(
+    '<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Cuisine Specialities</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Customers filter home cooks by these — pick everything that fits your menu.</p>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">'
+    +VENDOR_CUISINE_TAGS.map(function(t){
+      var checked=cur.indexOf(t)>-1;
+      return '<label style="display:flex;align-items:center;gap:10px;background:#242424;border:1.5px solid '+(checked?'#9B59B6':'#2A2850')+';border-radius:12px;padding:12px;cursor:pointer;">'
+        +'<input type="checkbox" class="vendor-tag-cb" value="'+t+'"'+(checked?' checked':'')+' style="width:18px;height:18px;">'
+        +'<span style="color:#F2EDE8;font-size:14px;">'+t+'</span></label>';
+    }).join('')
+    +'</div>'
+    +'<button onclick="saveVendorTags()" style="width:100%;background:#9B59B6;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save</button>'
+    +'</div>'
+  );
+}
+async function saveVendorTags(){
+  var tags=[].slice.call(document.querySelectorAll('.vendor-tag-cb:checked')).map(function(el){return el.value;});
+  try{
+    var res=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify({tags:tags})});
+    if(S.user)S.user.tags=tags;
+    showToast&&showToast('Specialities updated','success');
+    closeProcedureModal();
+    if(typeof renderVendorProfile==='function')renderVendorProfile();
+  }catch(err){
+    showToast&&showToast(err.message||'Could not save specialities','warning');
+  }
 }
 function previewNewItemPhoto(inp){
   var file=inp.files[0];if(!file)return;
@@ -4541,6 +4574,13 @@ function renderVendorProfile(){
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="openEditProfileModal(\'vendor\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'</div>';}).join('')
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+((u.tags||[]).length?'8px':'0')+';">'
+    +'<div style="font-size:10px;color:#9A9390;">Cuisine Specialities</div>'
+    +'<button onclick="openEditVendorTagsModal()" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
+    +'</div>'
+    +((u.tags||[]).length?'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+(u.tags||[]).map(function(t){return '<span style="background:#242424;border:1px solid #2A2850;border-radius:20px;padding:4px 10px;font-size:11px;color:#F2EDE8;">'+t+'</span>';}).join('')+'</div>':'<div style="font-weight:700;font-size:13px;color:#9A9390;">Not set — customers filter by this</div>')
+    +'</div>'
     +renderKycSection('vendor')
     +'<h3 style="font-size:15px;font-weight:800;margin:16px 0 10px;color:#F2EDE8;">Settings</h3>'
     +'<div class="card" style="overflow:hidden;margin-bottom:14px;padding:0;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;">'
@@ -4778,9 +4818,9 @@ function showOrderProcessing(){
   advanceStage();
 }
 
-var _reportContext='order';var _reportSelected='';
+var _reportContext='order';var _reportSelected='';var _reportContextId=null;
 var _reportCategories={order:['Missing items','Wrong items','Food quality issue','Late delivery','Rider was rude','Other'],shopper_session:['Shopper behaviour','Item not as described','Price discrepancy','Other'],rider:['Dangerous driving','Rude behaviour','Package damaged','Other'],vendor:['Wrong order prepared','Missing items','Rude behaviour','Other'],customer:['Rude or abusive','False report','No show','Other'],vendor_shopper:['Not ready at pickup time','Wrong/missing items','Rude behaviour','Unsafe location','Other']};
-function showReportIssue(ctx){_reportContext=ctx||'order';_reportSelected='';var cats=_reportCategories[ctx]||_reportCategories.order;var el=document.getElementById('report-categories');if(el){el.innerHTML=cats.map(function(c){return '<button onclick="selectReportCat(this,\''+c+'\')" style="padding:10px 14px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:13px;cursor:pointer;text-align:left;">'+c+'</button>';}).join('');}var desc=document.getElementById('report-desc');if(desc)desc.value='';document.getElementById('report-modal').style.display='flex';}
+function showReportIssue(ctx,contextId){_reportContext=ctx||'order';_reportContextId=contextId||null;_reportSelected='';var cats=_reportCategories[ctx]||_reportCategories.order;var el=document.getElementById('report-categories');if(el){el.innerHTML=cats.map(function(c){return '<button onclick="selectReportCat(this,\''+c+'\')" style="padding:10px 14px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:13px;cursor:pointer;text-align:left;">'+c+'</button>';}).join('');}var desc=document.getElementById('report-desc');if(desc)desc.value='';document.getElementById('report-modal').style.display='flex';}
 function selectReportCat(btn,cat){_reportSelected=cat;document.querySelectorAll('#report-categories button').forEach(function(b){b.style.background='#242424';b.style.color='#9A9390';b.style.borderColor='#2A2850';});btn.style.background='rgba(232,57,46,.12)';btn.style.color='#E8392E';btn.style.borderColor='rgba(232,57,46,.4)';}
 // Uploads one evidence photo to an already-created ticket — raw fetch,
 // not api(), since a FormData body needs the browser's own multipart
@@ -4805,6 +4845,7 @@ async function submitReport(){
   try{
     var res = await api('/support/tickets',{method:'POST',body:JSON.stringify({
       context: ctxMap[_reportContext]||'GENERAL',
+      contextId: _reportContextId||undefined,
       category: _reportSelected,
       description: desc||undefined,
       isDispute: !!(refundNaira>0 || (evidenceEl&&evidenceEl.files&&evidenceEl.files[0])),
@@ -4819,7 +4860,7 @@ async function submitReport(){
   }catch(err){
     toast(err.message||'Could not submit report');
   }
-  _reportContext='';
+  _reportContext='';_reportContextId=null;
 }
 
 function closeReportIssue(){
@@ -4891,108 +4932,6 @@ function uploadRiderPic(){var inp=document.getElementById('rider-pp-inp');if(!in
 function uploadVendorPic(){var inp=document.getElementById('vendor-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='vendor-pp-inp';inp.style.display='none';inp.onchange=function(){uploadAvatarReal(inp,'vendor-pic-img','vendor-pic-icon');};document.body.appendChild(inp);}inp.click();}
 function uploadShopperPic(){var inp=document.getElementById('shopper-pp-inp');if(!inp){inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.id='shopper-pp-inp';inp.style.display='none';inp.onchange=function(){uploadAvatarReal(inp,'shopper-pic-img','shopper-pic-icon');};document.body.appendChild(inp);}inp.click();}
 
-var _orderData=[
-  {type:'shopping',title:'Live Shopping',icon:'&#x1F6D2;',date:'Yesterday 10AM',
-   items:[{n:'Tomatoes 2kg',p:1200},{n:'Large Onions x5',p:800},{n:'Fresh Pepper',p:500}],total:7500,
-   shopper:{name:'Aisha Abdullahi',phone:'08045678901',rating:'4.9'},
-   rider:{name:'Chidi O.',vehicle:'TVS Apache',phone:'08056789012',rating:'4.8'}},
-  {type:'homecook',title:'Chef Ngozi',icon:'&#x1F9D1;&#x200D;&#x1F373;',date:'2 weeks ago',
-   items:[{n:'Dinner for 6 - Egusi and Eba',p:45000}],total:45000,
-   vendor:{name:'Chef Ngozi Okafor',address:'8 Oduduwa Crescent',phone:'08090123456',rating:'4.8'},
-   rider:{name:'Seun K.',vehicle:'Honda Dax',phone:'08091234567',rating:'4.7'}},
-  {type:'aiplanner',title:'AI Meal Planner',icon:'&#x1F916;',date:'3 weeks ago',
-   items:[{n:'Family 7-day meal plan',p:8000}],total:8000,
-   vendor:{name:'CityChef AI Planner',address:'Automated service',phone:'N/A',rating:'Automated'},
-   rider:{name:'Ade B.',vehicle:'Bajaj Boxer',phone:'08092345678',rating:'4.8'}}
-];
-
-
-function showOrderDetail(typeOrIdx, idx){
-  // Support both old type-based lookup and new index-based
-  var d;
-  if(typeof idx==='number'){
-    d=_orderData[idx];
-  } else {
-    for(var i=0;i<_orderData.length;i++){if(_orderData[i].type===typeOrIdx){d=_orderData[i];break;}}
-  }
-  if(!d){toast('Order details not available');return;}
-  var isShop=(d.type==='shopping');
-  var ov=document.getElementById('order-detail-ov');
-  if(!ov){
-    ov=document.createElement('div');
-    ov.id='order-detail-ov';
-    ov.style.cssText='display:none;position:fixed;inset:0;background:#111;z-index:9800;overflow-y:auto;';
-    ov.innerHTML='<div class="od-body"></div>';
-    document.body.appendChild(ov);
-  }
-  var odb=ov.querySelector('.od-body');
-  if(!odb){ov.innerHTML='<div class="od-body"></div>';odb=ov.querySelector('.od-body');}
-  var itemsHtml=d.items.map(function(it){
-    return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2850;">'
-      +'<span style="font-size:13px;color:#F2EDE8;">'+it.n+'</span>'
-      +'<span style="font-weight:700;color:#2ECC71;font-size:13px;">&#x20a6;'+it.p.toLocaleString()+'</span></div>';
-  }).join('');
-  var contactHtml='';
-  if(isShop){
-    var sh=d.shopper||{};
-    contactHtml='<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
-      +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:10px;">&#x1F6D2; Shopper</div>'
-      +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:8px;">'+sh.name+'</div>'
-      +'<button onclick="callOrderContact(0)" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-size:13px;font-weight:700;cursor:pointer;">&#x1F4DE; Call Shopper</button>'
-      +'</div>';
-  } else {
-    var vn=d.vendor||{};
-    contactHtml='<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
-      +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F3EA; Vendor</div>'
-      +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:3px;">'+vn.name+'</div>'
-      +'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">'+vn.address+'</div>'
-      +'<button onclick="callOrderContact(1)" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-size:13px;font-weight:700;cursor:pointer;">&#x1F4DE; Call Vendor</button>'
-      +'</div>';
-  }
-  var rd=d.rider||{};
-  var riderHtml='<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:14px;">'
-    +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:10px;">&#x1F6F5; Rider</div>'
-    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:3px;">'+rd.name+'</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">'+(rd.vehicle||'')+'</div>'
-    +(rd.phone&&rd.phone!=='N/A'?'<button onclick="callOrderContact(2)" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-size:13px;font-weight:700;cursor:pointer;">&#x1F4DE; Call Rider</button>':'')
-    +'</div>';
-  var actionHtml=isShop
-    ?'<div style="display:flex;gap:8px;margin-bottom:8px;">'
-      +'<button onclick="showReportIssue(\'shopper_session\')" style="flex:1;padding:12px;border-radius:11px;border:1.5px solid rgba(232,57,46,.35);background:rgba(232,57,46,.08);color:#E8392E;font-size:13px;font-weight:700;cursor:pointer;">Report Shopper</button>'
-      +'<button onclick="showReportIssue(\'rider\')" style="flex:1;padding:12px;border-radius:11px;border:1.5px solid rgba(232,57,46,.35);background:rgba(232,57,46,.08);color:#E8392E;font-size:13px;font-weight:700;cursor:pointer;">Report Rider</button>'
-      +'</div>'
-    :'<div style="display:flex;gap:8px;margin-bottom:8px;">'
-      +'<button onclick="closeOrderDetail();go(\'home\')" style="flex:2;padding:12px;border-radius:11px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-size:14px;font-weight:800;cursor:pointer;">&#x1F504; Order Again</button>'
-      +'<button onclick="showReportIssue(\'order\')" style="flex:1;padding:12px;border-radius:11px;border:1.5px solid rgba(232,57,46,.35);background:rgba(232,57,46,.08);color:#E8392E;font-size:13px;font-weight:700;cursor:pointer;">Report</button>'
-      +'</div>';
-  window._curOrderDetail=d;
-  window._curOrderType=d.type;
-  odb.innerHTML='<div style="padding:52px 16px 32px;">'
-    +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">'
-    +'<button onclick="closeOrderDetail()" class="ibtn">&#x2190;</button>'
-    +'<div><h2 style="font-size:19px;font-weight:900;margin:0;color:#F2EDE8;">'+d.title+'</h2>'
-    +'<p style="font-size:12px;color:#9A9390;margin:3px 0 0;">'+d.date+'</p></div></div>'
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
-    +'<div style="font-size:12px;font-weight:700;color:#9A9390;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;">Order Items</div>'
-    +itemsHtml
-    +'<div style="display:flex;justify-content:space-between;padding:10px 0 0;">'
-    +'<span style="font-weight:800;font-size:15px;color:#F2EDE8;">Total</span>'
-    +'<span style="font-weight:900;font-size:20px;color:#E8392E;">&#x20a6;'+d.total.toLocaleString()+'</span></div>'
-    +'</div>'
-    +contactHtml+riderHtml+actionHtml
-    +'</div>';
-  ov.style.cssText='display:block;position:fixed;inset:0;background:#111;z-index:9800;overflow-y:auto;';
-}
-
-
-
-function closeOrderDetail(){
-  var ov=document.getElementById('order-detail-ov');
-  if(ov){ov.classList.remove('on');ov.removeAttribute('style');ov.style.display='none';}
-}
-
-function reorderItem(type){closeOrderDetail();var d=_orderData[type];if(d)toast('Adding '+d.title+' to cart...');setTimeout(function(){go('cart');},600);}
-
 async function showVendorRideHistory(){
   var body=vendorBodyEl();if(!body)return;
   body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="vendorNav(\'orders\')" class="ibtn">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Booking History</h2></div><div id="vendor-history-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div></div>';
@@ -5002,7 +4941,7 @@ async function showVendorRideHistory(){
     var listEl=document.getElementById('vendor-history-list');if(!listEl)return;
     listEl.innerHTML=past.length?past.map(function(b){
       var sc={COMPLETED:'#2ECC71',CANCELLED:'#9A9390',DECLINED:'#E8392E'}[b.status]||'#9A9390';
-      return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+(b.customer?b.customer.name:'Customer')+'</div><span style="color:'+sc+';font-size:11px;font-weight:700;">'+b.status+'</span></div><div style="font-size:12px;color:#9A9390;">'+N(Math.round(b.totalKobo/100))+' &#x2022; '+(b.eventDate?new Date(b.eventDate).toLocaleDateString():'')+'</div></div>';
+      return '<div onclick="openVendorBookingDetail(\''+b.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;cursor:pointer;"><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+(b.customer?b.customer.name:'Customer')+'</div><span style="color:'+sc+';font-size:11px;font-weight:700;">'+b.status+'</span></div><div style="font-size:12px;color:#9A9390;">'+N(Math.round(b.totalKobo/100))+' &#x2022; '+(b.eventDate?new Date(b.eventDate).toLocaleDateString():'')+'</div></div>';
     }).join('') : '<div style="text-align:center;padding:30px;color:#9A9390">No past bookings yet.</div>';
   }catch(err){
     var listEl2=document.getElementById('vendor-history-list');
@@ -5060,75 +4999,6 @@ function openAddSellerToPayoutModal(){
     if(origCb)origCb();
   };
   openAddSellerModal(null);
-}
-
-function goHistory(){
-  go('history');
-  renderHistoryList();
-}
-var _allOrders=[
-  {idx:0,type:'shopping',icon:'&#x1F6D2;',title:'Live Shopping',sub:'Tomatoes, Onions, Pepper',amount:7500,date:'Yesterday 10AM',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:1,type:'homecook',icon:'&#x1F9D1;&#x200D;&#x1F373;',title:'Chef Ngozi',sub:'Home cook dinner for 6',amount:45000,date:'2 weeks ago',status:'Delivered',statusColor:'#2ECC71'},
-  {idx:2,type:'aiplanner',icon:'&#x1F916;',title:'AI Meal Planner',sub:'Family 7-day plan',amount:8000,date:'3 weeks ago',status:'Delivered',statusColor:'#2ECC71'}
-];
-
-
-function renderHistoryList(){
-  var el=document.getElementById('history-list');
-  if(!el)return;
-  var tabs=['All','Shopping','Home Cook','AI Plan'];
-  var tabHtml='<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;margin-bottom:14px;">';
-  for(var ti=0;ti<tabs.length;ti++){
-    var active=(ti===0);
-    tabHtml+='<button onclick="filterHistory(this,\''+tabs[ti]+'\')" style="flex-shrink:0;padding:7px 14px;border-radius:20px;border:1.5px solid '+(active?'#E8392E':'#2A2850')+';background:'+(active?'rgba(232,57,46,.12)':'transparent')+';color:'+(active?'#E8392E':'#9A9390')+';font-size:12px;font-weight:700;cursor:pointer;">'+tabs[ti]+'</button>';
-  }
-  tabHtml+='</div>';
-  var orderHtml='';
-  for(var oi=0;oi<_allOrders.length;oi++){
-    var o=_allOrders[oi];
-    orderHtml+='<button onclick="openHistoryOrder('+oi+')" data-type="'+o.type+'" style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;cursor:pointer;width:100%;text-align:left;">'
-      +'<div style="width:44px;height:44px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;pointer-events:none;">'+o.icon+'</div>'
-      +'<div style="flex:1;min-width:0;pointer-events:none;">'
-      +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+o.title+'</div>'
-      +'<div style="font-size:11px;color:#9A9390;margin-top:2px;">'+o.sub+'</div>'
-      +'<div style="font-size:10px;color:#555;margin-top:2px;">'+o.date+'</div>'
-      +'</div>'
-      +'<div style="text-align:right;flex-shrink:0;pointer-events:none;">'
-      +'<div style="font-weight:800;color:#F2EDE8;font-size:13px;">&#x20a6;'+o.amount.toLocaleString()+'</div>'
-      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px;">'+o.status+'</div>'
-      +'</div>'
-      +'</button>';
-  }
-  el.innerHTML='<div style="padding-bottom:24px;">'+tabHtml+orderHtml+'</div>';
-}
-
-
-function openHistoryOrder(idx){
-  var d=_orderData[idx];
-  if(!d){toast('Order details not found');return;}
-  showOrderDetail(d.type,idx);
-}
-
-function filterHistory(btn,filter){
-  document.querySelectorAll('#history-list button').forEach(function(b){
-    b.style.borderColor='#2A2850';b.style.background='transparent';b.style.color='#9A9390';
-  });
-  btn.style.borderColor='#E8392E';btn.style.background='rgba(232,57,46,.12)';btn.style.color='#E8392E';
-  var cards=document.querySelectorAll('#history-list [data-type]');
-  cards.forEach(function(c){
-    var t=c.dataset.type;
-    var show=(filter==='All')
-      ||(filter==='Shopping'&&t==='shopping')
-      ||(filter==='Home Cook'&&t==='homecook')
-      ||(filter==='AI Plan'&&t==='aiplanner');
-    c.style.display=show?'flex':'none';
-  });
-}
-
-function showHistoryDetail(typeOrEl){
-  var type=(typeof typeOrEl==='string')?typeOrEl:(typeOrEl&&typeOrEl.dataset?typeOrEl.dataset.type:null);
-  if(!type){toast('Cannot open order detail');return;}
-  showOrderDetail(type);
 }
 
 function showVendorTrackModal(riderName,eta){
@@ -6058,21 +5928,6 @@ function _showPaymentMethods(){
   showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x1F4B3; Payment Methods</div></div>'+cardsHtml+'<button onclick="closeProcedureModal();setTimeout(addNewCard,200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:8px;">+ Add New Card</button><button onclick="closeProcedureModal();setTimeout(showAddFundsModal,200)" style="width:100%;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B0; Add Funds</button></div>');
 }
 
-function callOrderContact(idx){
-  var d=window._curOrderDetail;
-  if(!d){toast('Contact not available');return;}
-  var t=window._curOrderType||d.type||'';
-  var isShop=(t==='shopping');
-  if(isShop){
-    if(idx===0){var sh=d.shopper||{};openCallModal(sh.name||'Shopper',sh.phone||'','Shopper','🛒');}
-    else{var rd=d.rider||{};openCallModal(rd.name||'Rider',rd.phone||'','Rider','🛵');}
-  } else {
-    if(idx===2){var rd2=d.rider||{};openCallModal(rd2.name||'Rider',rd2.phone||'','Rider','🛵');}
-    else{var vn=d.vendor||{};openCallModal(vn.name||'Vendor',vn.phone||'','Vendor','🍽');}
-  }
-}
-
-
 
 
 
@@ -6727,10 +6582,99 @@ async function openVendorBookingDetail(id){
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Name</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(c.name||'—')+'</span></div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(b.phone||c.phone||'—')+'</span></div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12px;color:#9A9390;">Address</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;max-width:60%;">'+(c.address||'—')+(c.state?', '+c.state:'')+'</span></div>'
-      +'</div>';
+      +'</div>'
+      +'<button onclick="showReportIssue(\'customer\',\''+b.id+'\')" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
     showBottomSheet('Booking Details',content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
+  }
+}
+// Customer's own History detail — covers both a Booking (home cook/event
+// planner) and a Shop-For-Me session, since populateHistory() merges both
+// into one list. Bookings still in a live pre-completion status and whose
+// event date hasn't passed yet get a real "Edit Booking" action.
+async function openCustomerHistoryDetail(kind,id){
+  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
+  if(kind==='session'){
+    try{
+      var sres=await api('/shop-sessions/'+id);
+      var s=sres.session;
+      var srows=[['Status',s.status],['Shopper',s.shopper&&s.shopper.user?s.shopper.user.name:'—'],['Rider',s.rider&&s.rider.user?s.rider.user.name:'Not assigned yet'],['Items Total',N(Math.round((s.itemsTotalKobo||0)/100))],['Session Fee',N(Math.round((s.sessionFeeKobo||0)/100))],['Rider Fee',N(Math.round((s.riderFeeKobo||0)/100))]];
+      var scontent='<div style="background:#242424;border-radius:13px;padding:14px;">'
+        +srows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
+        +'</div>'
+        +'<button onclick="showReportIssue(\'shopper_session\',\''+id+'\')" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
+      showBottomSheet('Session Details',scontent);
+    }catch(err){
+      showBottomSheet('Session Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load session')+'</div>');
+    }
+    return;
+  }
+  try{
+    var res=await api('/bookings/'+id);
+    var b=res.booking;
+    var v=b.vendor||{};
+    var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
+    var rows=[
+      ['Booking #',b.bookingNumber||'—'],
+      ['Vendor',v.bizName||'—'],
+      ['Status',b.status],
+      ['Type',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
+      ['Date',when+(b.eventTime?' at '+b.eventTime:'')],
+      ['Venue',b.venue||'Not set'],
+      ['Guests',b.guestCount||'Not set'],
+      ['Package',b.servicePackage?b.servicePackage.label:'—'],
+      ['Total',N(Math.round(b.totalKobo/100))],
+    ];
+    var editable=['REQUESTED','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (!b.eventDate || new Date(b.eventDate).getTime()>Date.now());
+    var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
+      +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
+      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
+      +'</div>'
+      +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
+      +'<button onclick="showReportIssue(\'order\',\''+b.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
+    showBottomSheet('Booking Details',content);
+  }catch(err){
+    showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
+  }
+}
+var _editingBooking=null;
+function openEditBookingModal(b){
+  _editingBooking=b;
+  closeBottomSheet&&closeBottomSheet();
+  showProcedureModal(
+    '<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit Booking</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Changes are sent to the vendor immediately. You can edit right up until the booking\'s date.</p>'
+    +_arField('Event Date','eb-date',b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'','date')
+    +_arField('Event Time','eb-time',b.eventTime||'','')
+    +_arField('Venue','eb-venue',b.venue||'','')
+    +_arField('Guests','eb-guests',b.guestCount||'','number')
+    +'<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="eb-notes" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:70px;">'+(b.notes||'')+'</textarea>'
+    +'<button onclick="saveBookingEdit()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save Changes</button>'
+    +'</div>'
+  );
+  document.getElementById('eb-date').value=b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'';
+}
+async function saveBookingEdit(){
+  if(!_editingBooking)return;
+  var date=(document.getElementById('eb-date')||{}).value||'';
+  var time=(document.getElementById('eb-time')||{}).value||'';
+  var venue=(document.getElementById('eb-venue')||{}).value||'';
+  var guests=(document.getElementById('eb-guests')||{}).value||'';
+  var notes=(document.getElementById('eb-notes')||{}).value||'';
+  try{
+    await api('/bookings/'+_editingBooking.id,{method:'PATCH',body:JSON.stringify({
+      eventDate:date||undefined,eventTime:time||undefined,venue:venue||undefined,
+      guestCount:guests?parseInt(guests):undefined,notes:notes,
+    })});
+    showToast&&showToast('Booking updated — vendor notified','success');
+    closeProcedureModal();
+    if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
+  }catch(err){
+    showToast&&showToast(err.message||'Could not update booking','warning');
   }
 }
 function renderCookDashboard(){
@@ -7593,7 +7537,8 @@ function renderEHistoryItems(orders){
     var payBtn = (o.bookingId && o.status==='ACCEPTED')
       ? '<button onclick="event.stopPropagation();payForBooking(\''+o.bookingId+'\','+o.totalKobo+')" style="margin-top:6px;padding:6px 12px;border-radius:8px;border:none;background:#E8392E;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">Pay Now</button>'
       : '';
-    return '<div style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px">'
+    var detailClick=o.bookingId?"openCustomerHistoryDetail('booking','"+o.bookingId+"')":(o.sessionId?"openCustomerHistoryDetail('session','"+o.sessionId+"')":'');
+    return '<div onclick="'+detailClick+'" style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;'+(detailClick?'cursor:pointer;':'')+'">'
       +'<div style="width:44px;height:44px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+o.icon+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px;color:#F2EDE8">'+o.title+'</div>'
       +'<div style="font-size:11px;color:#9A9390;margin-top:2px">'+o.sub+'</div>'

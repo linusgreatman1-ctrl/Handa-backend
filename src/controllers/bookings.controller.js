@@ -116,6 +116,81 @@ async function getBooking(req, res, next) {
   }
 }
 
+// Lets the customer amend a booking's date/time/venue/guests/notes/package/
+// items any time before the event's own scheduled date — only while it's
+// still in a live pre-completion status. The vendor is notified in real
+// time so they see the new details, not the ones they originally accepted.
+async function updateBooking(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: { vendor: { select: { id: true, userId: true } } },
+    });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    if (booking.customerId !== req.user.id) return res.status(403).json({ error: "Only the customer who made this booking can edit it." });
+    if (!["REQUESTED", "ACCEPTED", "CONFIRMED"].includes(booking.status)) {
+      return res.status(400).json({ error: "This booking can no longer be edited." });
+    }
+    if (booking.eventDate && new Date(booking.eventDate).getTime() <= Date.now()) {
+      return res.status(400).json({ error: "This booking's date has already passed — it can no longer be edited." });
+    }
+
+    const { servicePackageId, items, eventDate, eventTime, venue, guestCount, notes } = req.body;
+    const data = {};
+    if (eventDate !== undefined) data.eventDate = eventDate ? new Date(eventDate) : null;
+    if (eventTime !== undefined) data.eventTime = eventTime;
+    if (venue !== undefined) data.venue = venue;
+    if (guestCount !== undefined) data.guestCount = guestCount;
+    if (notes !== undefined) data.notes = notes;
+
+    if (servicePackageId !== undefined || items !== undefined) {
+      let totalKobo = 0;
+      let newServicePackage = null;
+      const pkgId = servicePackageId !== undefined ? servicePackageId : booking.servicePackageId;
+      if (pkgId) {
+        newServicePackage = await prisma.servicePackage.findUnique({ where: { id: pkgId } });
+        if (!newServicePackage || newServicePackage.vendorId !== booking.vendorId) return res.status(400).json({ error: "Invalid service package for this vendor." });
+        totalKobo += newServicePackage.priceKobo;
+      }
+      let newSelectedItems = booking.selectedItems;
+      if (items !== undefined) {
+        if (Array.isArray(items) && items.length) {
+          const menuItems = await prisma.menuItem.findMany({ where: { id: { in: items.map((i) => i.menuItemId) }, vendorId: booking.vendorId } });
+          newSelectedItems = items.map((reqItem) => {
+            const menuItem = menuItems.find((m) => m.id === reqItem.menuItemId);
+            if (!menuItem) throw Object.assign(new Error("One or more items do not belong to this vendor."), { status: 400 });
+            const qty = Math.max(1, parseInt(reqItem.qty) || 1);
+            return { menuItemId: menuItem.id, name: menuItem.name, priceKobo: menuItem.priceKobo, qty };
+          });
+        } else {
+          newSelectedItems = [];
+        }
+      }
+      totalKobo += (newSelectedItems || []).reduce((sum, i) => sum + i.priceKobo * i.qty, 0);
+      if (totalKobo <= 0) return res.status(400).json({ error: "Booking must include a service package and/or items." });
+      data.servicePackageId = newServicePackage?.id || null;
+      data.selectedItems = newSelectedItems;
+      data.totalKobo = totalKobo;
+    }
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data });
+
+    if (booking.vendor?.userId) {
+      await notify(
+        req.app.get("io"),
+        booking.vendor.userId,
+        "ORDER_UPDATE",
+        "Booking details updated",
+        `The customer updated booking #${booking.bookingNumber} — check the new details.`,
+        { bookingId: booking.id }
+      );
+    }
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 function assertVendorOwnsBooking(req, booking) {
   if (!req.user.vendorProfile || booking.vendorId !== req.user.vendorProfile.id) {
     const err = new Error("Booking not found.");
@@ -227,4 +302,4 @@ async function cancelBooking(req, res, next) {
   }
 }
 
-module.exports = { createBooking, listBookings, getBooking, acceptBooking, declineBooking, payBooking, completeBooking, cancelBooking };
+module.exports = { createBooking, listBookings, getBooking, updateBooking, acceptBooking, declineBooking, payBooking, completeBooking, cancelBooking };

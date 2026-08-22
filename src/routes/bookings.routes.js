@@ -8,6 +8,7 @@ router.use(requireAuth);
 router.post("/", ctrl.createBooking);
 router.get("/", ctrl.listBookings);
 router.get("/:id", ctrl.getBooking);
+router.patch("/:id", ctrl.updateBooking);
 router.post("/:id/accept", ctrl.acceptBooking);
 router.post("/:id/decline", ctrl.declineBooking);
 router.post("/:id/pay", ctrl.payBooking);
