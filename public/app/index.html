@@ -562,8 +562,11 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <!-- Role switcher — populated by renderRoleSwitcher(), see eGo('profile') -->
     <div id="role-switcher-slot"></div>
 
-    <button onclick="openFavouritesModal()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px 16px;margin-bottom:18px;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;">
+    <button onclick="openFavouritesModal()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px 16px;margin-bottom:10px;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;">
       <span style="font-size:18px;color:#E8392E;">&#x2665;</span> My Favourites
+    </button>
+    <button onclick="openSupportChat()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;padding:14px 16px;margin-bottom:18px;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;">
+      <span style="font-size:18px;color:#3B9FE8;">&#x1F3A7;</span> Chat with Support
     </button>
 
     <!-- Addresses -->
@@ -847,6 +850,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <div style="font-size:12px;color:#E8392E;font-weight:700;margin-bottom:4px;">How it works:</div>
       <div style="font-size:12px;color:#9A9390;line-height:1.7;">1. Select issue category<br>2. Describe what happened<br>3. Submit — support responds within 30 mins<br>4. Refund processed within 24 hours if eligible<br><em>Note: Reporting does not pause payment release</em></div>
     </div>
+    <button onclick="closeReportIssue();openSupportChat();" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.35);background:rgba(59,159,232,.08);color:#3B9FE8;font-family:'DM Sans',sans-serif;font-weight:700;font-size:12px;cursor:pointer;margin-bottom:16px;">💬 Chat live with support instead</button>
     <div style="margin-bottom:14px;">
       <div style="font-size:12px;color:#9A9390;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Issue Category</div>
       <div id="report-categories" style="display:flex;flex-direction:column;gap:8px;"></div>
@@ -2220,6 +2224,33 @@ async function openChat(p){
     msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){
       return '<div class="bub '+(m.senderId===myId?'m':'t')+'">'+escHtmlApp(m.body)+'</div>';
     }).join(''):'<div class="bub t">Say hello \ud83d\udc4b</div>';
+    msgsEl.scrollTop=msgsEl.scrollHeight;
+    bindAppChatSocketListener();
+  }catch(err){
+    msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:12px">'+(err.message||'Could not load chat')+'</div>';
+  }
+}
+// Support chat has no second real user to pass as otherUserId (that's why
+// openChat() above can't be reused directly) -- the backend finds-or-
+// creates the caller's own SUPPORT thread instead. While no admin has
+// replied yet, real messages get a real (credential-gated) AI reply --
+// see aiChat.service.js / handledByAdminId on the thread.
+async function openSupportChat(){
+  document.getElementById('chat-name').textContent='Handa Support';
+  document.getElementById('chat-av').textContent='🎧';
+  document.getElementById('chat-call-btn').onclick=null;
+  var msgsEl=document.getElementById('chat-msgs');
+  msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading…</div>';
+  document.getElementById('chat-ov').classList.add('on');
+  try{
+    var tres=await api('/chat/support-thread',{method:'POST'});
+    window._activeChatThreadId=tres.thread.id;
+    if(_socket)_socket.emit('chat:join',{threadId:tres.thread.id});
+    var mres=await api('/chat/threads/'+tres.thread.id+'/messages');
+    var myId=(S.user||{}).id;
+    msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){
+      return '<div class="bub '+(m.senderId===myId?'m':'t')+'">'+escHtmlApp(m.body)+'</div>';
+    }).join(''):'<div class="bub t">Hi! How can we help you today?</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
     bindAppChatSocketListener();
   }catch(err){

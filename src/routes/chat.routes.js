@@ -6,6 +6,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.post("/threads", ctrl.openThread);
+router.post("/support-thread", ctrl.openSupportThread);
 router.get("/threads", ctrl.listThreads);
 router.get("/threads/:id/messages", ctrl.listMessages);
 router.post("/threads/:id/messages", ctrl.sendMessage);

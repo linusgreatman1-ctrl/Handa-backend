@@ -75,6 +75,12 @@ router.post("/bulk-email", requireSuperAdmin, ctrl.sendBulkEmail);
 // until a real AI provider is wired up (see AiConversationLog comment).
 router.get("/ai-conversations", requireContentOrSuperAdmin, ctrl.listAiConversations);
 
+// Live Chat: SUPPORT-context threads real customers open via "Chat with
+// Support" — real AI auto-replies until an admin sends a real message.
+router.get("/chat-threads", requireContentOrSuperAdmin, ctrl.listChatThreadsForAdmin);
+router.get("/chat-threads/:id/messages", requireContentOrSuperAdmin, ctrl.getChatThreadMessagesForAdmin);
+router.post("/chat-threads/:id/messages", requireContentOrSuperAdmin, ctrl.sendAdminChatMessage);
+
 // Admin management + audit trail — super-admin only.
 router.get("/admins", requireSuperAdmin, adminMgmt.listAdmins);
 router.post("/admins", requireSuperAdmin, adminMgmt.createAdmin);

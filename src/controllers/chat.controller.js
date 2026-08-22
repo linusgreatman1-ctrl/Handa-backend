@@ -1,5 +1,66 @@
 const prisma = require("../config/db");
 const { notify } = require("../services/notifications.service");
+const aiChatSvc = require("../services/aiChat.service");
+
+// SUPPORT threads have no real second User (there's no support-inbox
+// account in the schema) -- messages need a real senderId to satisfy the
+// ChatMessage.sender FK, so the AI's replies come from one lazily-created,
+// passwordless system account (same isGuest:true pattern used for guest
+// customer accounts).
+async function ensureAiSupportUser() {
+  let u = await prisma.user.findFirst({ where: { email: "ai-support@handa.internal" } });
+  if (!u) {
+    u = await prisma.user.create({
+      data: { name: "Handa Support (AI)", email: "ai-support@handa.internal", isGuest: true, status: "ACTIVE" },
+    });
+  }
+  return u;
+}
+
+// Finds-or-creates the caller's own SUPPORT thread -- one per user
+// (contextId = the user's own id keeps it unique and easy to look up),
+// with only the caller as a real participant. Admins become participants
+// only once they actually reply (see admin.controller.js's
+// sendAdminChatMessage) -- until then they view via admin-only routes
+// that read threads directly, not through ChatParticipant.
+async function openSupportThread(req, res, next) {
+  try {
+    let thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId: req.user.id } });
+    if (!thread) {
+      thread = await prisma.chatThread.create({
+        data: { contextType: "SUPPORT", contextId: req.user.id, participants: { create: [{ userId: req.user.id }] } },
+      });
+    }
+    res.status(201).json({ thread });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Fires after a real customer message lands in a SUPPORT thread no admin
+// has taken over yet -- generates one real AI reply (credential-gated;
+// silently skipped if no key is configured, since a human admin will pick
+// the thread up from the admin panel regardless).
+async function maybeSendAiReply(threadId, senderUserId, io) {
+  const thread = await prisma.chatThread.findUnique({ where: { id: threadId } });
+  if (!thread || thread.contextType !== "SUPPORT" || thread.handledByAdminId) return;
+  const aiUser = await ensureAiSupportUser();
+  if (senderUserId === aiUser.id) return;
+
+  const recent = await prisma.chatMessage.findMany({ where: { threadId }, orderBy: { createdAt: "asc" }, take: 20 });
+  const history = recent.map((m) => ({ role: m.senderId === aiUser.id ? "assistant" : "user", text: m.body }));
+
+  let replyText;
+  try {
+    replyText = await aiChatSvc.getSupportReply(senderUserId, history);
+  } catch (err) {
+    return;
+  }
+
+  const aiMessage = await prisma.chatMessage.create({ data: { threadId, senderId: aiUser.id, body: replyText } });
+  io?.to(`chat:${threadId}`).emit("chat:message", aiMessage);
+  await notify(io, senderUserId, "CHAT", "Support replied", replyText.slice(0, 120), { threadId }).catch(() => {});
+}
 
 // Finds an existing thread for this context (order/booking/session/support)
 // or a direct 1:1 pair, or creates one — the frontend's various chat
@@ -106,9 +167,11 @@ async function sendMessage(req, res, next) {
     }
 
     res.status(201).json({ message });
+
+    maybeSendAiReply(req.params.id, req.user.id, io).catch(() => {});
   } catch (err) {
     next(err);
   }
 }
 
-module.exports = { openThread, listThreads, listMessages, sendMessage };
+module.exports = { openThread, listThreads, listMessages, sendMessage, openSupportThread };

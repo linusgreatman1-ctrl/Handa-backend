@@ -2,6 +2,7 @@ const prisma = require("../config/db");
 const { logAdminAction } = require("../services/auditLog.service");
 const africastalking = require("../services/africastalking.service");
 const emailSvc = require("../services/email.service");
+const { notify } = require("../services/notifications.service");
 
 // Headline numbers for the admin panel's landing dashboard — cheap
 // aggregate counts, not full row dumps.
@@ -987,6 +988,77 @@ async function listAiConversations(req, res, next) {
   }
 }
 
+// ── Admin Live Chat: read/reply into SUPPORT-context ChatThreads. Admins
+// aren't ChatParticipant rows until they actually reply (see
+// sendAdminChatMessage), so listing/reading here goes straight at the
+// threads/messages tables rather than the participant-scoped queries the
+// regular chat controller uses for real users. ──
+async function listChatThreadsForAdmin(req, res, next) {
+  try {
+    const threads = await prisma.chatThread.findMany({
+      where: { contextType: "SUPPORT" },
+      include: {
+        participants: { include: { user: { select: { id: true, name: true, role: true } } } },
+        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ threads });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getChatThreadMessagesForAdmin(req, res, next) {
+  try {
+    const messages = await prisma.chatMessage.findMany({
+      where: { threadId: req.params.id },
+      include: { sender: { select: { id: true, name: true, role: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+    });
+    res.json({ messages });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The moment any admin sends a real message into a SUPPORT thread,
+// handledByAdminId is stamped and the AI auto-reply (chat.controller.js's
+// maybeSendAiReply) stops for that thread — a human has taken over.
+async function sendAdminChatMessage(req, res, next) {
+  try {
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
+    if (!thread) return res.status(404).json({ error: "Thread not found." });
+    const body = (req.body.body || "").trim();
+    if (!body) return res.status(400).json({ error: "Message body is required." });
+
+    await prisma.chatParticipant.upsert({
+      where: { threadId_userId: { threadId: thread.id, userId: req.user.id } },
+      update: {},
+      create: { threadId: thread.id, userId: req.user.id },
+    });
+
+    const message = await prisma.chatMessage.create({ data: { threadId: thread.id, senderId: req.user.id, body } });
+
+    if (!thread.handledByAdminId) {
+      await prisma.chatThread.update({ where: { id: thread.id }, data: { handledByAdminId: req.user.id } });
+    }
+
+    const io = req.app.get("io");
+    io?.to(`chat:${thread.id}`).emit("chat:message", message);
+
+    const others = await prisma.chatParticipant.findMany({ where: { threadId: thread.id, userId: { not: req.user.id } } });
+    for (const p of others) {
+      await notify(io, p.userId, "CHAT", "Support replied", body.slice(0, 120), { threadId: thread.id });
+    }
+
+    res.status(201).json({ message });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   dashboardStats,
   getReports,
@@ -1022,6 +1094,9 @@ module.exports = {
   listBulkEmails,
   sendBulkEmail,
   listAiConversations,
+  listChatThreadsForAdmin,
+  getChatThreadMessagesForAdmin,
+  sendAdminChatMessage,
   listKycDocumentsForAdmin,
   reviewKycDocument,
   listWithdrawalsForAdmin,

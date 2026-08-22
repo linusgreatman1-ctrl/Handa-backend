@@ -932,6 +932,12 @@ model ChatThread {
   contextId   String?
   createdAt   DateTime        @default(now())
 
+  // SUPPORT threads only: while null, a new customer message gets an
+  // automatic AI reply (see aiChat.service.js). Set the moment any admin
+  // sends a real message into the thread -- a human has taken over, so
+  // the AI stops auto-replying from then on.
+  handledByAdminId String?
+
   participants ChatParticipant[]
   messages     ChatMessage[]
 

@@ -103,6 +103,7 @@
     <button class="nav-item" data-tab="announcements" data-elevated="1" onclick="switchTab('announcements')">Announcements</button>
     <button class="nav-item" data-tab="bulkemail" data-elevated="1" onclick="switchTab('bulkemail')">Bulk Email</button>
     <button class="nav-item" data-tab="aiconversations" data-elevated="1" onclick="switchTab('aiconversations')">AI Conversations</button>
+    <button class="nav-item" data-tab="chatthreads" data-elevated="1" onclick="switchTab('chatthreads')">Live Chat</button>
     <button class="nav-item" data-tab="admins" data-super="1" onclick="switchTab('admins')">Admins</button>
     <button class="nav-item" data-tab="auditlog" data-super="1" onclick="switchTab('auditlog')">Audit Log</button>
     <div class="spacer"></div>
@@ -190,7 +191,8 @@ function switchTab(tab) {
   if (window._codesDirty && !confirm('You have unsaved edits in the Codes tab. Leave without saving?')) return;
   window._codesDirty = false;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, aiconversations: renderAiConversations, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
+  if (tab !== 'chatthreads') stopChatThreadAutoRefresh();
   renderers[tab]();
 }
 
@@ -1461,6 +1463,88 @@ async function renderAiConversations() {
       : '<div class="empty">No AI conversations logged yet — the meal planner isn\'t wired to a real AI provider.</div>';
   } catch (e) {
     document.getElementById('aiconv-table').textContent = e.message;
+  }
+}
+
+// ── Live Chat: real SUPPORT-context threads customers open via "Chat with
+// Support". A thread's AI-vs-human status is real (ChatThread.handledByAdminId),
+// not decorative. No socket.io client in this admin bundle -- the detail
+// view polls every 8s while open instead, same tier of real-time-ness as
+// the rest of this pull-based panel. ──
+async function renderChatThreads() {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<h2>Live Chat</h2>' +
+    '<p style="color:#9A9390;margin:-8px 0 16px">Real customer support threads. The AI auto-replies until an admin sends a real message into a thread.</p>' +
+    '<div id="chat-threads-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/chat-threads');
+    const rows = data.threads.map(t => {
+      const customer = (t.participants.find(p => p.user.role === 'CUSTOMER') || t.participants[0] || {}).user;
+      const last = t.messages[0];
+      return '<tr style="cursor:pointer" onclick="renderChatThreadDetail(\'' + t.id + '\')"><td>' + (customer ? escHtml(customer.name) : '—') + '</td>' +
+        '<td style="max-width:340px">' + (last ? escHtml(last.body).slice(0, 140) : '—') + '</td>' +
+        '<td>' + (t.handledByAdminId ? '<span class="pill green">Human</span>' : '<span class="pill amber">AI</span>') + '</td>' +
+        '<td>' + (last ? new Date(last.createdAt).toLocaleString() : new Date(t.createdAt).toLocaleString()) + '</td></tr>';
+    }).join('');
+    document.getElementById('chat-threads-table').outerHTML = data.threads.length
+      ? '<table><thead><tr><th>Customer</th><th>Last message</th><th>Status</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No support chats yet.</div>';
+  } catch (e) {
+    document.getElementById('chat-threads-table').textContent = e.message;
+  }
+}
+
+function stopChatThreadAutoRefresh() {
+  if (window._chatThreadRefreshTimer) { clearInterval(window._chatThreadRefreshTimer); window._chatThreadRefreshTimer = null; }
+  window._chatThreadDetailId = null;
+}
+
+async function renderChatThreadDetail(id) {
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<button class="action-btn" style="margin-bottom:14px" onclick="stopChatThreadAutoRefresh();switchTab(\'chatthreads\')">&larr; Back to list</button>' +
+    '<h2>Support Chat</h2><div id="chat-thread-body" class="empty">Loading...</div>';
+  window._chatThreadDetailId = id;
+  await loadChatThreadDetail(id);
+  if (window._chatThreadRefreshTimer) clearInterval(window._chatThreadRefreshTimer);
+  window._chatThreadRefreshTimer = setInterval(() => { if (window._chatThreadDetailId === id) loadChatThreadDetail(id); }, 8000);
+}
+
+async function loadChatThreadDetail(id) {
+  const wrap = document.getElementById('chat-thread-body');
+  if (!wrap) return;
+  try {
+    const data = await api('/admin/chat-threads/' + id + '/messages');
+    const bubbles = data.messages.map(m => {
+      const mine = m.sender.role === 'ADMIN';
+      return '<div style="max-width:70%;margin-bottom:8px;' + (mine ? 'margin-left:auto;text-align:right;' : '') + '">' +
+        '<div style="font-size:11px;color:#9A9390;margin-bottom:2px;">' + escHtml(m.sender.name) + '</div>' +
+        '<div style="display:inline-block;padding:9px 12px;border-radius:10px;text-align:left;background:' + (mine ? '#2ECC71' : '#242424') + ';color:' + (mine ? '#111' : '#F2EDE8') + ';font-size:13px;">' + escHtml(m.body) + '</div></div>';
+    }).join('');
+    wrap.innerHTML =
+      '<div id="chat-thread-msgs" style="background:#181818;border:1px solid #2A2850;border-radius:12px;padding:16px;margin-bottom:12px;max-height:420px;overflow-y:auto;">' +
+      (bubbles || '<div class="empty">No messages yet.</div>') + '</div>' +
+      '<div style="display:flex;gap:8px;">' +
+      '<input id="chat-thread-reply" placeholder="Type a reply..." style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #2A2850;background:#1C1C1C;color:#F2EDE8;" onkeydown="if(event.key===\'Enter\'){sendChatThreadReply(\'' + id + '\');}">' +
+      '<button class="action-btn" onclick="sendChatThreadReply(\'' + id + '\')">Send</button></div>';
+    const msgsEl = document.getElementById('chat-thread-msgs');
+    if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+  } catch (e) {
+    wrap.textContent = e.message;
+  }
+}
+
+async function sendChatThreadReply(id) {
+  const inp = document.getElementById('chat-thread-reply');
+  const body = inp.value.trim();
+  if (!body) return;
+  inp.value = '';
+  try {
+    await api('/admin/chat-threads/' + id + '/messages', { method: 'POST', body: JSON.stringify({ body }) });
+    await loadChatThreadDetail(id);
+  } catch (e) {
+    alert(e.message);
   }
 }
 
