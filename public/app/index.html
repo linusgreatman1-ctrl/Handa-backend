@@ -738,7 +738,13 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 
 
 <!-- ═══════════════════ ESCROW PAYMENT MODAL ═══════════════════ -->
-<div id="escrow-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9100;align-items:flex-end;justify-content:center;">
+<!-- z-index 9600, ABOVE the cook/EP booking overlays (#__cook_bk_ov/#__ep_bk_ov,
+     both z-index:9500): cookBkConfirmBooking now opens this modal immediately
+     after creating the request, while that full-screen overlay is still open
+     underneath. At the old z-index:9100 it rendered invisibly behind it --
+     the booking was actually created, but "Confirm Booking" looked like it
+     did nothing since no payment prompt was ever visible to interact with. -->
+<div id="escrow-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9600;align-items:flex-end;justify-content:center;">
   <div style="background:#1C1C1C;border-radius:22px 22px 0 0;padding:22px 20px 36px;width:100%;max-width:430px;border-top:1px solid #2A2850;">
     <div style="width:36px;height:4px;background:#333;border-radius:2px;margin:0 auto 18px;"></div>
     <div style="text-align:center;margin-bottom:16px;">
