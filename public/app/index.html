@@ -491,7 +491,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 
 <!-- ═══════════════════════════════════════════ HOME ═══ -->
 
-<div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><div id="e-home-header-extra" style="margin:6px 0 10px"></div><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="color:#9A9390">🔍</span><input style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="errandSearch(this.value)"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
+<div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><div id="e-home-header-extra" style="margin:6px 0 10px"></div><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="position:relative;margin-bottom:16px"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px"><span style="color:#9A9390">🔍</span><input id="e-home-search-input" style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="homeSearchInput(this.value)" onfocus="if(this.value)homeSearchInput(this.value)" onblur="setTimeout(hideHomeSearchResults,180)"></div><div id="e-home-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;max-height:300px;overflow-y:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
 <div id="screen-liveshop" class="escreen flex-screen" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
       <div style="padding:52px 22px 14px;display:flex;align-items:center;gap:14px;flex-shrink:0;border-bottom:1px solid #2A2850;background:#111;">
         <button class="ibtn" onclick="eGo('home')">←</button>
@@ -7437,7 +7437,50 @@ function setLTab(t){
 }
 
 function socialAuth(p){showToast&&showToast(p+' sign-in is not connected yet — use email + password.','info');}
-function errandSearch(q){if(!q||q.length<2)return;eGo('cooks');setTimeout(function(){renderCooks((D.cooks||[]).filter(function(c){return c.nm.toLowerCase().indexOf(q.toLowerCase())>-1||c.sp.toLowerCase().indexOf(q.toLowerCase())>-1;}));},50);}
+// Live search-as-you-type dropdown on the customer home screen -- was
+// previously a 2-char-minimum, full-screen-navigation-on-every-keystroke
+// hack (errandSearch) that only ever searched D.cooks (never Event
+// Planners), forced you onto the Cooks screen even for an EP-only match,
+// and raced its own render behind an arbitrary 50ms setTimeout instead of
+// waiting for anything real. This searches both catalogs inline, shows
+// results right under the search bar without leaving the home screen, and
+// clicking a result opens that exact vendor's booking flow directly.
+function homeSearchInput(q){
+  var box=document.getElementById('e-home-search-results');
+  if(!box)return;
+  q=(q||'').trim();
+  if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+  var ql=q.toLowerCase();
+  function hit(s){ return (s||'').toLowerCase().indexOf(ql)>-1; }
+  var cookMatches=(D.cooks||[]).filter(function(c){
+    return hit(c.nm)||hit(c.sp)||(c.tags||[]).some(hit);
+  }).map(function(c){ return {id:c.id,nm:c.nm,sub:c.sp||'Home Cook',em:c.em||'👩‍🍳',rt:c.rt,type:'cook'}; });
+  var epMatches=(D.ep||[]).filter(function(v){
+    return hit(v.nm)||(v.tags||[]).some(hit)||(v.svcs||[]).some(hit);
+  }).map(function(v){ return {id:v.id,nm:v.nm,sub:'Event Planner',em:v.em||'🎊',rt:v.rt,type:'ep'}; });
+  var results=cookMatches.concat(epMatches).slice(0,8);
+  if(!results.length){
+    box.innerHTML='<div style="padding:16px;text-align:center;color:#9A9390;font-size:13px;">No vendors found for "'+q.replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];})+'"</div>';
+  }else{
+    box.innerHTML=results.map(function(r){
+      return '<div onmousedown="event.preventDefault();selectHomeSearchResult(\''+r.type+'\',\''+r.id+'\')" style="display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;border-bottom:1px solid #242424;">'
+        +'<span style="font-size:20px;flex-shrink:0;">'+r.em+'</span>'
+        +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+r.nm+'</div><div style="font-size:11px;color:#9A9390;">'+r.sub+'</div></div>'
+        +'<div style="font-size:12px;color:#F5A623;font-weight:700;flex-shrink:0;">★'+(r.rt||'New')+'</div>'
+        +'</div>';
+    }).join('');
+  }
+  box.style.display='block';
+}
+function hideHomeSearchResults(){
+  var box=document.getElementById('e-home-search-results');
+  if(box)box.style.display='none';
+}
+function selectHomeSearchResult(type,id){
+  hideHomeSearchResults();
+  var inp=document.getElementById('e-home-search-input'); if(inp)inp.value='';
+  if(type==='cook')openCookBooking(id); else openEPBooking(id);
+}
 function filterByState(state,lga,screen){
   if(!state){showToast&&showToast('Please select a state first','warning');return;}
   var s=screen||S.curScreen||'';
