@@ -7,9 +7,11 @@ const manualPayments = require("../services/manualPayments.service");
 const { generateReference } = require("../utils/reference");
 const { generateOtpCode } = require("../utils/otp");
 const { notify } = require("../services/notifications.service");
+const { closeSupportThreadForContext } = require("./chat.controller");
 const distanceFee = require("../utils/distanceFee");
 
 const SEARCHING_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const STALE_LIVE_SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 // Off-request-path sweep (same pattern as escrow's auto-release sweep) —
 // a SEARCHING session that no shopper ever accepts isn't something any
@@ -27,6 +29,35 @@ async function expireStaleSearchingSessions(io) {
     io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
     io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
     await notify(io, session.customerId, "ORDER_UPDATE", "Session expired", "No shopper accepted your Shop-For-Me request within 30 minutes. You've been refunded — please search again.", { sessionId: session.id });
+    closeSupportThreadForContext(session.id);
+  }
+  return stale.length;
+}
+
+// A session a shopper HAS accepted can still get stuck -- the video call
+// never completes, someone's connection drops, a tab gets closed -- with
+// nothing else in this codebase ever revisiting it (no other sweep covers
+// MATCHED/BUILDING_LIST/LIVE_CALL). Refunds and cancels it the same way
+// expireStaleSearchingSessions does, but stamps abandonedAt so History can
+// show a plain "Uncompleted Session" with no details instead of a normal
+// cancelled display -- there's nothing real to show (no completed items,
+// no delivery) for a session that never got anywhere.
+async function expireStaleLiveSessions(io) {
+  const cutoff = new Date(Date.now() - STALE_LIVE_SESSION_TIMEOUT_MS);
+  const stale = await prisma.shopSession.findMany({
+    where: { status: { in: ["MATCHED", "BUILDING_LIST", "LIVE_CALL"] }, matchedAt: { lte: cutoff } },
+  });
+  for (const session of stale) {
+    await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session never completed — auto-cancelled and refunded." });
+    const now = new Date();
+    await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: now, abandonedAt: now } });
+    io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Session ended", "Your Shop-For-Me session didn't complete in time and has been cancelled. You've been refunded.", { sessionId: session.id });
+    if (session.shopperId) {
+      const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+      if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session ended", "A Shop-For-Me session you were on didn't complete in time and has been cancelled.", { sessionId: session.id });
+    }
+    closeSupportThreadForContext(session.id);
   }
   return stale.length;
 }
@@ -655,6 +686,7 @@ async function confirmSession(req, res, next) {
 
     await escrow.releaseAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Customer confirmed Shop-For-Me delivery" });
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    closeSupportThreadForContext(session.id);
     res.json({ session: updated });
   } catch (err) {
     next(err);
@@ -669,6 +701,7 @@ async function cancelSession(req, res, next) {
 
     await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session cancelled by customer" });
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+    closeSupportThreadForContext(session.id);
     res.json({ session: updated });
   } catch (err) {
     next(err);
@@ -754,4 +787,5 @@ module.exports = {
   cancelSession,
   confirmSellerPayouts,
   expireStaleSearchingSessions,
+  expireStaleLiveSessions,
 };

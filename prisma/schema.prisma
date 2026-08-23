@@ -411,6 +411,13 @@ model Booking {
   reminder24SentAt DateTime?
   reminder2SentAt  DateTime?
 
+  // Throttle for sendCompletionReminders (bookingReminders.service.js) --
+  // that sweep is intentionally repeating (nudges every tick until the
+  // booking is confirmed complete), but ran unthrottled on the 5-minute
+  // sweep interval, producing dozens of identical notifications in a few
+  // hours. This caps it to one every few hours instead.
+  lastCompletionReminderAt DateTime?
+
   // Two-sided completion: the vendor marks their side done first, then the
   // customer either confirms (both set -> COMPLETED, escrow releases) or
   // disputes (neither the booking's status nor these fields change — a
@@ -580,6 +587,14 @@ model ShopSession {
   deliveredAt DateTime?
   completedAt DateTime?
   cancelledAt DateTime?
+
+  // Set by the stale-session sweep when a session gets stuck too long in
+  // MATCHED/BUILDING_LIST/LIVE_CALL (customer or shopper disconnects, the
+  // video call never completes, etc). Status still goes to CANCELLED (same
+  // refund path as every other cancellation) — this just marks WHY, so
+  // History can show a plain "Uncompleted Session" with no further detail
+  // instead of a normal cancelled-with-reason display.
+  abandonedAt DateTime?
 
   escrowHolds   EscrowHold[]
   sellerPayouts SellerPayout[]

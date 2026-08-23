@@ -63,6 +63,26 @@ async function getMyVendor(req, res, next) {
   }
 }
 
+// Computed live from real Booking rows rather than a stored/stale field --
+// VendorProfile has no acceptRate/bookingsCount column (and RiderProfile's
+// own acceptRate, while stored, is never actually written anywhere in this
+// codebase either -- it's seed-only). Mirrors the same "compute on demand"
+// pattern users.controller.js's getMyStats already uses for customers.
+async function getMyVendorStats(req, res, next) {
+  try {
+    const vendorId = req.user.vendorProfile.id;
+    const [bookingsCount, decidedCount, declinedCount] = await Promise.all([
+      prisma.booking.count({ where: { vendorId, status: "COMPLETED" } }),
+      prisma.booking.count({ where: { vendorId, status: { in: ["DECLINED", "CONFIRMED", "COMPLETED", "CANCELLED"] } } }),
+      prisma.booking.count({ where: { vendorId, status: "DECLINED" } }),
+    ]);
+    const acceptRate = decidedCount > 0 ? Math.round(((decidedCount - declinedCount) / decidedCount) * 100) : null;
+    res.json({ bookingsCount, acceptRate });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Menu items (home cook specials) ──
 
 async function listMenuItems(req, res, next) {
@@ -224,6 +244,7 @@ module.exports = {
   listVendors,
   getVendor,
   getMyVendor,
+  getMyVendorStats,
   getCurrentCommissionPeriod,
   listMenuItems,
   createMenuItem,

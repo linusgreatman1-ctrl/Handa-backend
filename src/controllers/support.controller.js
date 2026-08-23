@@ -4,6 +4,7 @@ const escrow = require("../services/escrow.service");
 const commissionSvc = require("../services/commission.service");
 const { logAdminAction } = require("../services/auditLog.service");
 const { notify } = require("../services/notifications.service");
+const { closeSupportThreadForContext } = require("./chat.controller");
 
 async function createTicket(req, res, next) {
   try {
@@ -255,10 +256,10 @@ async function updateTicketStatus(req, res, next) {
           if (booking) {
             const vendorMsg =
               booking.type === "EVENT_PLANNING"
-                ? `The dispute on booking #${booking.bookingNumber} was resolved in your favor -- your 10% platform commission for it is now due on your dashboard.`
-                : `The dispute on booking #${booking.bookingNumber} was resolved in your favor -- payment has been released to you.`;
+                ? `The dispute on the booking #${booking.bookingNumber} was resolved in your favor; Escrow has released your payment.<br>Your 10% platform commission for it is now due on your dashboard. — ₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`
+                : `The dispute on the booking #${booking.bookingNumber} was resolved in your favor; Escrow has released your payment.<br>₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`;
             await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", vendorMsg, { bookingId: booking.id }).catch(() => {});
-            await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Dispute resolved", `The dispute on booking #${booking.bookingNumber} was resolved in the vendor's favor.`, { bookingId: booking.id }).catch(() => {});
+            await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Dispute resolved", `The dispute on the booking #${booking.bookingNumber} was resolved in the vendor's favor.`, { bookingId: booking.id }).catch(() => {});
           }
         } else {
           // A refund was already paid out above as a real ADJUSTMENT wallet
@@ -273,10 +274,18 @@ async function updateTicketStatus(req, res, next) {
             await prisma.booking.update({ where: { id: escrowCtx.bookingId }, data: { status: "CANCELLED", cancelledAt: new Date() } }).catch(() => {});
           }
           if (booking) {
-            await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Dispute resolved", `The dispute on booking #${booking.bookingNumber} was resolved in your favor -- ₦${Math.round(Number(data.refundAmountKobo) / 100).toLocaleString()} was refunded to your wallet.`, { bookingId: booking.id }).catch(() => {});
-            await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", `The dispute on booking #${booking.bookingNumber} was resolved in the customer's favor.`, { bookingId: booking.id }).catch(() => {});
+            await notify(
+              req.app.get("io"),
+              booking.customerId,
+              "ORDER_UPDATE",
+              "Dispute resolved",
+              `The dispute on the booking #${booking.bookingNumber} was resolved in favor of the customer as a refund.<br>₦${Math.round(Number(data.refundAmountKobo) / 100).toLocaleString()} was refunded to your wallet.`,
+              { bookingId: booking.id }
+            ).catch(() => {});
+            await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", `The dispute on the booking #${booking.bookingNumber} was resolved in the customer's favor.`, { bookingId: booking.id }).catch(() => {});
           }
         }
+        if (escrowCtx.contextType === "BOOKING") closeSupportThreadForContext(escrowCtx.bookingId);
       }
     }
 

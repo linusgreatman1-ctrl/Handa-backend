@@ -224,6 +224,13 @@ function attachLiveSocket(httpServer) {
     shopSessionsCtrl.expireStaleSearchingSessions(io).catch((err) => console.error("[shop-session] expiry sweep failed:", err));
   }, sweepMs);
 
+  // A session a shopper HAS accepted can still get stuck (video call never
+  // completes, a connection drops) with nothing else revisiting it — same
+  // off-request-path pattern, 2h timeout.
+  setInterval(() => {
+    shopSessionsCtrl.expireStaleLiveSessions(io).catch((err) => console.error("[shop-session] stale-live-session sweep failed:", err));
+  }, sweepMs);
+
   // Reminds a vendor (home cook / event planner) ~24h and ~2h before an
   // accepted/confirmed booking's event time — same off-request-path
   // pattern as the sweeps above.

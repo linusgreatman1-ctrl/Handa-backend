@@ -10,7 +10,19 @@ const manualPaymentsSvc = require("../services/manualPayments.service");
 // aggregate counts, not full row dumps.
 async function dashboardStats(req, res, next) {
   try {
-    const [usersByRole, bookingsByStatus, sessionsByStatus, openTickets, pendingWithdrawals, heldEscrow, bookingGmv, sessionGmv] = await Promise.all([
+    const [
+      usersByRole,
+      bookingsByStatus,
+      sessionsByStatus,
+      openTickets,
+      pendingWithdrawals,
+      heldEscrow,
+      bookingGmv,
+      sessionGmv,
+      pendingManualPayments,
+      pendingKycDocuments,
+      openDisputes,
+    ] = await Promise.all([
       prisma.user.groupBy({ by: ["role"], _count: true }),
       prisma.booking.groupBy({ by: ["status"], _count: true }),
       prisma.shopSession.groupBy({ by: ["status"], _count: true }),
@@ -19,6 +31,9 @@ async function dashboardStats(req, res, next) {
       prisma.escrowHold.aggregate({ where: { status: "HELD" }, _sum: { amountKobo: true } }),
       prisma.booking.aggregate({ where: { status: "COMPLETED" }, _sum: { totalKobo: true } }),
       prisma.shopSession.aggregate({ where: { status: "COMPLETED" }, _sum: { itemsTotalKobo: true, sessionFeeKobo: true } }),
+      prisma.manualPaymentRequest.count({ where: { status: "PENDING" } }),
+      prisma.kycDocument.count({ where: { status: "PENDING" } }),
+      prisma.supportTicket.count({ where: { isDispute: true, status: { in: ["OPEN", "IN_PROGRESS"] } } }),
     ]);
 
     res.json({
@@ -30,6 +45,9 @@ async function dashboardStats(req, res, next) {
       heldEscrowKobo: heldEscrow._sum.amountKobo || 0,
       grossMerchandiseValueKobo:
         (bookingGmv._sum.totalKobo || 0) + (sessionGmv._sum.itemsTotalKobo || 0) + (sessionGmv._sum.sessionFeeKobo || 0),
+      pendingManualPayments,
+      pendingKycDocuments,
+      openDisputes,
     });
   } catch (err) {
     next(err);
@@ -1125,22 +1143,35 @@ async function listAiConversations(req, res, next) {
   }
 }
 
-// ── Admin Live Chat: read/reply into SUPPORT-context ChatThreads. Admins
-// aren't ChatParticipant rows until they actually reply (see
+// ── Admin Live Chat: read/reply into SUPPORT- and DISPUTE-context
+// ChatThreads (both are real "chat support" conversations from the
+// user's point of view -- DISPUTE is just the newer, per-ticket variant).
+// Admins aren't ChatParticipant rows until they actually reply (see
 // sendAdminChatMessage), so listing/reading here goes straight at the
 // threads/messages tables rather than the participant-scoped queries the
 // regular chat controller uses for real users. ──
 async function listChatThreadsForAdmin(req, res, next) {
   try {
     const threads = await prisma.chatThread.findMany({
-      where: { contextType: "SUPPORT" },
+      where: { contextType: { in: ["SUPPORT", "DISPUTE"] } },
       include: {
         participants: { include: { user: { select: { id: true, name: true, role: true } } } },
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ threads });
+    // A friendly label since contextId's shape differs by kind: DISPUTE is
+    // "<ticketId>:<partyUserId>"; SUPPORT is either the user's own id (the
+    // one persistent general "Chat with Support" thread) or a real
+    // booking/shop-session id (a thread scoped to that one booking).
+    const withLabel = threads.map((t) => {
+      let contextLabel;
+      if (t.contextType === "DISPUTE") contextLabel = "Dispute";
+      else if (t.participants[0] && t.contextId === t.participants[0].userId) contextLabel = "General Support";
+      else contextLabel = "Booking/Session Support";
+      return { ...t, contextLabel };
+    });
+    res.json({ threads: withLabel });
   } catch (err) {
     next(err);
   }

@@ -271,8 +271,19 @@ async function renderDashboard() {
     const s = await api('/admin/dashboard');
     const roleRows = Object.entries(s.usersByRole).map(([k, v]) => k + ': ' + v).join('<br>');
     const bookingRows = Object.entries(s.bookingsByStatus).map(([k, v]) => k + ': ' + v).join('<br>') || 'No bookings yet';
+    const quickActions = [
+      s.pendingManualPayments ? '<div style="cursor:pointer" onclick="switchTab(\'manualpayments\')">🏦 ' + s.pendingManualPayments + ' manual bank transfer' + (s.pendingManualPayments === 1 ? '' : 's') + ' waiting to be confirmed — users are stuck until you act.</div>' : '',
+      s.pendingKycDocuments ? '<div style="cursor:pointer" onclick="switchTab(\'kyc\')">🪪 ' + s.pendingKycDocuments + ' KYC document' + (s.pendingKycDocuments === 1 ? '' : 's') + ' awaiting review.</div>' : '',
+      s.openDisputes ? '<div style="cursor:pointer" onclick="switchTab(\'tickets\')">⚠️ ' + s.openDisputes + ' open dispute' + (s.openDisputes === 1 ? '' : 's') + ' needing resolution.</div>' : '',
+    ].filter(Boolean);
     main.innerHTML =
       '<h2>Dashboard</h2>' +
+      (quickActions.length
+        ? '<div style="background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.35);border-radius:14px;padding:14px 16px;margin-bottom:16px;">'
+          + '<div style="font-weight:800;color:#F5A623;margin-bottom:8px;">⚡ Needs Your Attention</div>'
+          + '<div style="display:flex;flex-direction:column;gap:6px;color:#F2EDE8;font-size:13px;">' + quickActions.join('') + '</div>'
+          + '</div>'
+        : '') +
       '<div class="grid">' +
         card('Users', Object.values(s.usersByRole).reduce((a, b) => a + b, 0), roleRows) +
         card('Bookings', Object.values(s.bookingsByStatus).reduce((a, b) => a + b, 0), bookingRows) +
@@ -591,11 +602,16 @@ async function deleteVendorServicePackage(pkgId, vendorId) {
   catch (e) { alert(e.message); }
 }
 
-async function renderTickets() {
+let _ticketsStatusFilter = '';
+async function renderTickets(status) {
+  if (status !== undefined) _ticketsStatusFilter = status;
   const main = document.getElementById('main');
-  main.innerHTML = '<h2>Support Tickets</h2><div id="tickets-table" class="empty">Loading...</div>';
+  const statuses = ['', 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+  main.innerHTML = '<h2>Support Tickets</h2>'
+    + '<div class="toolbar"><select id="tickets-status-filter" onchange="renderTickets(this.value)">' + statuses.map(s => '<option value="' + s + '"' + (_ticketsStatusFilter === s ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>').join('') + '</select></div>'
+    + '<div id="tickets-table" class="empty">Loading...</div>';
   try {
-    const data = await api('/support/tickets/all');
+    const data = await api('/support/tickets/all' + (_ticketsStatusFilter ? '?status=' + _ticketsStatusFilter : ''));
     const rows = data.tickets.map(t => {
       const disputeInfo = t.isDispute
         ? (t.evidenceUrl ? '<a href="' + t.evidenceUrl + '" target="_blank">Evidence</a> · ' : '')
@@ -1350,19 +1366,25 @@ async function renderRatings() {
   }
 }
 
-async function renderPayments() {
+let _paymentsTypeFilter = '';
+async function renderPayments(type) {
+  // The select's value must be captured (via the onchange arg below)
+  // BEFORE main.innerHTML gets rebuilt -- rebuilding replaces the <select>
+  // with a fresh blank one, so reading its value AFTER the rebuild (the
+  // old code's bug) always read back "" and the filter could never
+  // actually apply. Same established pattern as _usersFilter.
+  if (type !== undefined) _paymentsTypeFilter = type;
   const main = document.getElementById('main');
   main.innerHTML =
     '<h2>Payments</h2>' +
     '<p style="color:#9A9390;margin:-8px 0 16px">Every real money movement — deposits, escrow holds/releases/refunds, payouts, commission, feature-boost payments.</p>' +
-    '<div class="toolbar"><select id="pay-type-filter" onchange="renderPayments()"><option value="">All types</option>' +
+    '<div class="toolbar"><select id="pay-type-filter" onchange="renderPayments(this.value)"><option value="">All types</option>' +
     ['DEPOSIT', 'WITHDRAWAL', 'ESCROW_HOLD', 'ESCROW_RELEASE', 'ESCROW_REFUND', 'PAYOUT', 'COMMISSION_PAYMENT', 'FEATURE_BOOST_PAYMENT', 'ADJUSTMENT']
-      .map(t => '<option value="' + t + '">' + t + '</option>').join('') + '</select></div>' +
+      .map(t => '<option value="' + t + '"' + (_paymentsTypeFilter === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></div>' +
     '<div id="payments-table" class="empty">Loading...</div>';
-  const type = document.getElementById('pay-type-filter') ? document.getElementById('pay-type-filter').value : '';
-  if (type) document.getElementById('pay-type-filter').value = type;
+  const type2 = _paymentsTypeFilter;
   try {
-    const data = await api('/admin/payments' + (type ? '?type=' + type : ''));
+    const data = await api('/admin/payments' + (type2 ? '?type=' + type2 : ''));
     const rows = data.payments.map(p =>
       '<tr><td>' + new Date(p.createdAt).toLocaleString() + '</td><td>' + p.payerName + '<br><span style="color:#9A9390;font-size:11px">' + p.payerRole + '</span></td>' +
       '<td>' + p.type + '</td><td style="color:' + (p.amountKobo < 0 ? '#E8392E' : '#2ECC71') + '">' + money(p.amountKobo) + '</td>' +
@@ -1757,13 +1779,15 @@ async function renderChatThreads() {
     const rows = data.threads.map(t => {
       const customer = (t.participants.find(p => p.user.role === 'CUSTOMER') || t.participants[0] || {}).user;
       const last = t.messages[0];
+      const statusPill = t.closedAt ? '<span class="pill grey">Closed</span>' : (t.handledByAdminId ? '<span class="pill green">Human</span>' : '<span class="pill amber">AI</span>');
       return '<tr style="cursor:pointer" onclick="renderChatThreadDetail(\'' + t.id + '\')"><td>' + (customer ? escHtml(customer.name) : '—') + '</td>' +
-        '<td style="max-width:340px">' + (last ? escHtml(last.body).slice(0, 140) : '—') + '</td>' +
-        '<td>' + (t.handledByAdminId ? '<span class="pill green">Human</span>' : '<span class="pill amber">AI</span>') + '</td>' +
+        '<td>' + (t.contextLabel || 'Support') + '</td>' +
+        '<td style="max-width:320px">' + (last ? escHtml(last.body).slice(0, 140) : '—') + '</td>' +
+        '<td>' + statusPill + '</td>' +
         '<td>' + (last ? new Date(last.createdAt).toLocaleString() : new Date(t.createdAt).toLocaleString()) + '</td></tr>';
     }).join('');
     document.getElementById('chat-threads-table').outerHTML = data.threads.length
-      ? '<table><thead><tr><th>Customer</th><th>Last message</th><th>Status</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      ? '<table><thead><tr><th>Customer</th><th>Type</th><th>Last message</th><th>Status</th><th>When</th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div class="empty">No support chats yet.</div>';
   } catch (e) {
     document.getElementById('chat-threads-table').textContent = e.message;

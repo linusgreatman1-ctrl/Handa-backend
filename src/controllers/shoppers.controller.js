@@ -45,11 +45,30 @@ async function listSellers(req, res, next) {
 
 async function createSeller(req, res, next) {
   try {
-    const { name, phone, market, bankName, bankCode, accountNumber } = req.body;
+    const { name, phone, market, bankName, bankCode, accountNumber, accountName } = req.body;
     if (!name || !phone || !bankName || !bankCode || !accountNumber) {
       return res.status(400).json({ error: "name, phone, bankName, bankCode, and accountNumber are required." });
     }
-    const resolved = await paystack.resolveBankAccount(accountNumber, bankCode);
+    // Paystack auto-resolves the real account-holder name when a real
+    // bankCode + PAYSTACK_SECRET_KEY are both available -- but the seller
+    // form now also allows a custom/unlisted bank (bankCode "CUSTOM") and
+    // must keep working even with no Paystack key configured at all, so a
+    // failed/unavailable resolution falls back to whatever account name
+    // the shopper typed in themselves instead of hard-failing the whole
+    // registration. A real Paystack-initiated transfer to an unresolved
+    // custom bank still isn't possible without a real key regardless --
+    // this only unblocks the form/registration, not real money movement.
+    let resolvedName = accountName ? String(accountName).trim() : "";
+    if (bankCode !== "CUSTOM") {
+      try {
+        const resolved = await paystack.resolveBankAccount(accountNumber, bankCode);
+        resolvedName = resolved.account_name;
+      } catch (err) {
+        if (!resolvedName) resolvedName = "Not verified — confirm with the seller before paying";
+      }
+    } else if (!resolvedName) {
+      resolvedName = "Not verified — confirm with the seller before paying";
+    }
     const seller = await prisma.registeredSeller.create({
       data: {
         shopperId: req.user.id,
@@ -59,7 +78,7 @@ async function createSeller(req, res, next) {
         bankName,
         bankCode,
         bankAccountNumber: accountNumber,
-        bankAccountName: resolved.account_name,
+        bankAccountName: resolvedName,
       },
     });
     res.status(201).json({ seller });

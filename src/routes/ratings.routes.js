@@ -4,6 +4,7 @@ const ctrl = require("../controllers/ratings.controller");
 
 const router = express.Router();
 
+router.get("/given", requireAuth, ctrl.listRatingsGivenByMe);
 router.get("/user/:userId", ctrl.listRatingsForUser);
 router.post("/", requireAuth, ctrl.createRating);
 

@@ -98,6 +98,20 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
   #notif-modal .notif-row-title{font-size:15px !important}
   #notif-modal .notif-row-body{font-size:13.5px !important}
 }
+/* Shop-For-Me live-call video: the video used to just be the first child
+   in the same normally-scrolling column as the item list/chat/checkout
+   button, so scrolling that content scrolled the video out of view too.
+   Mobile/tablet: sticky-top keeps it pinned at the top of the scrolling
+   column as the rest scrolls underneath. Desktop: a real two-column
+   layout instead — video fixed on one side, everything else scrolling in
+   its own region beside it. */
+.sfm-livecall-layout{display:flex;flex-direction:column;}
+.sfm-livecall-video-col{position:sticky;top:0;z-index:5;background:#111;padding-bottom:10px;}
+@media (min-width:1024px){
+  .sfm-livecall-layout{flex-direction:row;gap:20px;align-items:flex-start;}
+  .sfm-livecall-video-col{flex:0 0 380px;position:static;padding-bottom:0;}
+  .sfm-livecall-content-col{flex:1;min-width:0;max-height:calc(100vh - 90px);overflow-y:auto;padding-right:4px;}
+}
 .screen{display:none;min-height:100vh;padding-bottom:84px;overflow-y:auto;-webkit-overflow-scrolling:touch}.screen.active{display:block;animation:fi .22s ease}.screen.active.flex-screen{display:flex !important;flex-direction:column;}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 #bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#111;border-top:1px solid #2a2a2a;display:none;justify-content:space-around;padding:6px 0 14px;z-index:900}
@@ -526,7 +540,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
     <div style="display:flex;gap:10px">
       <div style="flex:1;background:rgba(255,255,255,.07);border-radius:14px;padding:12px;text-align:center"><p style="font-weight:900;font-size:18px;margin:0 0 2px" id="prof-orders-count">0</p><p style="color:#9A9390;font-size:11px;margin:0">Orders</p></div>
-      <div style="flex:1;background:rgba(255,255,255,.07);border-radius:14px;padding:12px;text-align:center"><p style="font-weight:900;font-size:18px;margin:0 0 2px" id="prof-reviews-count">0</p><p style="color:#9A9390;font-size:11px;margin:0">Reviews</p></div>
+      <div onclick="openMyGivenRatingsModal()" style="flex:1;background:rgba(255,255,255,.07);border-radius:14px;padding:12px;text-align:center;cursor:pointer"><p style="font-weight:900;font-size:18px;margin:0 0 2px" id="prof-reviews-count">0</p><p style="color:#9A9390;font-size:11px;margin:0">Reviews</p></div>
       <div onclick="openEscrowWallet()" style="flex:1;background:rgba(255,255,255,.07);border-radius:14px;padding:12px;text-align:center;cursor:pointer;border:1px solid rgba(245,166,35,.3)"><p style="font-weight:900;font-size:18px;margin:0 0 2px;color:#F5A623" id="prof-escrow-bal">₦0</p><p style="color:#F5A623;font-size:11px;margin:0">Escrow 🔒</p></div>
     </div>
   </div>
@@ -881,7 +895,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <div style="font-size:12px;color:#E8392E;font-weight:700;margin-bottom:4px;">How it works:</div>
       <div style="font-size:12px;color:#9A9390;line-height:1.7;">1. Select issue category<br>2. Describe what happened<br>3. Submit — support responds within 30 mins<br>4. Refund processed within 24 hours if eligible<br><em>Note: Reporting does not pause payment release</em></div>
     </div>
-    <button onclick="closeReportIssue();openSupportChat();" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.35);background:rgba(59,159,232,.08);color:#3B9FE8;font-family:'DM Sans',sans-serif;font-weight:700;font-size:12px;cursor:pointer;margin-bottom:16px;">💬 Chat live with support instead</button>
+    <button onclick="closeReportIssue();openSupportChat(_reportContextId);" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.35);background:rgba(59,159,232,.08);color:#3B9FE8;font-family:'DM Sans',sans-serif;font-weight:700;font-size:12px;cursor:pointer;margin-bottom:16px;">💬 Chat live with support instead</button>
     <div style="margin-bottom:14px;">
       <div style="font-size:12px;color:#9A9390;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;">Issue Category</div>
       <div id="report-categories" style="display:flex;flex-direction:column;gap:8px;"></div>
@@ -961,6 +975,37 @@ function decodeJwtSub(token){
   }catch(e){ return null; }
 }
 
+// Shared by every concurrent 401 at once -- without this, a burst of
+// parallel requests (e.g. a dashboard firing several api() calls together)
+// each independently read the same not-yet-rotated refresh cookie and each
+// independently called POST /auth/refresh; the first to land rotated the
+// refresh token server-side (revoked:true), so every other one then got a
+// 401 from /auth/refresh itself. Single-flighting means every concurrent
+// caller awaits the SAME refresh instead of racing their own.
+var _refreshInFlight = null;
+var _proactiveRefreshTimer = null;
+
+// Access tokens are minted for 15 minutes (JWT_ACCESS_EXPIRES_IN). Refresh
+// a couple of minutes early so an active session never has to hit the
+// reactive 401-then-retry path below at all -- that reactive path is still
+// kept as a safety net, this just means it rarely fires in practice.
+function scheduleProactiveRefresh(){
+  if(_proactiveRefreshTimer)clearTimeout(_proactiveRefreshTimer);
+  _proactiveRefreshTimer=setTimeout(async function(){
+    if(!_accessToken)return;
+    try{
+      if(!_refreshInFlight){
+        _refreshInFlight=api('/auth/refresh',{method:'POST'}).catch(function(){return null;}).finally(function(){_refreshInFlight=null;});
+      }
+      var refreshed=await _refreshInFlight;
+      if(refreshed&&refreshed.accessToken){ setAccessToken(refreshed.accessToken); scheduleProactiveRefresh(); }
+    }catch(e){}
+  },13*60*1000); // 13 minutes -- 2 minutes of margin before the real 15-minute expiry
+}
+function clearProactiveRefresh(){
+  if(_proactiveRefreshTimer){clearTimeout(_proactiveRefreshTimer);_proactiveRefreshTimer=null;}
+}
+
 async function api(path, opts){
   opts = opts || {};
   var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -968,7 +1013,11 @@ async function api(path, opts){
   var res = await fetch(API_BASE + path, Object.assign({}, opts, { headers: headers, credentials: 'include' }));
   var data = {};
   try { data = await res.json(); } catch(e){}
-  if (res.status === 401 && _accessToken) {
+  // Never try to refresh off a 401 from the refresh endpoint itself -- a
+  // genuinely dead/already-rotated refresh token 401s here too, and without
+  // this guard this exact branch would fire again with nothing having
+  // changed, recursing forever instead of failing cleanly to the throw below.
+  if (res.status === 401 && _accessToken && path !== '/auth/refresh') {
     // Access token expired — try the refresh cookie once, then retry. The
     // refresh cookie is shared across every tab of this browser (cookies
     // are domain-scoped, not tab-scoped), so if a DIFFERENT account logged
@@ -977,7 +1026,10 @@ async function api(path, opts){
     // claim before/after catches that instead of silently continuing as
     // the wrong user.
     var expectedSub = decodeJwtSub(_accessToken);
-    var refreshed = await api('/auth/refresh', { method: 'POST' }).catch(function(){ return null; });
+    if (!_refreshInFlight) {
+      _refreshInFlight = api('/auth/refresh', { method: 'POST' }).catch(function(){ return null; }).finally(function(){ _refreshInFlight = null; });
+    }
+    var refreshed = await _refreshInFlight;
     if (refreshed && refreshed.accessToken && expectedSub && decodeJwtSub(refreshed.accessToken)!==expectedSub){
       setAccessToken(null);
       showToast&&showToast('Your session changed in another tab. Please sign in again.','warning');
@@ -986,6 +1038,7 @@ async function api(path, opts){
     }
     if (refreshed && refreshed.accessToken) {
       setAccessToken(refreshed.accessToken);
+      scheduleProactiveRefresh();
       headers['Authorization'] = 'Bearer ' + refreshed.accessToken;
       res = await fetch(API_BASE + path, Object.assign({}, opts, { headers: headers, credentials: 'include' }));
       try { data = await res.json(); } catch(e){}
@@ -1720,6 +1773,7 @@ function afterRider(){
 function logout(){
   api('/auth/logout',{method:'POST'}).catch(function(){});
   setAccessToken(null);
+  clearProactiveRefresh();
   if(_socket){_socket.disconnect();_socket=null;}
   S.user=null;S.myAddr='';S.cart=[];
   S.role='customer';_eRole='customer';
@@ -2422,7 +2476,14 @@ async function openChat(p){
 // creates the caller's own SUPPORT thread instead. While no admin has
 // replied yet, real messages get a real (credential-gated) AI reply --
 // see aiChat.service.js / handledByAdminId on the thread.
-async function openSupportChat(){
+// contextId (optional): a bookingId/shopSessionId, when called from that
+// booking/session's own detail screen -- gives that one booking/session
+// its own real support thread instead of sharing the account's one
+// persistent general thread, and lets it auto-close once that booking/
+// session finishes (see closeSupportThreadForContext, chat.controller.js).
+// Called with no argument (the Profile menu's "🎧 Chat with Support") it's
+// the original account-wide thread, unchanged.
+async function openSupportChat(contextId){
   document.getElementById('chat-name').textContent='Handa Support';
   document.getElementById('chat-av').textContent='🎧';
   document.getElementById('chat-call-btn').onclick=null;
@@ -2431,13 +2492,14 @@ async function openSupportChat(){
   msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading…</div>';
   document.getElementById('chat-ov').classList.add('on');
   try{
-    var tres=await api('/chat/support-thread',{method:'POST'});
+    var tres=await api('/chat/support-thread',{method:'POST',body:JSON.stringify(contextId?{contextId:contextId}:{})});
     window._activeChatThreadId=tres.thread.id;
     if(_socket)_socket.emit('chat:join',{threadId:tres.thread.id});
     var mres=await api('/chat/threads/'+tres.thread.id+'/messages');
     var myId=(S.user||{}).id;
     msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">Hi! How can we help you today?</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
+    _setChatComposerClosed(!!(mres.thread&&mres.thread.closedAt));
     bindAppChatSocketListener();
   }catch(err){
     msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:12px">'+(err.message||'Could not load chat')+'</div>';
@@ -2717,39 +2779,42 @@ function renderShopPhase(phase) {
 
   // ── PHASE 4: LIVE VIDEO CALL — item approval ───────────────────────────
   } else if (phase === 'liveCall') {
-    body.innerHTML = `<div class="fi">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
-        <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s ease-in-out infinite;flex-shrink:0;"></div>
-        <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
-        <span style="font-size:12px;color:#9A9390;margin-left:auto;">${sfmShopperName()} ★${sfmShopperRating()}</span>
-        <button onclick="sfmSoftExitCall('sfm-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
-      </div>
-      <div class="video-frame" id="sfm-video-frame" style="margin-bottom:14px;height:185px;">
-        <video id="rtc-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
-        <div class="scanline"></div>
-        <div class="live-badge"><div class="live-dot"></div>LIVE</div>
-        <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;">
-          ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['&#x26F6;','Full','toggleRtcFullscreen(\'sfm-video-frame\')']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;border-radius:10px;padding:7px 10px;font-size:17px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+    body.innerHTML = `<div class="fi sfm-livecall-layout">
+      <div class="sfm-livecall-video-col">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
+          <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s ease-in-out infinite;flex-shrink:0;"></div>
+          <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
+          <span style="font-size:12px;color:#9A9390;margin-left:auto;">${sfmShopperName()} ★${sfmShopperRating()}</span>
+          <button onclick="sfmSoftExitCall('sfm-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
+        </div>
+        <div class="video-frame" id="sfm-video-frame" style="margin-bottom:0;height:185px;">
+          <video id="rtc-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
+          <div class="scanline"></div>
+          <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+          <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;">
+            ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['&#x26F6;','Full','toggleRtcFullscreen(\'sfm-video-frame\')']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(255,255,255,.15);border:none;border-radius:10px;padding:7px 10px;font-size:17px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+          </div>
         </div>
       </div>
+      <div class="sfm-livecall-content-col">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;margin-top:14px;">
+          <div style="font-weight:800;font-size:14px;">Approve Each Item:</div>
+          <div style="font-size:12px;color:#9A9390;" id="approval-counter">${shopItems.filter(x=>x.approved).length}/${shopItems.length} approved</div>
+        </div>
+        <div id="approval-items"></div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:800;font-size:14px;">Approve Each Item:</div>
-        <div style="font-size:12px;color:#9A9390;" id="approval-counter">${shopItems.filter(x=>x.approved).length}/${shopItems.length} approved</div>
-      </div>
-      <div id="approval-items"></div>
-
-      <div style="margin-top:12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;">
-        <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${sfmShopperName()}</div>
-        <div id="live-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:80px;overflow-y:auto;">
-          <div style="font-size:12px;color:#9A9390;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-start;">Madam I don reach the tomato section. I dey show you now 🍅</div>
+        <div style="margin-top:12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;">
+          <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${sfmShopperName()}</div>
+          <div id="live-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:80px;overflow-y:auto;">
+            <div style="font-size:12px;color:#9A9390;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-start;">Madam I don reach the tomato section. I dey show you now 🍅</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input class="inp" id="live-chat-inp" placeholder="Send a message..." style="flex:1;padding:9px 12px;font-size:13px;" onkeydown="if(event.key==='Enter'){sendLiveChat();return false;}">
+            <button onclick="sendLiveChat()" style="background:#E8392E;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;">
-          <input class="inp" id="live-chat-inp" placeholder="Send a message..." style="flex:1;padding:9px 12px;font-size:13px;" onkeydown="if(event.key==='Enter'){sendLiveChat();return false;}">
-          <button onclick="sendLiveChat()" style="background:#E8392E;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
-        </div>
+        <button class="btn btn-primary" id="checkout-btn" style="opacity:.4;pointer-events:none;" onclick="sfmEndCall();renderShopPhase('packaging')">✅ All Items Approved — Done Shopping</button>
       </div>
-      <button class="btn btn-primary" id="checkout-btn" style="opacity:.4;pointer-events:none;" onclick="sfmEndCall();renderShopPhase('packaging')">✅ All Items Approved — Done Shopping</button>
     </div>`;
     renderApprovalItems();
     if(window._sfmSession) sfmStartCall(window._sfmSession.id, 'callee', null, 'rtc-remote-video');
@@ -3087,6 +3152,40 @@ async function openRatingsModal(userId, role, profileId){
   }
 }
 function closeRatingsModal(){var d=document.getElementById('ratings-modal-wrap');if(d)d.remove();}
+
+// The reverse of openRatingsModal -- ratings the CUSTOMER has given (as
+// rater), not ratings about them. Reachable from the customer's own
+// "Reviews" stat box on their profile screen.
+async function openMyGivenRatingsModal(){
+  var html = '<div id="ratings-modal-ov" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:420px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;">My Reviews Given</div>'
+    + '<button onclick="closeRatingsModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">&#x2715;</button>'
+    + '</div>'
+    + '<div id="ratings-modal-list"><div style="text-align:center;padding:20px;color:#9A9390;font-size:13px;">Loading reviews&hellip;</div></div>'
+    + '</div></div>';
+  var d=document.createElement('div');d.id='ratings-modal-wrap';d.innerHTML=html;document.body.appendChild(d);
+  try{
+    var res=await api('/ratings/given');
+    var list=res.ratings||[];
+    var listEl=document.getElementById('ratings-modal-list');
+    if(listEl){
+      listEl.innerHTML=list.length?list.map(function(r){
+        return '<div style="border-bottom:1px solid #242424;padding:10px 0;">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;">'
+          +'<b style="color:#F2EDE8;font-size:13px;">'+((r.ratee&&r.ratee.name)||'—')+'</b>'
+          +'<span style="color:#F5A623;font-size:13px;letter-spacing:1px;">'+'★'.repeat(r.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-r.score)+'</span></span>'
+          +'</div>'
+          +(r.comment?'<div style="color:#9A9390;font-size:12px;margin-top:4px;">'+r.comment+'</div>':'')
+          +'</div>';
+      }).join('') : '<div style="text-align:center;padding:20px;color:#9A9390;font-size:13px;">You haven\'t reviewed anyone yet.</div>';
+    }
+  }catch(err){
+    var listEl2=document.getElementById('ratings-modal-list');
+    if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px;">Could not load reviews.</div>';
+  }
+}
 async function _rmFindEligibility(role, profileId){
   if(role==='VENDOR'){
     var res=await api('/bookings?as=customer&status=COMPLETED');
@@ -3286,6 +3385,7 @@ var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packag
 function onSfmStatus(status){
   if(!(S.curScreen==='liveshop'||S.curScreen==='sfm')||!window._sfmSession)return;
   if(status==='CANCELLED'){
+    if(window._sfmPhase==='liveCall')sfmEndCall();
     clearInterval(window._sfmPollIv);
     showToast&&showToast("No shopper accepted in time — you've been refunded. Please search again.",'warning');
     window._sfmSession=null;window._sfmPhase=null;
@@ -3310,6 +3410,10 @@ function onSfmStatus(status){
   var curIdx=SFM_PHASE_ORDER.indexOf(window._sfmPhase);
   var nextIdx=SFM_PHASE_ORDER.indexOf(nextPhase);
   if(curIdx>=0&&nextIdx>=0&&nextIdx<curIdx)return;
+  // Leaving the live-call screen for real (not just a same-phase re-push)
+  // -- tear down the peer connection so it doesn't linger open once the
+  // customer's screen has already moved past it.
+  if(window._sfmPhase==='liveCall'&&nextPhase!=='liveCall')sfmEndCall();
   api('/shop-sessions/'+window._sfmSession.id).then(function(res){
     window._sfmSession=res.session;
     renderShopPhase(nextPhase);
@@ -3983,49 +4087,52 @@ function renderShopperPhase(phase) {
   } else if (phase === 'liveCall') {
     const items = [{id:1,text:'2kg tomatoes',status:'pending'},{id:2,text:'Large onions (5 pcs)',status:'pending'},{id:3,text:'Fresh pepper – ₦500 worth',status:'pending'}];
     var live=window._shopperSession||{};
-    body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
-        <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s infinite;flex-shrink:0;"></div>
-        <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
-        <span style="font-size:12px;color:#9A9390;margin-left:auto;">${live.customer?live.customer.name:'Customer'}</span>
-        <button onclick="sfmSoftExitCall('shopper-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
-      </div>
+    body.innerHTML = `<div class="fi sfm-livecall-layout" style="padding:52px 22px 22px;">
+      <div class="sfm-livecall-video-col">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
+          <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s infinite;flex-shrink:0;"></div>
+          <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
+          <span style="font-size:12px;color:#9A9390;margin-left:auto;">${live.customer?live.customer.name:'Customer'}</span>
+          <button onclick="sfmSoftExitCall('shopper-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
+        </div>
 
-      <!-- User's camera (small PiP) + shopper's main camera -->
-      <div style="position:relative;margin-bottom:14px;">
-        <div class="video-frame" id="shopper-video-frame" style="height:180px;">
-          <video id="rtc-local-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
-          <div class="scanline"></div>
-          <div class="live-badge"><div class="live-dot"></div>LIVE</div>
-          <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:9px;">
-            ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['🔄','Flip','flipRtcCamera()'],['&#x26F6;','Full','toggleRtcFullscreen(\'shopper-video-frame\')']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,.15);border:none;border-radius:9px;padding:6px 9px;font-size:16px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+        <!-- User's camera (small PiP) + shopper's main camera -->
+        <div style="position:relative;">
+          <div class="video-frame" id="shopper-video-frame" style="height:180px;">
+            <video id="rtc-local-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
+            <div class="scanline"></div>
+            <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+            <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:9px;">
+              ${[['🎙️','Mic','toggleRtcMic()'],['📵','Mute','toggleRtcSpeaker()'],['🔊','Speaker',''],['🔄','Flip','flipRtcCamera()'],['&#x26F6;','Full','toggleRtcFullscreen(\'shopper-video-frame\')']].map(([ic,lb,fn])=>`<button onclick="${fn}" style="display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(255,255,255,.15);border:none;border-radius:9px;padding:6px 9px;font-size:16px;cursor:pointer;color:white;"><span>${ic}</span><span style="font-size:9px;font-family:\'DM Sans\',sans-serif;">${lb}</span></button>`).join('')}
+            </div>
+            <!-- User's PiP -->
+            <video id="rtc-remote-video" autoplay playsinline style="position:absolute;top:10px;right:10px;width:70px;height:55px;object-fit:cover;background:rgba(0,0,0,.6);border-radius:10px;border:1.5px solid rgba(255,255,255,.2);"></video>
           </div>
-          <!-- User's PiP -->
-          <video id="rtc-remote-video" autoplay playsinline style="position:absolute;top:10px;right:10px;width:70px;height:55px;object-fit:cover;background:rgba(0,0,0,.6);border-radius:10px;border:1.5px solid rgba(255,255,255,.2);"></video>
         </div>
       </div>
-
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:800;font-size:14px;">Item Status:</div>
-        <div style="font-size:12px;color:#9A9390;" id="shopper-item-counter">0/3 approved by user</div>
-      </div>
-
-      <!-- Item cards — user's approval status mirrors back to shopper -->
-      <div id="shopper-items-status"></div>
-
-      <!-- Chat -->
-      <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;margin-top:10px;">
-        <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${shopperCustomerName()}</div>
-        <div id="shopper-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:70px;overflow-y:auto;">
-          <div style="font-size:12px;background:#1C1C1C;padding:7px 10px;border-radius:10px;max-width:88%;color:#F2EDE8;">Aisha please show me the tomatoes, I want to see how fresh they are</div>
+      <div class="sfm-livecall-content-col">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;margin-top:14px;">
+          <div style="font-weight:800;font-size:14px;">Item Status:</div>
+          <div style="font-size:12px;color:#9A9390;" id="shopper-item-counter">0/3 approved by user</div>
         </div>
-        <div style="display:flex;gap:8px;">
-          <input class="inp" id="shopper-chat-inp" placeholder="Reply to user..." style="flex:1;padding:9px 12px;font-size:13px;" onkeydown="if(event.key==='Enter'){sendShopperChat();return false;}">
-          <button onclick="sendShopperChat()" style="background:#F5A623;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
-        </div>
-      </div>
 
-      <button class="btn btn-primary" id="shopper-done-btn" style="opacity:.4;pointer-events:none;" onclick="shopperEndCallAndPackage()">✅ All Items Approved — End Call &amp; Package</button>
+        <!-- Item cards — user's approval status mirrors back to shopper -->
+        <div id="shopper-items-status"></div>
+
+        <!-- Chat -->
+        <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;margin-top:10px;">
+          <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${shopperCustomerName()}</div>
+          <div id="shopper-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:70px;overflow-y:auto;">
+            <div style="font-size:12px;background:#1C1C1C;padding:7px 10px;border-radius:10px;max-width:88%;color:#F2EDE8;">Aisha please show me the tomatoes, I want to see how fresh they are</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input class="inp" id="shopper-chat-inp" placeholder="Reply to user..." style="flex:1;padding:9px 12px;font-size:13px;" onkeydown="if(event.key==='Enter'){sendShopperChat();return false;}">
+            <button onclick="sendShopperChat()" style="background:#F5A623;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="shopper-done-btn" style="opacity:.4;pointer-events:none;" onclick="shopperEndCallAndPackage()">✅ All Items Approved — End Call &amp; Package</button>
+      </div>
     </div>`;
     shopperBindItemSocketListeners();
     renderShopperItemStatus();
@@ -4344,15 +4451,25 @@ function shopperBindStatusListener(){
       });
     }
     // Customer just cleared a call-fee top-up while the shopper was
-    // waiting (see shopperEndCallAndPackage) — advance them now too.
+    // waiting (see shopperEndCallAndPackage) — the peer connection is
+    // still genuinely live at this point (shopperEndCallAndPackage only
+    // tears it down on the path that submitted this request itself), so
+    // end it here too before moving off the call screen.
     if(p.status==='PACKAGING'&&window._shopperPhase==='liveCall'){
+      sfmEndCall();
       renderShopperPhase('packaging');
     }
   });
 }
 
 async function shopperEndCallAndPackage(){
-  sfmEndCall();
+  // Don't tear down the peer connection until we actually know packaging
+  // is proceeding -- ending it unconditionally up front used to send the
+  // customer a bare "peer left, want to rejoin?" signal even when nothing
+  // was actually wrong, just because a top-up was still pending: the
+  // session stays LIVE_CALL in that case, so a dead video with no
+  // explanation was genuinely confusing. Now the call only ends once
+  // packaging is confirmed to proceed (or fails outright).
   if(window._shopperSession){
     try{
       var res=await api('/shop-sessions/'+window._shopperSession.id+'/packaging',{method:'POST'});
@@ -4360,13 +4477,15 @@ async function shopperEndCallAndPackage(){
         // Real per-minute fee exceeded what the customer already paid —
         // the session stays LIVE_CALL until they pay the difference
         // (pushed to their screen via shop-session:call-topup-required).
-        // Don't advance the shopper's own screen to packaging yet either.
+        // Keep the call connected and don't advance the shopper's own
+        // screen to packaging yet either.
         showToast('Call ran long — waiting for the customer to pay the extra '+N(res.topUpRequiredKobo/100),'warning');
         return;
       }
     }
     catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
   }
+  sfmEndCall();
   renderShopperPhase('packaging');
 }
 
@@ -4609,11 +4728,49 @@ function renderSellerRegistryList() {
 }
 
 
+// Fallback bank list, used whenever GET /users/banks fails or returns
+// empty (e.g. no PAYSTACK_SECRET_KEY configured on the backend) -- the
+// form should never be fully blocked just because a live bank-list fetch
+// didn't come back. Real Paystack bank codes where known; the "Other" row
+// below covers anything not in this list.
+var NIGERIAN_BANKS=[
+  {code:'044',name:'Access Bank'},
+  {code:'063',name:'Access Bank (Diamond)'},
+  {code:'035A',name:'ALAT by Wema'},
+  {code:'401',name:'ASO Savings and Loans'},
+  {code:'50931',name:'Carbon'},
+  {code:'023',name:'Citibank Nigeria'},
+  {code:'050',name:'Ecobank Nigeria'},
+  {code:'011',name:'First Bank of Nigeria'},
+  {code:'214',name:'First City Monument Bank (FCMB)'},
+  {code:'070',name:'Fidelity Bank'},
+  {code:'058',name:'Guaranty Trust Bank (GTBank)'},
+  {code:'030',name:'Heritage Bank'},
+  {code:'301',name:'Jaiz Bank'},
+  {code:'082',name:'Keystone Bank'},
+  {code:'50211',name:'Kuda Bank'},
+  {code:'50515',name:'Moniepoint MFB'},
+  {code:'999992',name:'OPay'},
+  {code:'999991',name:'PalmPay'},
+  {code:'076',name:'Polaris Bank'},
+  {code:'101',name:'Providus Bank'},
+  {code:'221',name:'Stanbic IBTC Bank'},
+  {code:'068',name:'Standard Chartered Bank'},
+  {code:'232',name:'Sterling Bank'},
+  {code:'100',name:'Suntrust Bank'},
+  {code:'032',name:'Union Bank of Nigeria'},
+  {code:'033',name:'United Bank For Africa (UBA)'},
+  {code:'215',name:'Unity Bank'},
+  {code:'566',name:'VFD Microfinance Bank'},
+  {code:'035',name:'Wema Bank'},
+  {code:'057',name:'Zenith Bank'},
+];
 async function openAddSellerModal(editIdx = null) {
   const existing = editIdx !== null ? (window._registeredSellers[editIdx] || {}) : {};
   const isEdit = editIdx !== null;
   var banks=window._bankListCache;
-  if(!banks){ try{ var bRes=await api('/users/banks'); banks=window._bankListCache=bRes.banks||[]; }catch(e){ banks=[]; } }
+  if(!banks){ try{ var bRes=await api('/users/banks'); banks=window._bankListCache=bRes.banks&&bRes.banks.length?bRes.banks:null; }catch(e){ banks=null; } }
+  if(!banks||!banks.length) banks=NIGERIAN_BANKS;
   let m = document.getElementById('add-seller-modal');
   if(!m){
     m = document.createElement('div');
@@ -4621,9 +4778,9 @@ async function openAddSellerModal(editIdx = null) {
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
     document.body.appendChild(m);
   }
-  var bankOpts=(banks&&banks.length)
-    ? '<option value="">Select Bank</option>'+banks.map(function(b){return '<option value="'+b.code+'"'+(existing.bankCode===b.code?' selected':'')+'>'+b.name+'</option>';}).join('')
-    : '';
+  var isCustomBank=existing.bankCode&&!banks.some(function(b){return b.code===existing.bankCode;});
+  var bankOpts='<option value="">Select Bank</option>'+banks.map(function(b){return '<option value="'+b.code+'"'+(existing.bankCode===b.code?' selected':'')+'>'+b.name+'</option>';}).join('')
+    +'<option value="CUSTOM"'+(isCustomBank?' selected':'')+'>Other — type manually</option>';
   m.innerHTML = `
     <div style="background:#111;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 20px 44px;max-height:90vh;overflow-y:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
@@ -4644,11 +4801,23 @@ async function openAddSellerModal(editIdx = null) {
             style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;"
             onfocus="this.style.borderColor='#E8392E'" onblur="this.style.borderColor='#2A2850'">
         </div>`).join('')}
-      ${bankOpts?('<div style="margin-bottom:14px;"><label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Bank</label><select id="seller-bankcode" style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">'+bankOpts+'</select></div>')
-        :'<div style="background:rgba(232,57,46,.08);border:1px solid rgba(232,57,46,.25);border-radius:11px;padding:11px;margin-bottom:14px;font-size:12px;color:#E8392E;">Bank list is unavailable right now — try again later to register a seller.</div>'}
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Bank</label>
+        <select id="seller-bankcode" onchange="var cw=document.getElementById('seller-custom-bank-wrap');if(cw)cw.style.display=(this.value==='CUSTOM'?'block':'none');" style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">${bankOpts}</select>
+      </div>
+      <div id="seller-custom-bank-wrap" style="margin-bottom:14px;display:${isCustomBank?'block':'none'};">
+        <label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Bank Name</label>
+        <input type="text" id="seller-custom-bank-name" placeholder="e.g. a bank not in the list above" value="${isCustomBank?(existing.bankName||''):''}"
+          style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">
+      </div>
       <div style="margin-bottom:14px;">
         <label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Account Number</label>
         <input type="text" id="seller-acct" placeholder="10-digit account number" value="${existing.acct||''}" maxlength="10"
+          style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:700;color:#9A9390;display:block;margin-bottom:5px;">Account Name</label>
+        <input type="text" id="seller-acctname" placeholder="Resolved automatically if left blank" value="${existing.bankAccountName||''}"
           style="width:100%;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#111;color:#F2EDE8;outline:none;box-sizing:border-box;">
       </div>
       <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="saveSeller(${isEdit ? editIdx : 'null'})">
@@ -4665,12 +4834,14 @@ async function saveSeller(editIdx) {
   const market= document.getElementById('seller-market')?.value.trim();
   const bankCode = document.getElementById('seller-bankcode')?.value;
   const bankSel = document.getElementById('seller-bankcode');
-  const bankName = bankSel ? bankSel.options[bankSel.selectedIndex].text : '';
+  const isCustomBank = bankCode==='CUSTOM';
+  const bankName = isCustomBank ? (document.getElementById('seller-custom-bank-name')?.value.trim()||'') : (bankSel ? bankSel.options[bankSel.selectedIndex].text : '');
+  const acctName = document.getElementById('seller-acctname')?.value.trim();
   const acct  = document.getElementById('seller-acct')?.value.trim();
-  if(!name || !phone || !bankCode || !acct) { showToast('Please fill all fields','info'); return; }
+  if(!name || !phone || !bankCode || !acct || (isCustomBank&&!bankName)) { showToast('Please fill all fields','info'); return; }
   if(acct.length < 10) { showToast('Account number must be at least 10 digits','info'); return; }
   try{
-    var res=await api('/shoppers/me/sellers',{method:'POST',body:JSON.stringify({name:name,phone:phone,market:market,bankName:bankName,bankCode:bankCode,accountNumber:acct})});
+    var res=await api('/shoppers/me/sellers',{method:'POST',body:JSON.stringify({name:name,phone:phone,market:market,bankName:bankName,bankCode:bankCode,accountNumber:acct,accountName:acctName||undefined})});
     showToast&&showToast(name+' registered — '+res.seller.bankAccountName+' confirmed 🎉','success');
   }catch(err){
     showToast&&showToast(err.message||'Could not register seller','warning');
@@ -4768,7 +4939,12 @@ function updateSellerAmount(i, val) {
 
 function updatePayoutTotals() {
   const rows = window._spPayoutRows || [];
-  const totalBudget = 2500;
+  // Was hardcoded to a fixed ₦2,500 regardless of the session's real
+  // budget -- the overspend guard below was checking against a number
+  // that had nothing to do with what was actually deposited. Compute it
+  // the same real way the sellerPayout phase's own render does.
+  const ss = window._shopperSession||{};
+  const totalBudget = Math.round(((ss.depositKobo||0)-(ss.sessionFeeKobo||0)-(ss.riderFeeKobo||0))/100);
   const allocated = rows.filter(r=>r.selected).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
   const allocEl = document.getElementById('sp-allocated');
   const warnEl = document.getElementById('sp-balance-warning');
@@ -5262,10 +5438,15 @@ function renderVendorProfile(){
     +'<div style="display:flex;gap:14px;align-items:center;">'
     +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(46,204,113,.2);border:2px solid rgba(46,204,113,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F37D;&#xFE0F;</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
-    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">'+vt+' &bull; <span onclick="openRatingsModal(\''+u.id+'\',\'VENDOR\',\''+(u.vendorProfileId||'')+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">&#x2605; My Reviews</span></div>'
+    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">'+vt+'</div>'
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
     +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
-    +'</div></div></div>'
+    +'</div></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;">'
+    +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Bookings</div><div id="vendor-profile-bookings" style="font-weight:800;color:#fff;">—</div></div>'
+    +'<div onclick="openRatingsModal(\''+u.id+'\',\'VENDOR\',\''+(u.vendorProfileId||'')+'\')" style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;cursor:pointer;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;text-decoration:underline;text-decoration-style:dotted;">'+(u.rating||'New')+'</div></div>'
+    +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Accept</div><div id="vendor-profile-accept" style="font-weight:800;color:#2ECC71;">—</div></div>'
+    +'</div></div>'
     +[['Business Name',bizName],['Address',addr],['Phone',phone],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
@@ -5290,6 +5471,10 @@ function renderVendorProfile(){
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
   refreshKycSection('vendor');
+  api('/vendors/me/stats').then(function(s){
+    var bEl=document.getElementById('vendor-profile-bookings');if(bEl)bEl.textContent=s.bookingsCount||0;
+    var aEl=document.getElementById('vendor-profile-accept');if(aEl)aEl.textContent=(s.acceptRate!=null?s.acceptRate+'%':'—');
+  }).catch(function(){});
 }
 
 function riderNav(tab){
@@ -5352,19 +5537,25 @@ async function renderRiderDeliveries(){
   if(S.rdrOnline)loadRiderAvailableDeliveries();
 }
 
+// Deliveries this rider has dismissed with "Decline" -- client-side only.
+// These are broadcast-available deliveries (first-come-first-served, not
+// individually assigned to one rider), so declining just hides it from
+// THIS rider's own list; every other online rider still sees it normally.
+var _riderDeclinedSessionIds=new Set();
 async function loadRiderAvailableDeliveries(){
   var list=document.getElementById('rider-deliveries-list');
   if(!list)return;
   list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">Looking for deliveries…</div>';
   try{
     var res=await api('/shop-sessions?as=available');
-    var sessions=res.sessions||[];
+    var sessions=(res.sessions||[]).filter(function(s){return !_riderDeclinedSessionIds.has(s.id);});
     if(!sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
     list.innerHTML=sessions.map(function(s){
-      return '<div style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
+      return '<div id="rider-delivery-card-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
         +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 Shop-For-Me Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div><span style="background:#F5A623;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
         +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(s.customer?s.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.deliveryAddress||'Address on acceptance')+'</div></div>'
-        +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderDelivery(\''+s.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button></div>'
+        +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderDelivery(\''+s.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button>'
+        +'<button onclick="declineRiderDelivery(\''+s.id+'\',this)" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">✕ Decline</button></div>'
         +'</div>';
     }).join('');
   }catch(err){
@@ -6134,8 +6325,16 @@ async function openShopperSessionDetail(id) {
     showBottomSheet('Session Details', '<div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load session')+'</div>');
     return;
   }
+  if(s.status==='CANCELLED'&&s.abandonedAt){
+    showBottomSheet('Session Details','<div style="text-align:center;padding:30px 10px;color:#9A9390;"><div style="font-size:40px;margin-bottom:10px;">&#x1F4F5;</div><div style="font-weight:800;font-size:15px;color:#F2EDE8;margin-bottom:6px;">Uncompleted Session</div><div style="font-size:13px;">This session didn\'t finish in time and was automatically cancelled.</div></div>');
+    return;
+  }
   const hasRider = s.rider && s.rider.user;
-  const isDone = s.status==='COMPLETED';
+  // Report Customer/Rider used to only show once the session was fully
+  // COMPLETED -- matching the rider's own equivalent (available both
+  // mid-delivery and post-delivery), show these any time the shopper is
+  // actually on a real session (past SEARCHING), not just after it's done.
+  const canReport = s.status!=='SEARCHING';
   showBottomSheet('Session Details', `
     <div style="background:#1C1C1C;border-radius:13px;padding:14px;margin-bottom:14px;">
       <div style="font-size:12px;color:#9A9390;margin-bottom:5px;">${new Date(s.createdAt).toLocaleString()} &nbsp;•&nbsp; Ref: ${s.id.slice(0,8)}</div>
@@ -6156,10 +6355,10 @@ async function openShopperSessionDetail(id) {
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Items Cost</span><span style="font-weight:800;">₦${Math.round((s.itemsTotalKobo||0)/100).toLocaleString()}</span></div>
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Your Session Fee</span><span style="font-weight:800;color:#F5A623;">₦${Math.round((s.sessionFeeKobo||0)*0.8/100).toLocaleString()}</span></div>
     </div>
-    ${isDone?`
+    ${canReport?`
     <div style="display:flex;gap:9px;">
-      <button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('shopper_session');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Customer</button>
-      <button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('rider');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Rider</button>
+      <button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('customer');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Customer</button>
+      ${hasRider?`<button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('rider');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Rider</button>`:''}
     </div>`:''}
   `);
 }
@@ -6299,6 +6498,14 @@ async function renderShopperHistory() {
     <div style="padding:0 22px;">
       ${sessions.length===0 ? '<div style="text-align:center;padding:30px;color:#9A9390;font-size:13px;">No sessions yet — accepted Shop-For-Me sessions will appear here.</div>' : sessions.map(s => {
         const isDone=s.status==='COMPLETED', isCancelled=s.status==='CANCELLED';
+        const isAbandoned=isCancelled&&s.abandonedAt;
+        if(isAbandoned){
+          return `
+          <div onclick="openShopperSessionDetail('${s.id}')" style="background:#242424;border:1.5px solid #2A2850;border-radius:16px;padding:15px;margin-bottom:12px;cursor:pointer;text-align:center;">
+            <div style="font-size:12px;color:#9A9390;margin-bottom:4px;">${new Date(s.createdAt).toLocaleString()}</div>
+            <div style="font-weight:800;font-size:14px;color:#9A9390;">📵 Uncompleted Session</div>
+          </div>`;
+        }
         return `
         <div onclick="openShopperSessionDetail('${s.id}')" style="background:#242424;border:1.5px solid ${isCancelled?'rgba(232,57,46,0.10)':'#2A2850'};border-radius:16px;padding:15px;margin-bottom:12px;cursor:pointer;" onmouseenter="this.style.borderColor='#F5A623'" onmouseleave="this.style.borderColor='#2A2850'">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
@@ -6382,7 +6589,11 @@ async function openEditProfileModal(role){
   var u=S.user||{};
   var banks=window._bankListCache;
   if(!banks && role!=='customer'){
-    try{ var bRes0=await api('/users/banks'); banks=window._bankListCache=bRes0.banks||[]; }catch(e){ banks=[]; }
+    // Don't cache an empty/failed result -- an empty array is truthy, so
+    // caching [] here would make openAddSellerModal's own !banks check
+    // (elsewhere in this file) treat the bank list as "already fetched"
+    // and skip its own NIGERIAN_BANKS fallback.
+    try{ var bRes0=await api('/users/banks'); banks=bRes0.banks&&bRes0.banks.length?bRes0.banks:(typeof NIGERIAN_BANKS!=='undefined'?NIGERIAN_BANKS:[]); if(bRes0.banks&&bRes0.banks.length)window._bankListCache=banks; }catch(e){ banks=(typeof NIGERIAN_BANKS!=='undefined'?NIGERIAN_BANKS:[]); }
   }
   var f=function(label,id,val,type,ph){
     return '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">'+label+'</label>'
@@ -6814,17 +7025,16 @@ async function riderConfirmPickup(){
     riderMapPhase2();
   });
 }
-function declineRiderDelivery(btn){
-  var inc=document.getElementById('rider-incoming-order');
-  if(inc)inc.style.display='none';
-  S.rdrOnline=false;
-  var dot=document.getElementById('rdr-status-dot');
-  var lbl=document.getElementById('rdr-status-lbl');
-  var pill=document.getElementById('rider-pill');
-  if(dot)dot.className='status-dot offline';
-  if(lbl){lbl.textContent='Go Online';lbl.style.color='#9A9390';}
-  if(pill){pill.style.borderColor='#2A2850';pill.style.background='#242424';}
-  toast('Delivery skipped. You are now offline.');
+// Client-side dismiss only -- this is a broadcast-available delivery, not
+// assigned to this rider specifically, so declining doesn't call any API;
+// it just hides the card from THIS rider's own list (_riderDeclinedSessionIds,
+// see loadRiderAvailableDeliveries) while every other online rider still
+// sees it normally.
+function declineRiderDelivery(sessionId,btn){
+  _riderDeclinedSessionIds.add(sessionId);
+  var card=document.getElementById('rider-delivery-card-'+sessionId);
+  if(card)card.remove();
+  toast('Delivery declined.');
 }
 
 
@@ -7049,6 +7259,7 @@ function _finishLogin(nm){
   var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
   window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
   connectSocket();
+  scheduleProactiveRefresh();
   if(_eRole==='shopper'){S.role='shopper';S.curScreen='shopper';afterShopperAuth();var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}}
   else if(_eRole==='cook'){eGo('cook');}
   else if(_eRole==='event_planner'){eGo('event_planner');}
@@ -7129,8 +7340,9 @@ async function guestLogin(){
 // Restores a session from a token already in sessionStorage (page reload,
 // same tab) — called from the DOMContentLoaded bootstrap before falling
 // back to the login screen.
-async function tryRestoreSession(){
+async function tryRestoreSession(attempt){
   if(!_accessToken)return false;
+  attempt=attempt||1;
   try{
     var data=await api('/auth/me');
     S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
@@ -7156,8 +7368,19 @@ async function tryRestoreSession(){
     else if(_eRole==='event_planner'){eGo('event_planner');}
     else if(_eRole==='rider'){if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
     else{eGo('home');}
+    scheduleProactiveRefresh();
     return true;
   }catch(err){
+    // A single failure here isn't necessarily "this token is dead" -- a
+    // transient network blip, or a cold Render free-tier wake-up (~30-50s
+    // per README), throws the exact same way as a genuinely expired/
+    // invalid session. Retry once after a short delay before giving up, so
+    // a real still-good session doesn't get logged out over a slow first
+    // request.
+    if(attempt<2){
+      await new Promise(function(resolve){setTimeout(resolve,3000);});
+      return tryRestoreSession(attempt+1);
+    }
     setAccessToken(null);
     return false;
   }
@@ -7534,7 +7757,7 @@ function openVendorDisputeResponseModal(ticketId,bookingId){
     +'<input id="vdr-evidence" type="file" accept="image/*" style="display:none;" onchange="var t=document.getElementById(\'vdr-evidence-label-text\');if(t)t.textContent=this.files[0]?this.files[0].name:\'Attach a photo (optional proof)\';">'
     +'</div>'
     +'<button onclick="submitVendorDisputeResponse(\''+ticketId+'\',\''+bookingId+'\')" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Submit Response</button>'
-    +'<button onclick="closeProcedureModal();openSupportChat();" style="width:100%;margin-top:8px;background:transparent;border:1.5px solid rgba(59,159,232,.35);border-radius:14px;padding:12px;font-size:13px;font-weight:700;color:#3B9FE8;cursor:pointer;">💬 Chat live with support instead</button>'
+    +'<button onclick="closeProcedureModal();openSupportChat(\''+bookingId+'\');" style="width:100%;margin-top:8px;background:transparent;border:1.5px solid rgba(59,159,232,.35);border-radius:14px;padding:12px;font-size:13px;font-weight:700;color:#3B9FE8;cursor:pointer;">💬 Chat live with support instead</button>'
     +'</div>'
   );
 }
@@ -7587,6 +7810,10 @@ async function openCustomerHistoryDetail(kind,id){
     try{
       var sres=await api('/shop-sessions/'+id);
       var s=sres.session;
+      if(s.status==='CANCELLED'&&s.abandonedAt){
+        showBottomSheet('Session Details','<div style="text-align:center;padding:30px 10px;color:#9A9390;"><div style="font-size:40px;margin-bottom:10px;">&#x1F4F5;</div><div style="font-weight:800;font-size:15px;color:#F2EDE8;margin-bottom:6px;">Uncompleted Session</div><div style="font-size:13px;">This session didn\'t finish in time and was automatically cancelled. Any deposit was refunded.</div></div>');
+        return;
+      }
       var srows=[['Status',s.status],['Shopper',s.shopper&&s.shopper.user?s.shopper.user.name:'—'],['Rider',s.rider&&s.rider.user?s.rider.user.name:'Not assigned yet'],['Items Total',N(Math.round((s.itemsTotalKobo||0)/100))],['Session Fee',N(Math.round((s.sessionFeeKobo||0)/100))],['Rider Fee',N(Math.round((s.riderFeeKobo||0)/100))]];
       var scontent='<div style="background:#242424;border-radius:13px;padding:14px;">'
         +srows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
@@ -7678,6 +7905,13 @@ async function openCustomerHistoryDetail(kind,id){
     // a Home Cook booking sitting at PAID (or an EP one still at REQUESTED)
     // showed nothing at all while waiting on the vendor's decision.
     var awaitingVendorDecision=!isTerminal&&((isEP&&b.status==='REQUESTED')||(!isEP&&b.status==='PAID'));
+    // Home Cook only, genuinely unpaid: the customer backed out of the
+    // escrow modal (or never reached it) right after sending the request,
+    // so the booking is sitting at REQUESTED with nothing paid yet -- the
+    // vendor's own dashboard already shows this exact state as "Awaiting
+    // customer payment." Give the customer a real way back in instead of
+    // an idle screen with no path forward.
+    var unpaidCook=!isTerminal&&isCookB&&b.status==='REQUESTED';
     var confirmCopy='Confirm so payment can be released, or let us know if it wasn\'t actually completed.';
     var terminalBanner='';
     if(hasOpenDispute){
@@ -7687,12 +7921,20 @@ async function openCustomerHistoryDetail(kind,id){
         +'<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:10px;border-top:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
         +'</div>';
     }else if(isCompleted){
+      // getBooking already includes ratings:true -- b.ratings is real, just
+      // never read here before. Check for an existing VENDOR-role rating on
+      // THIS booking before offering Rate/Review again, so a customer who
+      // already rated doesn't see the prompt every time they reopen it.
+      var existingRating=(b.ratings||[]).find(function(r){return r.rateeRole==='VENDOR';});
       terminalBanner='<div style="margin-top:14px;padding:20px;border-radius:16px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
         +'<div style="font-size:40px;margin-bottom:8px;">&#x1F389;</div>'
         +'<div style="font-weight:900;font-size:16px;color:#2ECC71;margin-bottom:4px;">Thank You for Using Handa!</div>'
         +'<div style="font-size:12px;color:#9A9390;margin-bottom:16px;">Your booking with '+(v.bizName||'the vendor')+' is complete.</div>'
+        +(existingRating
+          ? '<div style="background:#1C1C1C;border:1px solid #2A2850;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;"><div style="color:#F5A623;font-size:13px;letter-spacing:1px;margin-bottom:4px;">'+'★'.repeat(existingRating.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-existingRating.score)+'</span></div>'+(existingRating.comment?'<div style="color:#9A9390;font-size:12px;">'+existingRating.comment+'</div>':'')+'</div>'
+          : '')
         +'<div style="display:flex;gap:10px;">'
-        +'<button onclick="openRatingsModal(\''+vu.id+'\',\'VENDOR\',\''+v.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2B50; Rate/Review</button>'
+        +(existingRating?'':'<button onclick="openRatingsModal(\''+vu.id+'\',\'VENDOR\',\''+v.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2B50; Rate/Review</button>')
         +'<button onclick="showReportIssue(\'vendor\',\''+v.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report Issues</button>'
         +'</div></div>';
     }else if(isCancelledFromDispute){
@@ -7708,6 +7950,13 @@ async function openCustomerHistoryDetail(kind,id){
       +terminalBanner
       +(awaitingVendorDecision?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Vendor To Accept Your Booking</div>'
+      ):'')
+      +(unpaidCook?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:4px;">This booking hasn\'t been paid for yet</div>'
+        +'<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">The vendor can\'t see or act on it until payment goes through.</div>'
+        +'<button onclick="payForBooking(\''+b.id+'\','+b.totalKobo+',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="width:100%;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B3; Resume Payment</button>'
+        +'</div>'
       ):'')
       +(awaitingJobStart?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Job To Start</div>'
@@ -8462,6 +8711,15 @@ function cookMarkServiceDone(bookingIdx){
 
 
 // EP Booking: packages → details → confirmed (NO payment phase)
+// Clamps the guest-count field into [1, max] as the customer types --
+// editable (not locked, per the package's real configured max), but can
+// never exceed what the package covers.
+function _clampEpbGuests(el,max){
+  var v=parseInt(el.value,10);
+  if(isNaN(v))return;
+  if(v>max)el.value=max;
+  else if(v<1)el.value=1;
+}
 function epBkRender(phase){
   var _epbPhaseChanged=_epb.phase!==phase;
   _epb.phase=phase;
@@ -8551,8 +8809,8 @@ function epBkRender(phase){
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Event Venue / Address</label>'
         +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:12px"><span>&#x1F4CD;</span><input id="epb-venue" class="if" style="border:none;flex:1;padding:13px 0" placeholder="Full address of event venue"></div>'
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Expected Number of Guests</label>'
-        +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:12px"><span>&#x1F465;</span><input id="epb-guests" type="number" class="if" style="border:none;flex:1;padding:13px 0'+((_epb.selectedPkg&&_epb.selectedPkg.guestCount)?';opacity:.7;cursor:not-allowed':'')+'" placeholder="e.g. 200"'+((_epb.selectedPkg&&_epb.selectedPkg.guestCount)?' value="'+_epb.selectedPkg.guestCount+'" readonly':'')+'></div>'
-        +((_epb.selectedPkg&&_epb.selectedPkg.guestCount)?'<p style="color:#9A9390;font-size:11px;margin:-8px 0 12px">Set by the selected package</p>':'')
+        +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:12px"><span>&#x1F465;</span><input id="epb-guests" type="number" min="1"'+((_epb.selectedPkg&&_epb.selectedPkg.guestCount)?' max="'+_epb.selectedPkg.guestCount+'" value="'+_epb.selectedPkg.guestCount+'" oninput="_clampEpbGuests(this,'+_epb.selectedPkg.guestCount+')"':'')+' class="if" style="border:none;flex:1;padding:13px 0" placeholder="e.g. 200"></div>'
+        +((_epb.selectedPkg&&_epb.selectedPkg.guestCount)?'<p style="color:#9A9390;font-size:11px;margin:-8px 0 12px">Up to '+_epb.selectedPkg.guestCount+' guests for this package</p>':'')
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Additional Requirements (optional)</label>'
         +'<textarea id="epb-notes" class="if" rows="3" placeholder="Special theme, requirements, preferred vendors..." style="margin-bottom:20px;width:100%;display:block;box-sizing:border-box"></textarea>'
         +'<button onclick="epBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm Booking</button>'
@@ -8776,12 +9034,13 @@ async function populateHistory(){
       });
     });
     (sRes.sessions||[]).forEach(function(s){
+      var abandoned=s.status==='CANCELLED'&&s.abandonedAt;
       _allOrders.push({
         icon:'🛒',title:'Shopping Session',
-        sub:(s.items||[]).map(function(i){return i.text;}).join(', ')||'Grocery shop',
+        sub:abandoned?'':((s.items||[]).map(function(i){return i.text;}).join(', ')||'Grocery shop'),
         date:new Date(s.createdAt).toLocaleDateString(),
         amount:Math.round((s.depositKobo||(s.itemsTotalKobo+s.sessionFeeKobo)||0)/100),
-        status:s.status,statusColor:STATUS_COLORS[s.status]||'#9A9390',type:'Shopping',ts:new Date(s.createdAt).getTime(),
+        status:abandoned?'Uncompleted':s.status,statusColor:abandoned?'#9A9390':(STATUS_COLORS[s.status]||'#9A9390'),type:'Shopping',ts:new Date(s.createdAt).getTime(),
         sessionId: s.id
       });
     });

@@ -84,4 +84,22 @@ async function listRatingsForUser(req, res, next) {
   }
 }
 
-module.exports = { createRating, listRatingsForUser };
+// Ratings the caller has GIVEN (as rater) — distinct from listRatingsForUser
+// above, which only ever shows ratings ABOUT a target. GET /users/me/stats
+// already counts these (Rating.count({where:{raterId}})); this lists their
+// actual content so the customer's own "Reviews" stat can be clickable.
+async function listRatingsGivenByMe(req, res, next) {
+  try {
+    const ratings = await prisma.rating.findMany({
+      where: { raterId: req.user.id },
+      include: { ratee: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    res.json({ ratings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { createRating, listRatingsForUser, listRatingsGivenByMe };

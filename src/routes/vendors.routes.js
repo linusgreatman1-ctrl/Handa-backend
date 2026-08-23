@@ -8,6 +8,7 @@ const router = express.Router();
 router.get("/", ctrl.listVendors);
 router.get("/me", requireAuth, requireVendorProfile, ctrl.getMyVendor);
 router.get("/me/commission-period", requireAuth, requireVendorProfile, ctrl.getCurrentCommissionPeriod);
+router.get("/me/stats", requireAuth, requireVendorProfile, ctrl.getMyVendorStats);
 router.get("/:id", ctrl.getVendor);
 router.get("/:id/menu", ctrl.listMenuItems);
 

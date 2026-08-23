@@ -5,6 +5,7 @@ const escrow = require("../services/escrow.service");
 const commissionSvc = require("../services/commission.service");
 const orderFlow = require("../services/orderFlow.service");
 const manualPayments = require("../services/manualPayments.service");
+const { closeSupportThreadForContext } = require("./chat.controller");
 const { notify } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
@@ -482,6 +483,7 @@ async function completeBooking(req, res, next) {
       `Your booking #${booking.bookingNumber} was completed. Thank you for using Handa!`,
       { bookingId: booking.id }
     );
+    closeSupportThreadForContext(booking.id);
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -516,8 +518,16 @@ async function confirmBookingCompletion(req, res, next) {
       const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: new Date() } });
       const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
       if (vendor) {
-        await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Booking completed", `The customer confirmed booking #${booking.bookingNumber} — payment has been released.`, { bookingId: booking.id });
+        await notify(
+          req.app.get("io"),
+          vendor.userId,
+          "ORDER_UPDATE",
+          "Booking completed",
+          `Job successfully completed: Escrow has released your payment.<br>Booking #${booking.bookingNumber} — ₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`,
+          { bookingId: booking.id }
+        );
       }
+      closeSupportThreadForContext(booking.id);
       return res.json({ booking: updated });
     }
 
@@ -570,6 +580,7 @@ async function cancelBooking(req, res, next) {
       await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking cancelled by customer" });
     }
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+    closeSupportThreadForContext(booking.id);
     res.json({ booking: updated });
   } catch (err) {
     next(err);

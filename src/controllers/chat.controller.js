@@ -17,23 +17,45 @@ async function ensureAiSupportUser() {
   return u;
 }
 
-// Finds-or-creates the caller's own SUPPORT thread -- one per user
-// (contextId = the user's own id keeps it unique and easy to look up),
-// with only the caller as a real participant. Admins become participants
-// only once they actually reply (see admin.controller.js's
-// sendAdminChatMessage) -- until then they view via admin-only routes
-// that read threads directly, not through ChatParticipant.
+// Finds-or-creates the caller's SUPPORT thread. With no contextId, this is
+// the one persistent general "Chat with Support" thread for the account
+// (contextId = the user's own id) -- unchanged behavior for the
+// Profile-menu entry point, which isn't about any specific booking.
+// With a contextId (a bookingId/shopSessionId), it's a real thread scoped
+// to that one booking/session -- opening "Chat with Support" from two
+// different bookings now gets two real, separate threads, and
+// closeSupportThreadForContext (below) closes the right one when that
+// booking/session finishes, instead of every booking sharing one
+// lifetime-of-the-account thread.
 async function openSupportThread(req, res, next) {
   try {
-    let thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId: req.user.id } });
+    const contextId = req.body?.contextId || req.user.id;
+    let thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId } });
     if (!thread) {
       thread = await prisma.chatThread.create({
-        data: { contextType: "SUPPORT", contextId: req.user.id, participants: { create: [{ userId: req.user.id }] } },
+        data: { contextType: "SUPPORT", contextId, participants: { create: [{ userId: req.user.id }] } },
       });
     }
     res.status(201).json({ thread });
   } catch (err) {
     next(err);
+  }
+}
+
+// Called once a booking/shop-session this ticket's contextId points at
+// reaches a terminal state (COMPLETED/CANCELLED) -- system-closes any
+// SUPPORT thread scoped to it (closedBy stays null: nobody in particular
+// closed it, the booking itself ended). A no-op if no such thread exists
+// or it's already closed. Never throws -- callers fire-and-forget this
+// alongside their real completion/cancellation logic.
+async function closeSupportThreadForContext(contextId) {
+  try {
+    const thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId } });
+    if (!thread || thread.closedAt) return;
+    await prisma.chatThread.update({ where: { id: thread.id }, data: { closedAt: new Date() } });
+  } catch (err) {
+    // best-effort -- a booking's own completion must never fail because a
+    // support-chat cleanup step threw
   }
 }
 
@@ -204,4 +226,4 @@ async function uploadChatAttachment(req, res, next) {
   }
 }
 
-module.exports = { openThread, listThreads, listMessages, sendMessage, openSupportThread, uploadChatAttachment };
+module.exports = { openThread, listThreads, listMessages, sendMessage, openSupportThread, closeSupportThreadForContext, uploadChatAttachment };

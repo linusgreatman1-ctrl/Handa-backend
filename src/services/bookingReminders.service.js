@@ -3,6 +3,12 @@ const { notify } = require("../services/notifications.service");
 
 const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
 const REMINDER_2H_MS = 2 * 60 * 60 * 1000;
+// sendCompletionReminders is intentionally repeating (nudges until the
+// booking is confirmed complete) -- but with no throttle it fired on every
+// 5-minute sweep tick, producing dozens of identical notifications in a
+// few hours (the "39 notifications" report). This caps re-sends to once
+// per window instead.
+const COMPLETION_REMINDER_INTERVAL_MS = 3 * 60 * 60 * 1000;
 // How wide a window each sweep tick checks — must be at least as long as
 // the sweep interval (5 min, matching live.js's other sweeps) so a
 // booking's due moment is never skipped between two ticks.
@@ -94,12 +100,15 @@ async function sendCompletionReminders(io) {
   for (const booking of bookings) {
     const eventInstant = combineDateAndTime(booking.eventDate, booking.eventTime).getTime();
     if (now - eventInstant < REMINDER_2H_MS) continue; // not yet 2h past
+    if (booking.lastCompletionReminderAt && now - booking.lastCompletionReminderAt.getTime() < COMPLETION_REMINDER_INTERVAL_MS) continue;
 
     if (!booking.vendorConfirmedCompleteAt) {
       await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Confirm this booking is complete", `Booking #${booking.bookingNumber}'s scheduled time has passed — please mark it complete.`, { bookingId: booking.id });
+      await prisma.booking.update({ where: { id: booking.id }, data: { lastCompletionReminderAt: new Date() } });
       sent++;
     } else if (!booking.customerConfirmedCompleteAt) {
       await notify(io, booking.customerId, "ORDER_UPDATE", "Confirm your booking is complete", `The vendor marked booking #${booking.bookingNumber} complete — please confirm.`, { bookingId: booking.id });
+      await prisma.booking.update({ where: { id: booking.id }, data: { lastCompletionReminderAt: new Date() } });
       sent++;
     }
   }
