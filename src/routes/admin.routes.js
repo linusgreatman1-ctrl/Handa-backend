@@ -50,6 +50,11 @@ router.get("/shop-sessions/:id", requireContentOrSuperAdmin, ctrl.getShopSession
 // Handover code lookup (support-desk use) — content admin or super admin.
 router.get("/active-codes", requireContentOrSuperAdmin, ctrl.lookupActiveCodes);
 
+// Manual bank-transfer confirmation queue — see manualPayments.service.js.
+router.get("/manual-payments", requireContentOrSuperAdmin, ctrl.listManualPaymentRequestsForAdmin);
+router.post("/manual-payments/:id/confirm", requireContentOrSuperAdmin, ctrl.confirmManualPaymentForAdmin);
+router.post("/manual-payments/:id/reject", requireContentOrSuperAdmin, ctrl.rejectManualPaymentForAdmin);
+
 // Vendor "featured listing" boosts — Handa's real subscription-like
 // concept. Viewing is content-admin-or-super; manually extending one
 // (overriding billing) is super-admin only.
@@ -86,6 +91,11 @@ router.post("/chat-threads/for-user/:userId", requireContentOrSuperAdmin, ctrl.o
 router.get("/chat-threads/:id/messages", requireContentOrSuperAdmin, ctrl.getChatThreadMessagesForAdmin);
 router.post("/chat-threads/:id/messages", requireContentOrSuperAdmin, ctrl.sendAdminChatMessage);
 router.post("/chat-threads/:id/attachment", requireContentOrSuperAdmin, upload.single("file"), ctrl.uploadAdminChatAttachment);
+router.post("/chat-threads/:id/close", requireContentOrSuperAdmin, ctrl.closeChatThread);
+
+// Per-ticket, per-party dispute chat — "Chat Filer" / "Chat Vendor" on a
+// Support Tickets row. See openDisputeThreadForTicketParty.
+router.post("/tickets/:ticketId/chat/:party", requireContentOrSuperAdmin, ctrl.openDisputeThreadForTicketParty);
 
 // Admin management + audit trail — super-admin only.
 router.get("/admins", requireSuperAdmin, adminMgmt.listAdmins);

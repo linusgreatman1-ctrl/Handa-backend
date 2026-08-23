@@ -3,6 +3,8 @@ const { logAdminAction } = require("../services/auditLog.service");
 const africastalking = require("../services/africastalking.service");
 const emailSvc = require("../services/email.service");
 const { notify } = require("../services/notifications.service");
+const supportCtrl = require("./support.controller");
+const manualPaymentsSvc = require("../services/manualPayments.service");
 
 // Headline numbers for the admin panel's landing dashboard — cheap
 // aggregate counts, not full row dumps.
@@ -597,6 +599,48 @@ async function lookupActiveCodes(req, res, next) {
   }
 }
 
+// ── Manual bank-transfer requests: Bank Transfer is the one payment
+// method that never touches Paystack app-wide (see manualPayments.
+// service.js) — a payer sees the real company bank details, pays outside
+// the app, taps "I've Made the Transfer", and an admin here confirms it
+// once the money is actually seen to have landed. Confirming reuses
+// applyVerifiedPayment's exact purpose-routing, so the effect is identical
+// to a real Paystack payment.
+async function listManualPaymentRequestsForAdmin(req, res, next) {
+  try {
+    const { status } = req.query;
+    const requests = await prisma.manualPaymentRequest.findMany({
+      where: { ...(status && { status }) },
+      include: { user: { select: { name: true, phone: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ requests });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function confirmManualPaymentForAdmin(req, res, next) {
+  try {
+    const updated = await manualPaymentsSvc.confirmManualPaymentRequest(req.params.id, req.user.id, req.app.get("io"));
+    await logAdminAction(req.user, "MANUAL_PAYMENT_CONFIRMED", "ManualPaymentRequest", updated.id, `₦${Math.round(updated.amountKobo / 100)} — ${updated.purpose}`);
+    res.json({ request: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function rejectManualPaymentForAdmin(req, res, next) {
+  try {
+    const updated = await manualPaymentsSvc.rejectManualPaymentRequest(req.params.id, req.user.id);
+    await notify(req.app.get("io"), updated.userId, "ORDER_UPDATE", "Payment not confirmed", "We couldn't confirm your bank transfer — please contact support or try again.", { manualPaymentRequestId: updated.id }).catch(() => {});
+    await logAdminAction(req.user, "MANUAL_PAYMENT_REJECTED", "ManualPaymentRequest", updated.id, `₦${Math.round(updated.amountKobo / 100)} — ${updated.purpose}`);
+    res.json({ request: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Payments: real money movement, read from the wallet ledger rather
 // than a separate table — Transaction already captures every deposit,
 // escrow hold/release/refund, payout, commission, and feature-boost
@@ -1127,13 +1171,15 @@ async function openSupportThreadForUser(req, res, next) {
 
 async function getChatThreadMessagesForAdmin(req, res, next) {
   try {
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
+    if (!thread) return res.status(404).json({ error: "Thread not found." });
     const messages = await prisma.chatMessage.findMany({
       where: { threadId: req.params.id },
       include: { sender: { select: { id: true, name: true, role: true } } },
       orderBy: { createdAt: "asc" },
       take: 200,
     });
-    res.json({ messages });
+    res.json({ messages, thread });
   } catch (err) {
     next(err);
   }
@@ -1146,6 +1192,7 @@ async function sendAdminChatMessage(req, res, next) {
   try {
     const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
     if (!thread) return res.status(404).json({ error: "Thread not found." });
+    if (thread.closedAt) return res.status(409).json({ error: "This chat has ended." });
     const body = (req.body.body || "").trim();
     const attachmentUrl = req.body.attachmentUrl || null;
     if (!body && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
@@ -1192,6 +1239,62 @@ async function uploadAdminChatAttachment(req, res, next) {
   }
 }
 
+// Real per-ticket, per-party dispute chat -- fixes the earlier design
+// where "Chat filer"/"Chat other side" both went through the account-wide
+// SUPPORT thread (contextId = userId), meaning every dispute a user was
+// ever involved in collided into one shared conversation. contextId here
+// is "<ticketId>:<partyUserId>", giving each (ticket, party) pair its own
+// real thread. "Chat Vendor" resolves the vendor's real userId straight
+// from the ticket's booking context (see
+// support.controller.js's resolveVendorUserIdForTicket) so it's available
+// from the moment the ticket is filed, not only once the vendor has
+// already responded.
+async function openDisputeThreadForTicketParty(req, res, next) {
+  try {
+    const { ticketId, party } = req.params;
+    if (!["filer", "vendor"].includes(party)) return res.status(400).json({ error: "party must be 'filer' or 'vendor'." });
+
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+
+    let targetUserId;
+    if (party === "filer") {
+      targetUserId = ticket.userId;
+    } else {
+      targetUserId = await supportCtrl.resolveVendorUserIdForTicket(ticket);
+      if (!targetUserId) return res.status(400).json({ error: "This ticket has no vendor to chat with yet." });
+    }
+
+    const contextId = `${ticket.id}:${targetUserId}`;
+    let thread = await prisma.chatThread.findFirst({ where: { contextType: "DISPUTE", contextId } });
+    if (!thread) {
+      thread = await prisma.chatThread.create({
+        data: { contextType: "DISPUTE", contextId, participants: { create: [{ userId: targetUserId }] } },
+      });
+    }
+    res.status(201).json({ thread });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Locks a dispute chat -- neither party can send further messages on it
+// once closed (see chat.controller.js's sendMessage / this file's
+// sendAdminChatMessage), and both sides see "This chat has ended" in
+// place of a compose box.
+async function closeChatThread(req, res, next) {
+  try {
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
+    if (!thread) return res.status(404).json({ error: "Thread not found." });
+    if (thread.closedAt) return res.status(409).json({ error: "This chat is already closed." });
+    const updated = await prisma.chatThread.update({ where: { id: thread.id }, data: { closedAt: new Date(), closedBy: req.user.id } });
+    req.app.get("io")?.to(`chat:${thread.id}`).emit("chat:closed", { threadId: thread.id });
+    res.json({ thread: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   dashboardStats,
   getReports,
@@ -1232,6 +1335,8 @@ module.exports = {
   listAiConversations,
   listChatThreadsForAdmin,
   openSupportThreadForUser,
+  openDisputeThreadForTicketParty,
+  closeChatThread,
   getChatThreadMessagesForAdmin,
   sendAdminChatMessage,
   uploadAdminChatAttachment,
@@ -1241,4 +1346,7 @@ module.exports = {
   listShopSessionsForAdmin,
   getShopSessionTimeline,
   lookupActiveCodes,
+  listManualPaymentRequestsForAdmin,
+  confirmManualPaymentForAdmin,
+  rejectManualPaymentForAdmin,
 };

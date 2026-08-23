@@ -95,6 +95,7 @@
     <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals')">Withdrawals</button>
     <button class="nav-item" data-tab="shopsessions" data-elevated="1" onclick="switchTab('shopsessions')">Live Shop-For-Me</button>
     <button class="nav-item" data-tab="activecodes" data-elevated="1" onclick="switchTab('activecodes')">Active Codes</button>
+    <button class="nav-item" data-tab="manualpayments" onclick="switchTab('manualpayments')">Manual Bank Transfers</button>
     <button class="nav-item" data-tab="codeeditor" data-elevated="1" onclick="switchTab('codeeditor')">Code Editor</button>
     <button class="nav-item" data-tab="codes" data-elevated="1" onclick="switchTab('codes')">Codes</button>
     <button class="nav-item" data-tab="livepreview" data-elevated="1" onclick="switchTab('livepreview')">Live Preview</button>
@@ -240,7 +241,7 @@ function switchTab(tab) {
   if (window._codesDirty && !confirm('You have unsaved edits in the Codes tab. Leave without saving?')) return;
   window._codesDirty = false;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, bulksms: renderBulkSms, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, manualpayments: renderManualPayments, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, bulksms: renderBulkSms, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
   if (tab !== 'chatthreads') stopChatThreadAutoRefresh();
   if (tab === 'chatthreads') clearChatBadge();
   renderers[tab]();
@@ -602,16 +603,20 @@ async function renderTickets() {
           + (t.refundAmountKobo ? ' · Refunded: ' + money(t.refundAmountKobo) : '')
         : '';
       const actions = (t.status !== 'RESOLVED'
-        ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">Resolve</button>'
-          + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\')">Resolve with Refund</button>' : '')
+        ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">' + (t.isDispute ? 'Resolve For Vendor' : 'Resolve') + '</button>'
+          + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\',' + (t.heldAmountKobo || 0) + ')">Resolve with Refund</button>' : '')
           + (t.isDispute && t.status === 'OPEN' ? ' <button class="action-btn" onclick="investigateTicket(\'' + t.id + '\')">Investigate</button>' : '')
         : '')
-        + '<br><button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.userId + '\')">&#128172; Chat filer</button>'
-        + (t.secondPartyUserId ? ' <button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.secondPartyUserId + '\')">&#128172; Chat other side</button>' : '');
+        + '<br><button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.id + '\',\'filer\')">&#128172; Chat Filer</button>'
+        + (t.isDispute ? ' <button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.id + '\',\'vendor\')">&#128172; Chat Vendor</button>' : '');
       const secondSide = t.secondPartyResponse
-        ? '<br><small><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + (t.secondPartyEvidenceUrl ? ' · <a href="' + t.secondPartyEvidenceUrl + '" target="_blank">Their evidence</a>' : '') + '</small>'
+        ? '<br><small onclick="alert(' + JSON.stringify(t.secondPartyResponse) + ')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="Click to read the full message"><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + (t.secondPartyEvidenceUrl ? ' · <a href="' + t.secondPartyEvidenceUrl + '" target="_blank" onclick="event.stopPropagation()">Their evidence</a>' : '') + '</small>'
         : '';
-      return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + (t.description || '').slice(0, 60) + '<br><small>' + disputeInfo + '</small>' + secondSide + '</td>' +
+      const description = t.description || '';
+      const descHtml = description
+        ? '<span onclick="alert(' + JSON.stringify(description) + ')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="Click to read the full message">' + description.slice(0, 60) + (description.length > 60 ? '…' : '') + '</span>'
+        : '—';
+      return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + descHtml + '<br><small>' + disputeInfo + '</small>' + secondSide + '</td>' +
         '<td>' + pill(t.status) + '</td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');
@@ -622,14 +627,15 @@ async function renderTickets() {
     document.getElementById('tickets-table').textContent = e.message;
   }
 }
-// Proactively opens (finds-or-creates) a real support chat with a specific
-// user straight from a ticket row — the disputing party and whoever they're
-// disputing against each get a real admin conversation, not just static
-// ticket text.
-async function openTicketPartyChat(userId) {
-  if (!userId) { alert('No user to chat with.'); return; }
+// Proactively opens (finds-or-creates) a real per-ticket, per-party chat
+// straight from a ticket row — a separate thread per (ticket, party), so
+// a user's disputes across different bookings no longer collide into one
+// shared conversation. "Chat Vendor" resolves the vendor straight from the
+// ticket's booking context server-side, so it's available immediately,
+// not only once the vendor has already responded.
+async function openTicketPartyChat(ticketId, party) {
   try {
-    const data = await api('/admin/chat-threads/for-user/' + userId, { method: 'POST' });
+    const data = await api('/admin/tickets/' + ticketId + '/chat/' + party, { method: 'POST' });
     renderChatThreadDetail(data.thread.id);
   } catch (e) {
     alert(e.message);
@@ -643,8 +649,12 @@ async function investigateTicket(id) {
   try { await api('/support/tickets/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'IN_PROGRESS' }) }); renderTickets(); }
   catch (e) { alert(e.message); }
 }
-async function resolveTicketWithRefund(id) {
-  const naira = prompt('Refund amount in Naira?');
+async function resolveTicketWithRefund(id, heldAmountKobo) {
+  // Pre-filled from the ticket's own real held/disputed escrow amount
+  // instead of the admin having to know/type it blind — still editable
+  // for a deliberate partial refund.
+  const suggestedNaira = heldAmountKobo ? (heldAmountKobo / 100).toFixed(2) : '';
+  const naira = prompt('Refund amount in Naira?', suggestedNaira);
   if (naira === null) return;
   const kobo = Math.round(parseFloat(naira) * 100);
   if (!kobo || kobo <= 0) { alert('Enter a valid amount.'); return; }
@@ -740,6 +750,45 @@ async function renderActiveCodes() {
   } catch (e) {
     document.getElementById('activecodes-table').textContent = e.message;
   }
+}
+
+const MANUAL_PAYMENT_STATUS_FILTERS = ['PENDING', 'CONFIRMED', 'REJECTED'];
+async function renderManualPayments(status) {
+  status = status || 'PENDING';
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>Manual Bank Transfers</h2>'
+    + '<p style="color:#9A9390;margin:-8px 0 16px">Requests from the app\'s "Pay By Bank Transfer" option — confirm once the money is actually seen to have landed.</p>'
+    + '<div class="toolbar">' + MANUAL_PAYMENT_STATUS_FILTERS.map(function(s){
+        return '<button class="action-btn" style="' + (s === status ? 'opacity:1' : 'opacity:.55') + '" onclick="renderManualPayments(\'' + s + '\')">' + s + '</button>';
+      }).join(' ') + '</div>'
+    + '<div id="manualpayments-table" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/manual-payments?status=' + status);
+    const rows = data.requests.map(function(r){
+      const who = r.user ? r.user.name + (r.user.phone ? ' (' + r.user.phone + ')' : '') : '—';
+      const actions = status === 'PENDING'
+        ? '<button class="action-btn" onclick="confirmManualPayment(\'' + r.id + '\')">Confirm</button> '
+          + '<button class="action-btn" onclick="rejectManualPayment(\'' + r.id + '\')">Reject</button>'
+        : '';
+      return '<tr><td>' + r.reference + '</td><td>' + who + '</td><td>' + r.purpose + '</td><td>' + money(r.amountKobo) + '</td>'
+        + '<td>' + pill(r.status) + '</td><td>' + new Date(r.createdAt).toLocaleString() + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    document.getElementById('manualpayments-table').outerHTML = data.requests.length
+      ? '<table><thead><tr><th>Reference</th><th>User</th><th>Purpose</th><th>Amount</th><th>Status</th><th>Requested</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">No ' + status.toLowerCase() + ' manual transfer requests.</div>';
+  } catch (e) {
+    document.getElementById('manualpayments-table').textContent = e.message;
+  }
+}
+async function confirmManualPayment(id) {
+  if (!confirm('Confirm this transfer was received? This immediately releases the real payment effect (escrow/booking/wallet/commission).')) return;
+  try { await api('/admin/manual-payments/' + id + '/confirm', { method: 'POST' }); renderManualPayments('PENDING'); }
+  catch (e) { alert(e.message); }
+}
+async function rejectManualPayment(id) {
+  if (!confirm('Reject this transfer request? The user will be notified.')) return;
+  try { await api('/admin/manual-payments/' + id + '/reject', { method: 'POST' }); renderManualPayments('PENDING'); }
+  catch (e) { alert(e.message); }
 }
 
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -1730,10 +1779,10 @@ async function renderChatThreadDetail(id) {
   const main = document.getElementById('main');
   main.innerHTML =
     '<button class="action-btn" style="margin-bottom:14px" onclick="stopChatThreadAutoRefresh();switchTab(\'chatthreads\')">&larr; Back to list</button>' +
-    '<h2>Support Chat</h2>' +
+    '<h2>Support Chat <button class="action-btn" id="chat-thread-close-btn" style="margin-left:10px;display:none" onclick="closeChatThreadDetail(\'' + id + '\')">&#128274; Close Chat</button></h2>' +
     '<div id="chat-thread-msgs" class="empty" style="background:#181818;border:1px solid #2A2850;border-radius:12px;padding:16px;margin-bottom:12px;max-height:420px;overflow-y:auto;">Loading...</div>' +
     '<input type="file" id="chat-thread-attach-inp" accept="image/*" style="display:none" onchange="sendChatThreadAttachment(\'' + id + '\', this)">' +
-    '<div style="display:flex;gap:8px;">' +
+    '<div id="chat-thread-composer" style="display:flex;gap:8px;">' +
     '<button class="action-btn" onclick="document.getElementById(\'chat-thread-attach-inp\').click()" title="Attach evidence/photo">&#128206;</button>' +
     '<input id="chat-thread-reply" placeholder="Type a reply..." style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #2A2850;background:#1C1C1C;color:#F2EDE8;" onkeydown="if(event.key===\'Enter\'){sendChatThreadReply(\'' + id + '\');}">' +
     '<button class="action-btn" onclick="sendChatThreadReply(\'' + id + '\')">Send</button></div>';
@@ -1761,8 +1810,26 @@ async function loadChatThreadDetail(id) {
     msgsEl.classList.remove('empty');
     msgsEl.innerHTML = bubbles || '<div class="empty">No messages yet.</div>';
     msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    const closeBtn = document.getElementById('chat-thread-close-btn');
+    const composer = document.getElementById('chat-thread-composer');
+    const closed = data.thread && data.thread.closedAt;
+    if (closeBtn) closeBtn.style.display = closed ? 'none' : 'inline-block';
+    if (composer) composer.outerHTML = closed
+      ? '<div id="chat-thread-composer" style="padding:10px 12px;border-radius:10px;background:#242424;color:#9A9390;font-size:13px;">This chat has ended.</div>'
+      : composer.outerHTML;
   } catch (e) {
     msgsEl.textContent = e.message;
+  }
+}
+
+async function closeChatThreadDetail(id) {
+  if (!confirm('Close this chat? Neither party will be able to send further messages on it.')) return;
+  try {
+    await api('/admin/chat-threads/' + id + '/close', { method: 'POST' });
+    await loadChatThreadDetail(id);
+  } catch (e) {
+    alert(e.message);
   }
 }
 

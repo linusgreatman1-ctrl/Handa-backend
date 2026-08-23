@@ -3,6 +3,7 @@ const paystack = require("../services/paystack.service");
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
 const orderFlow = require("../services/orderFlow.service");
+const manualPayments = require("../services/manualPayments.service");
 const { generateReference } = require("../utils/reference");
 const { generateOtpCode } = require("../utils/otp");
 const { notify } = require("../services/notifications.service");
@@ -269,7 +270,12 @@ async function paySession(req, res, next) {
       return res.json({ session: updated, paid: true });
     }
 
-    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/transfer/USSD." });
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_PAYMENT", session.id, amountKobo);
+      return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("SHP");
     const payment = await paystack.initializeTransaction({
       email: req.user.email,
@@ -421,7 +427,12 @@ async function payCallTopUp(req, res, next) {
       return res.json({ session: updated, paid: true });
     }
 
-    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/transfer/USSD." });
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_CALL_TOPUP", session.id, topUpKobo);
+      return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("TOPUP");
     const payment = await paystack.initializeTransaction({
       email: req.user.email,
@@ -514,7 +525,12 @@ async function payRiderFeeTopUp(req, res, next) {
       return res.json({ session: updated, paid: true });
     }
 
-    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/transfer/USSD." });
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_RIDER_FEE_TOPUP", session.id, topUpKobo);
+      return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("TOPUP");
     const payment = await paystack.initializeTransaction({
       email: req.user.email,

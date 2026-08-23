@@ -90,6 +90,7 @@ model User {
   ratingsGiven           Rating[]                @relation("RatingRater")
   ratingsReceived        Rating[]                @relation("RatingRatee")
   supportTickets         SupportTicket[]
+  manualPaymentRequests  ManualPaymentRequest[]
   notifications          Notification[]
   notificationPref       NotificationPreference?
   chatParticipants       ChatParticipant[]
@@ -418,6 +419,24 @@ model Booking {
   vendorConfirmedCompleteAt   DateTime?
   customerConfirmedCompleteAt DateTime?
 
+  // Home Cook only: the vendor's "Job Started" tap, between CONFIRMED and
+  // vendorConfirmedCompleteAt. Before this is set the customer still sees
+  // "Waiting for Job to Start" and can edit/cancel; once set, the customer
+  // sees "Waiting for Job to be Completed" and can no longer edit/cancel.
+  // Event Planner bookings never set this — their completion flow has no
+  // separate "started" stage (see completeBooking).
+  vendorJobStartedAt DateTime?
+
+  // A customer's edit while the vendor hasn't started the job (Home Cook)
+  // or before the event's own date/time (Event Planner) doesn't apply
+  // immediately -- it's held here awaiting the vendor's Accept/Decline so
+  // the vendor is never surprised by details changing out from under them
+  // after they've already committed. Shape mirrors updateBooking's own
+  // editable fields (eventDate/eventTime/venue/guestCount/notes/
+  // servicePackageId/selectedItems/totalKobo).
+  pendingEditSnapshot    Json?
+  pendingEditRequestedAt DateTime?
+
   escrowHolds EscrowHold[]
   ratings     Rating[]
 
@@ -740,6 +759,48 @@ enum WithdrawalStatus {
   FAILED
 }
 
+// Manual "pay by bank transfer" queue — the one payment method that never
+// touches Paystack. The payer sees the company's real bank details, pays
+// outside the app, taps "I've Made the Transfer" (creating a PENDING row
+// here), and an admin confirms it once the money is actually seen to have
+// landed. Confirming calls the exact same orderFlow.confirm* function
+// Paystack's own webhook would have called for that purpose, so every
+// downstream effect (escrow, booking/session status, wallet credit) is
+// identical either way -- only how the money arrived differs.
+enum ManualPaymentPurpose {
+  WALLET_DEPOSIT
+  BOOKING_PAYMENT
+  SHOP_SESSION_PAYMENT
+  SHOP_SESSION_CALL_TOPUP
+  SHOP_SESSION_RIDER_FEE_TOPUP
+  COMMISSION_PAYMENT
+  FEATURE_BOOST_PAYMENT
+}
+
+enum ManualPaymentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+model ManualPaymentRequest {
+  id         String               @id @default(uuid())
+  userId     String
+  user       User                 @relation(fields: [userId], references: [id])
+  purpose    ManualPaymentPurpose
+  targetId   String? // bookingId / sessionId / commissionPeriodId / vendorId, depending on purpose
+  amountKobo Int
+  status     ManualPaymentStatus  @default(PENDING)
+  reference  String               @unique
+
+  createdAt          DateTime  @default(now())
+  confirmedAt        DateTime?
+  confirmedByAdminId String?
+
+  @@index([userId])
+  @@index([status])
+}
+
 // A tokenized reference to a card, never the raw PAN — mirrors what
 // Paystack's charge-authorization flow returns.
 model SavedPaymentMethod {
@@ -934,6 +995,7 @@ enum ChatContextType {
   SHOP_SESSION
   SUPPORT
   DIRECT
+  DISPUTE // one thread per (ticket, party) -- contextId is the SupportTicket id, see admin dispute chat
 }
 
 model ChatThread {
@@ -947,6 +1009,12 @@ model ChatThread {
   // sends a real message into the thread -- a human has taken over, so
   // the AI stops auto-replying from then on.
   handledByAdminId String?
+
+  // DISPUTE threads only: once an admin closes a dispute chat, neither
+  // party can send further messages on it -- both sides see "This chat
+  // has ended" instead of a compose box.
+  closedAt DateTime?
+  closedBy String?
 
   participants ChatParticipant[]
   messages     ChatMessage[]

@@ -5,12 +5,19 @@ const wallet = require("../services/wallet.service");
 const { generateReference } = require("../utils/reference");
 const orderFlow = require("../services/orderFlow.service");
 const walletSvc = require("../services/wallet.service");
+const manualPayments = require("../services/manualPayments.service");
 
 // Wallet top-up ("+ Add Funds" on the escrow wallet card).
 async function initializeWalletDeposit(req, res, next) {
   try {
-    const { amountKobo } = req.body;
+    const { amountKobo, paymentMethod } = req.body;
     if (!amountKobo || amountKobo < 10000) return res.status(400).json({ error: "Minimum top-up is ₦100." });
+
+    if (paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "WALLET_DEPOSIT", null, amountKobo);
+      return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before funding your wallet." });
 
     const reference = generateReference("DEP");
@@ -21,6 +28,19 @@ async function initializeWalletDeposit(req, res, next) {
       metadata: { purpose: "WALLET_DEPOSIT", userId: req.user.id },
     });
     res.json({ authorizationUrl: data.authorization_url, reference });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Payer-side status poll for a manual bank-transfer request (any purpose)
+// — the frontend polls this after "I've Made the Transfer" until an admin
+// confirms or rejects it.
+async function getManualPaymentRequest(req, res, next) {
+  try {
+    const request = await prisma.manualPaymentRequest.findUnique({ where: { id: req.params.id } });
+    if (!request || request.userId !== req.user.id) return res.status(404).json({ error: "Request not found." });
+    res.json({ request });
   } catch (err) {
     next(err);
   }
@@ -133,6 +153,11 @@ async function initializeCommissionPayment(req, res, next) {
       return res.json({ paid: true });
     }
 
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "COMMISSION_PAYMENT", period.id, amountKobo);
+      return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
     const data = await paystack.initializeTransaction({
       email: req.user.email,
       amountKobo,
@@ -159,6 +184,11 @@ async function initializeFeatureBoostPayment(req, res, next) {
       return res.json({ paid: true });
     }
 
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "FEATURE_BOOST_PAYMENT", req.user.vendorProfile.id, weeklyFee);
+      return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
     const data = await paystack.initializeTransaction({
       email: req.user.email,
       amountKobo: weeklyFee,
@@ -171,4 +201,4 @@ async function initializeFeatureBoostPayment(req, res, next) {
   }
 }
 
-module.exports = { initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment };
+module.exports = { initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest };

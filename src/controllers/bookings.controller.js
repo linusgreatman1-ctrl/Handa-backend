@@ -4,6 +4,7 @@ const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
 const commissionSvc = require("../services/commission.service");
 const orderFlow = require("../services/orderFlow.service");
+const manualPayments = require("../services/manualPayments.service");
 const { notify } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
@@ -160,10 +161,55 @@ async function getBooking(req, res, next) {
   }
 }
 
+// Builds the same {servicePackageId, selectedItems, totalKobo, ...} shape
+// updateBooking used to apply directly — now shared between "apply now"
+// (pre-accept) and "hold for vendor approval" (post-accept) paths.
+async function buildBookingEditData(booking, body) {
+  const { servicePackageId, items, eventDate, eventTime, venue, guestCount, notes } = body;
+  const data = {};
+  if (eventDate !== undefined) data.eventDate = eventDate ? new Date(eventDate) : null;
+  if (eventTime !== undefined) data.eventTime = eventTime;
+  if (venue !== undefined) data.venue = venue;
+  if (guestCount !== undefined) data.guestCount = guestCount;
+  if (notes !== undefined) data.notes = notes;
+
+  if (servicePackageId !== undefined || items !== undefined) {
+    let totalKobo = 0;
+    let newServicePackage = null;
+    const pkgId = servicePackageId !== undefined ? servicePackageId : booking.servicePackageId;
+    if (pkgId) {
+      newServicePackage = await prisma.servicePackage.findUnique({ where: { id: pkgId } });
+      if (!newServicePackage || newServicePackage.vendorId !== booking.vendorId) throw Object.assign(new Error("Invalid service package for this vendor."), { status: 400 });
+      totalKobo += newServicePackage.priceKobo;
+    }
+    let newSelectedItems = booking.selectedItems;
+    if (items !== undefined) {
+      const resolved = await resolveBookingItems(items, booking.vendorId);
+      newSelectedItems = resolved.selectedItemsSnapshot;
+      totalKobo += resolved.itemsTotalKobo;
+    } else {
+      totalKobo += (newSelectedItems || []).reduce((sum, i) => sum + i.priceKobo * i.qty, 0);
+    }
+    if (totalKobo <= 0) throw Object.assign(new Error("Booking must include a service package and/or items."), { status: 400 });
+    data.servicePackageId = newServicePackage?.id || null;
+    data.selectedItems = newSelectedItems;
+    data.totalKobo = totalKobo;
+  }
+  return data;
+}
+
 // Lets the customer amend a booking's date/time/venue/guests/notes/package/
 // items any time before the event's own scheduled date — only while it's
-// still in a live pre-completion status. The vendor is notified in real
-// time so they see the new details, not the ones they originally accepted.
+// still in a live pre-completion status. Before the vendor has committed
+// (REQUESTED/PAID) an edit applies immediately, same as before, since
+// there's no acceptance to be surprised out from under. Once the vendor
+// has committed (CONFIRMED), an edit no longer applies immediately -- it's
+// held in pendingEditSnapshot until the vendor explicitly accepts or
+// declines it (see acceptEditedBooking/declineEditedBooking), so the
+// vendor is never surprised by details changing after they've already
+// committed. Once the job has actually started (Home Cook,
+// vendorJobStartedAt) or the event's own date/time has passed, no further
+// edits are allowed at all.
 async function updateBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({
@@ -175,53 +221,70 @@ async function updateBooking(req, res, next) {
     if (!["REQUESTED", "PAID", "ACCEPTED", "CONFIRMED"].includes(booking.status)) {
       return res.status(400).json({ error: "This booking can no longer be edited." });
     }
+    if (booking.vendorJobStartedAt) return res.status(400).json({ error: "The vendor has already started this job — it can no longer be edited." });
     if (booking.eventDate && new Date(booking.eventDate).getTime() <= Date.now()) {
       return res.status(400).json({ error: "This booking's date has already passed — it can no longer be edited." });
     }
+    if (booking.pendingEditSnapshot) return res.status(409).json({ error: "You already have an edit awaiting the vendor's approval." });
 
-    const { servicePackageId, items, eventDate, eventTime, venue, guestCount, notes } = req.body;
-    const data = {};
-    if (eventDate !== undefined) data.eventDate = eventDate ? new Date(eventDate) : null;
-    if (eventTime !== undefined) data.eventTime = eventTime;
-    if (venue !== undefined) data.venue = venue;
-    if (guestCount !== undefined) data.guestCount = guestCount;
-    if (notes !== undefined) data.notes = notes;
+    const data = await buildBookingEditData(booking, req.body);
 
-    if (servicePackageId !== undefined || items !== undefined) {
-      let totalKobo = 0;
-      let newServicePackage = null;
-      const pkgId = servicePackageId !== undefined ? servicePackageId : booking.servicePackageId;
-      if (pkgId) {
-        newServicePackage = await prisma.servicePackage.findUnique({ where: { id: pkgId } });
-        if (!newServicePackage || newServicePackage.vendorId !== booking.vendorId) return res.status(400).json({ error: "Invalid service package for this vendor." });
-        totalKobo += newServicePackage.priceKobo;
+    if (booking.status !== "CONFIRMED") {
+      // Vendor hasn't committed yet -- apply immediately, same as before.
+      const updated = await prisma.booking.update({ where: { id: booking.id }, data });
+      if (booking.vendor?.userId) {
+        await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking details updated", `The customer updated booking #${booking.bookingNumber} — check the new details.`, { bookingId: booking.id });
       }
-      let newSelectedItems = booking.selectedItems;
-      if (items !== undefined) {
-        const resolved = await resolveBookingItems(items, booking.vendorId);
-        newSelectedItems = resolved.selectedItemsSnapshot;
-        totalKobo += resolved.itemsTotalKobo;
-      } else {
-        totalKobo += (newSelectedItems || []).reduce((sum, i) => sum + i.priceKobo * i.qty, 0);
-      }
-      if (totalKobo <= 0) return res.status(400).json({ error: "Booking must include a service package and/or items." });
-      data.servicePackageId = newServicePackage?.id || null;
-      data.selectedItems = newSelectedItems;
-      data.totalKobo = totalKobo;
+      return res.json({ booking: updated });
     }
 
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data });
-
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingEditSnapshot: data, pendingEditRequestedAt: new Date() } });
     if (booking.vendor?.userId) {
       await notify(
         req.app.get("io"),
         booking.vendor.userId,
         "ORDER_UPDATE",
-        "Booking details updated",
-        `The customer updated booking #${booking.bookingNumber} — check the new details.`,
+        "Customer edited their booking",
+        `The customer proposed changes to booking #${booking.bookingNumber}. Accept the edited booking to continue, or decline it.`,
         { bookingId: booking.id }
       );
     }
+    res.json({ booking: updated, pending: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Vendor's response to a pendingEditSnapshot (see updateBooking). Accept
+// merges the proposed changes into the real booking; decline discards them
+// and the booking is left exactly as it was.
+async function acceptEditedBooking(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertVendorOwnsBooking(req, booking);
+    if (!booking.pendingEditSnapshot) return res.status(409).json({ error: "There is no edit awaiting your approval on this booking." });
+
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null },
+    });
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit accepted", `The vendor accepted your changes to booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function declineEditedBooking(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertVendorOwnsBooking(req, booking);
+    if (!booking.pendingEditSnapshot) return res.status(409).json({ error: "There is no edit awaiting your approval on this booking." });
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingEditSnapshot: null, pendingEditRequestedAt: null } });
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit declined", `The vendor declined your proposed changes to booking #${booking.bookingNumber} — the booking is unchanged.`, { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -326,7 +389,12 @@ async function payBooking(req, res, next) {
       return res.json({ booking: updated, paid: true });
     }
 
-    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/transfer/USSD." });
+    if (paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "BOOKING_PAYMENT", booking.id, booking.totalKobo);
+      return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("BKG");
     const payment = await paystack.initializeTransaction({
       email: req.user.email,
@@ -340,10 +408,43 @@ async function payBooking(req, res, next) {
   }
 }
 
-// Two-sided completion, step 1: the vendor (home cook or event planner)
-// marks their side done. This does NOT complete the booking or release any
-// escrow by itself — it just asks the customer to confirm. See
-// confirmBookingCompletion for step 2.
+// Home Cook only, first of two vendor taps: "Job Started". Before this,
+// the customer sees "Waiting for Job to Start" and can still edit/cancel;
+// after this, the customer sees "Waiting for Job to be Completed" and can
+// no longer edit/cancel. Does not touch completion/escrow at all -- that's
+// still gated on the second tap, completeBooking.
+async function startBookingJob(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
+    if (!isVendor) return res.status(403).json({ error: "Only the vendor on this booking can start the job." });
+    if (booking.type !== "HOME_COOK") return res.status(400).json({ error: "Only Home Cook bookings have a separate Job Started stage." });
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before the job can start." });
+    if (booking.vendorJobStartedAt) return res.status(409).json({ error: "You already started this job." });
+    if (booking.pendingEditSnapshot) return res.status(409).json({ error: "Accept or decline the customer's pending edit before starting the job." });
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorJobStartedAt: new Date() } });
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Job started", `Your vendor has started the job for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Vendor's "Mark Job Complete" tap. Home Cook: two-sided completion, step
+// 1 -- does NOT complete the booking or release any escrow by itself, it
+// just asks the customer to confirm (see confirmBookingCompletion for step
+// 2), and requires Job Started to have already happened. Event Planner:
+// simplified, one-sided -- there's no customer Yes/No step and no dispute
+// flow at all for EP bookings; marking complete ends the session right
+// here (escrow release is a no-op for EP since nothing is ever held for
+// it; the real effect is the 10% platform commission landing on the EP's
+// own weekly CommissionPeriod), and the customer just gets a single
+// "your booking was completed" notification with Report Issues / Rate
+// buttons on their end (see the frontend's Thank You screen) -- reporting
+// an issue after this point is a normal, non-blocking support ticket, not
+// a hold-freezing dispute, since the money has already moved.
 async function completeBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { customer: { select: { id: true } } } });
@@ -351,15 +452,34 @@ async function completeBooking(req, res, next) {
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isVendor) return res.status(403).json({ error: "Only the vendor on this booking can mark it complete." });
     if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before it can be marked complete." });
-    if (booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "You already marked this booking complete — waiting on the customer to confirm." });
+    if (booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "You already marked this booking complete." });
 
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: new Date() } });
+    if (booking.type === "HOME_COOK") {
+      if (!booking.vendorJobStartedAt) return res.status(409).json({ error: "Start the job before marking it complete." });
+      const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: new Date() } });
+      await notify(
+        req.app.get("io"),
+        booking.customerId,
+        "ORDER_UPDATE",
+        "Confirm your booking is complete",
+        `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
+        { bookingId: booking.id }
+      );
+      return res.json({ booking: updated });
+    }
+
+    // Event Planner: one-sided, ends the session immediately.
+    const now = new Date();
+    await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: now, customerConfirmedCompleteAt: now } });
+    await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Event planning booking completed by vendor" });
+    await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: now } });
     await notify(
       req.app.get("io"),
       booking.customerId,
       "ORDER_UPDATE",
-      "Confirm your booking is complete",
-      `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
+      "Your booking was completed",
+      `Your booking #${booking.bookingNumber} was completed. Thank you for using Handa!`,
       { bookingId: booking.id }
     );
     res.json({ booking: updated });
@@ -368,28 +488,24 @@ async function completeBooking(req, res, next) {
   }
 }
 
-// Two-sided completion, step 2: the customer's Yes/No response.
-// Yes -> booking COMPLETED. For Home Cook, escrow releases (10% platform
-// cut, same mechanism as Shop-For-Me's shopper/rider releases — see
-// escrow.service.js's PLATFORM_COMMISSION_RATES). For Event Planner,
-// there's no escrow to release (payment happened directly with the
-// planner, outside the app) -- releaseAllHoldsForContext safely no-ops
-// with zero holds, and instead the platform's 10% commission is added
-// onto the vendor's own weekly CommissionPeriod (commission.service.js's
-// addBookingCommission), which their dashboard already has a real "Pay
-// Now" button for.
+// Two-sided completion, step 2: the customer's Yes/No response. Home Cook
+// only -- Event Planner bookings never reach this step any more, since
+// completeBooking() ends the whole session in one call for EP (see above).
+// Yes -> booking COMPLETED, escrow releases (10% platform cut, same
+// mechanism as Shop-For-Me's shopper/rider releases — see
+// escrow.service.js's PLATFORM_COMMISSION_RATES).
 // No -> booking stays CONFIRMED, a real dispute ticket is opened
 // (context BOOKING) and every HELD hold on this booking is pulled out of
 // the auto-release sweep via escrow.disputeHold() — the vendor is notified
 // and can add their own side via POST /support/tickets/:id/respond; an
 // admin resolving that ticket is what finally releases (or doesn't) the
-// held funds. (For Event Planner this loop is a no-op since there's
-// nothing held, but the dispute ticket + notification still matter.)
+// held funds.
 async function confirmBookingCompletion(req, res, next) {
   try {
     const { completed, disputeCategory, disputeDescription } = req.body;
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (booking.type !== "HOME_COOK") return res.status(400).json({ error: "Event planning bookings don't have a separate completion confirmation step." });
     if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "This booking isn't awaiting completion confirmation." });
     if (!booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "The vendor hasn't marked this booking complete yet." });
     if (booking.customerConfirmedCompleteAt) return res.status(409).json({ error: "You already responded to this booking's completion." });
@@ -397,16 +513,10 @@ async function confirmBookingCompletion(req, res, next) {
     if (completed) {
       await prisma.booking.update({ where: { id: booking.id }, data: { customerConfirmedCompleteAt: new Date() } });
       await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking completion confirmed by customer" });
-      if (booking.type === "EVENT_PLANNING") {
-        await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
-      }
       const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: new Date() } });
       const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
       if (vendor) {
-        const completeMessage = booking.type === "EVENT_PLANNING"
-          ? `The customer confirmed booking #${booking.bookingNumber} as completed. Your 10% platform commission for it is now due on your dashboard.`
-          : `The customer confirmed booking #${booking.bookingNumber} — payment has been released.`;
-        await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Booking completed", completeMessage, { bookingId: booking.id });
+        await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Booking completed", `The customer confirmed booking #${booking.bookingNumber} — payment has been released.`, { bookingId: booking.id });
       }
       return res.json({ booking: updated });
     }
@@ -449,6 +559,7 @@ async function cancelBooking(req, res, next) {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
     if (["COMPLETED", "CANCELLED"].includes(booking.status)) return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
+    if (booking.vendorJobStartedAt) return res.status(400).json({ error: "The vendor has already started this job — it can no longer be cancelled." });
 
     // PAID: the customer paid at request time and the vendor hasn't decided
     // yet. CONFIRMED: vendor already accepted (also already paid, for Home
@@ -465,4 +576,18 @@ async function cancelBooking(req, res, next) {
   }
 }
 
-module.exports = { createBooking, listBookings, getBooking, updateBooking, acceptBooking, declineBooking, payBooking, completeBooking, confirmBookingCompletion, cancelBooking };
+module.exports = {
+  createBooking,
+  listBookings,
+  getBooking,
+  updateBooking,
+  acceptEditedBooking,
+  declineEditedBooking,
+  acceptBooking,
+  declineBooking,
+  payBooking,
+  startBookingJob,
+  completeBooking,
+  confirmBookingCompletion,
+  cancelBooking,
+};

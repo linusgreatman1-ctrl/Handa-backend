@@ -147,16 +147,15 @@ async function assertParticipant(threadId, userId) {
 async function listMessages(req, res, next) {
   try {
     await assertParticipant(req.params.id, req.user.id);
-    const messages = await prisma.chatMessage.findMany({
-      where: { threadId: req.params.id },
-      orderBy: { createdAt: "asc" },
-      take: 200,
-    });
+    const [thread, messages] = await Promise.all([
+      prisma.chatThread.findUnique({ where: { id: req.params.id } }),
+      prisma.chatMessage.findMany({ where: { threadId: req.params.id }, orderBy: { createdAt: "asc" }, take: 200 }),
+    ]);
     await prisma.chatParticipant.update({
       where: { threadId_userId: { threadId: req.params.id, userId: req.user.id } },
       data: { lastReadAt: new Date() },
     });
-    res.json({ messages });
+    res.json({ messages, thread });
   } catch (err) {
     next(err);
   }
@@ -165,6 +164,8 @@ async function listMessages(req, res, next) {
 async function sendMessage(req, res, next) {
   try {
     await assertParticipant(req.params.id, req.user.id);
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id }, select: { closedAt: true } });
+    if (thread?.closedAt) return res.status(409).json({ error: "This chat has ended." });
     const { body, attachmentUrl } = req.body;
     if ((!body || !body.trim()) && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
 

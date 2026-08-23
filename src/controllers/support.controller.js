@@ -103,6 +103,31 @@ async function uploadSecondPartyEvidence(req, res, next) {
   }
 }
 
+// The vendor's real userId for a ticket, if one exists -- prefers the
+// already-recorded secondPartyUserId (set once the vendor has actually
+// responded), but for a BOOKING-context ticket (the normal case for the
+// new booking dispute flow) resolves it straight from the booking so
+// admin's "Chat Vendor" entry point is available from the moment the
+// ticket is filed, not only after the vendor has already replied.
+async function resolveVendorUserIdForTicket(ticket) {
+  if (ticket.secondPartyUserId) return ticket.secondPartyUserId;
+  if (ticket.context === "BOOKING" && ticket.contextId) {
+    const booking = await prisma.booking.findUnique({ where: { id: ticket.contextId }, include: { vendor: { select: { userId: true } } } });
+    return booking?.vendor?.userId || null;
+  }
+  return null;
+}
+
+// The real amount currently held/disputed for a ticket's context — lets
+// the admin panel pre-fill a refund amount instead of the admin having to
+// know/type it blind.
+async function sumHeldAmountForTicket(ticket) {
+  const where = escrowHoldWhereForTicket(ticket);
+  if (!where) return 0;
+  const holds = await prisma.escrowHold.findMany({ where: { ...where, status: { in: ["HELD", "DISPUTED"] } } });
+  return holds.reduce((sum, h) => sum + h.amountKobo, 0);
+}
+
 async function listMyTickets(req, res, next) {
   try {
     const tickets = await prisma.supportTicket.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: "desc" } });
@@ -132,7 +157,10 @@ async function listAllTickets(req, res, next) {
       include: { user: { select: { name: true, phone: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ tickets });
+    const withAmounts = await Promise.all(
+      tickets.map(async (t) => ({ ...t, heldAmountKobo: t.isDispute ? await sumHeldAmountForTicket(t) : 0, vendorUserId: t.isDispute ? await resolveVendorUserIdForTicket(t) : null }))
+    );
+    res.json({ tickets: withAmounts });
   } catch (err) {
     next(err);
   }
@@ -293,4 +321,14 @@ async function respondToTicket(req, res, next) {
   }
 }
 
-module.exports = { createTicket, uploadEvidence, uploadSecondPartyEvidence, listMyTickets, getTicket, listAllTickets, updateTicketStatus, respondToTicket };
+module.exports = {
+  createTicket,
+  uploadEvidence,
+  uploadSecondPartyEvidence,
+  listMyTickets,
+  getTicket,
+  listAllTickets,
+  updateTicketStatus,
+  respondToTicket,
+  resolveVendorUserIdForTicket,
+};
