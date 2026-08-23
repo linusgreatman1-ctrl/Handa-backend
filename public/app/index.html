@@ -5445,29 +5445,52 @@ async function loadVendorChatThreads(){
     listEl.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load messages')+'</div>';
   }
 }
-function renderVendorProfile(){
-  var body=vendorBodyEl();if(!body)return;
+// Shared gradient banner card -- avatar, name, role@business, address,
+// phone, and the Bookings/Rating/Accept stat grid -- used identically on
+// both the vendor's Orders/Bookings dashboard home and their own Profile
+// screen, so the two carry the exact same size/layout banner instead of
+// the dashboard's plain single-line fullProfileHeader() next to the
+// Profile screen's full styled card.
+function vendorBannerCard(isCook){
   var u=S.user||{};
-  var nm=u.name||'Vendor Name';
-  var vt=(S.vtype||'restaurant').replace('_',' ');
-  var bizName=u.bizName||u.name||'Not set';
-  var addr=u.address||'Not set';
-  var phone=u.phone||'Not set';
-  var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct+(u.bankAccountName?' \u2022 '+u.bankAccountName:'')):'Not linked';
-  body.innerHTML='<div style="padding:52px 16px 24px;">'
-    +'<div style="background:linear-gradient(135deg,#0d2a0d,#1a3a1a);border-radius:18px;padding:20px;margin-bottom:14px;">'
+  var accent=isCook?'#9B59B6':'#2ECC71';
+  var gradA=isCook?'#2a0d2a':'#0d2a0d';
+  var gradB=isCook?'#3a1a3a':'#1a3a1a';
+  var iconRgb=isCook?'155,89,182':'46,204,113';
+  var vLabel=isCook?'Home Cook':'Event Planner';
+  return '<div style="background:linear-gradient(135deg,'+gradA+','+gradB+');border-radius:18px;padding:20px;margin-bottom:14px;">'
     +'<div style="display:flex;gap:14px;align-items:center;">'
-    +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(46,204,113,.2);border:2px solid rgba(46,204,113,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F37D;&#xFE0F;</span></div>'
-    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
-    +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">'+vt+'</div>'
-    +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
-    +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
+    +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba('+iconRgb+',.2);border:2px solid rgba('+iconRgb+',.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">'+(isCook?'👩‍🍳':'🎉')+'</span></div>'
+    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+'</div>'
+    +'<div style="font-size:12px;color:'+accent+';margin-top:2px;">'+vLabel+' @ '+(u.bizName||'Not set')+'</div>'
+    +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">📍 '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
+    +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+u.phone+'</p>':'')
     +'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;">'
     +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Bookings</div><div id="vendor-profile-bookings" style="font-weight:800;color:#fff;">—</div></div>'
     +'<div onclick="openRatingsModal(\''+u.id+'\',\'VENDOR\',\''+(u.vendorProfileId||'')+'\')" style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;cursor:pointer;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;text-decoration:underline;text-decoration-style:dotted;">'+(u.rating||'New')+'</div></div>'
     +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Accept</div><div id="vendor-profile-accept" style="font-weight:800;color:#2ECC71;">—</div></div>'
-    +'</div></div>'
+    +'</div></div>';
+}
+// Fetches the real stats and fills in whichever banner (dashboard or
+// profile) is currently on screen -- both use the same stat-cell ids
+// since vendor-body/ep-vendor-body only ever holds one screen at a time.
+function refreshVendorBannerStats(){
+  api('/vendors/me/stats').then(function(s){
+    var bEl=document.getElementById('vendor-profile-bookings');if(bEl)bEl.textContent=s.bookingsCount||0;
+    var aEl=document.getElementById('vendor-profile-accept');if(aEl)aEl.textContent=(s.acceptRate!=null?s.acceptRate+'%':'—');
+  }).catch(function(){});
+}
+function renderVendorProfile(){
+  var body=vendorBodyEl();if(!body)return;
+  var u=S.user||{};
+  var isCook=S.vtype!=='event_planner';
+  var bizName=u.bizName||u.name||'Not set';
+  var addr=u.address||'Not set';
+  var phone=u.phone||'Not set';
+  var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct+(u.bankAccountName?' \u2022 '+u.bankAccountName:'')):'Not linked';
+  body.innerHTML='<div style="padding:52px 16px 24px;">'
+    +vendorBannerCard(isCook)
     +[['Business Name',bizName],['Address',addr],['Phone',phone],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
@@ -5492,10 +5515,7 @@ function renderVendorProfile(){
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
     +'</div>';
   refreshKycSection('vendor');
-  api('/vendors/me/stats').then(function(s){
-    var bEl=document.getElementById('vendor-profile-bookings');if(bEl)bEl.textContent=s.bookingsCount||0;
-    var aEl=document.getElementById('vendor-profile-accept');if(aEl)aEl.textContent=(s.acceptRate!=null?s.acceptRate+'%':'—');
-  }).catch(function(){});
+  refreshVendorBannerStats();
 }
 
 function riderNav(tab){
@@ -7580,14 +7600,13 @@ async function renderVendorDashboard(kind){
   // nothing at all before this fix.
   var el=document.getElementById(isCook?'vendor-body':'ep-vendor-body');if(!el)return;
   var accent=isCook?'#9B59B6':'#2ECC71';
-  var icon=isCook?'🧑‍🍳':'🎊';
   var label=isCook?'Booking Requests':'Event Bookings';
-  var u=S.user||{};
-  var vLabel=isCook?'Home Cook':'Event Planner';
   var h='<div style="padding:14px 16px 80px">';
-  h+='<div style="margin-bottom:16px;">';
-  h+=fullProfileHeader({avatarUrl:u.avatarUrl,uploadFn:'uploadVendorPic()',icon:icon,name:u.name||vLabel,roleLine:vLabel+' @ '+(u.bizName||'Not set'),address:u.address,lga:u.lga,state:u.state,phone:u.phone,accentRgb:isCook?'155,89,182':'46,204,113',accentColor:accent});
-  h+='</div>';
+  // Same gradient banner card (avatar + name + role@business + address/
+  // phone + Bookings/Rating/Accept stat grid) used on the vendor's own
+  // Profile screen, so the two screens carry an identical-size header
+  // instead of this one being a small plain single-line strip.
+  h+=vendorBannerCard(isCook);
   h+='<div style="background:linear-gradient(135deg,'+accent+'26,rgba(59,159,232,.08));border:1.5px solid '+accent+'4d;border-radius:16px;padding:16px;margin-bottom:16px">';
   h+='<p style="color:'+accent+';font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Weekly Commission (10%)</p>';
   h+='<div id="vendor-commission-row" style="display:flex;justify-content:space-between;align-items:center"><div><p style="font-size:22px;font-weight:900;color:#F2EDE8;margin:0" id="vendor-commission-amt">₦…</p><p style="color:#9A9390;font-size:11px;margin:0">Due every Sunday</p></div>';
@@ -7607,6 +7626,7 @@ async function renderVendorDashboard(kind){
   h+='<div id="vendor-bookings-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>';
   h+='</div>';el.innerHTML=h;
   if(!isCook) loadOpenEventRequests();
+  refreshVendorBannerStats();
 
   try{
     var period=await api('/vendors/me/commission-period');
@@ -7618,7 +7638,7 @@ async function renderVendorDashboard(kind){
     var res=await api('/bookings?as=vendor');
     var listEl=document.getElementById('vendor-bookings-list');
     if(!listEl)return;
-    if(!res.bookings.length){listEl.innerHTML='<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:40px;margin:0 0 8px">'+icon+'</p><p>No bookings yet</p></div>';return;}
+    if(!res.bookings.length){listEl.innerHTML='<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:40px;margin:0 0 8px">'+(isCook?'🧑‍🍳':'🎊')+'</p><p>No bookings yet</p></div>';return;}
     listEl.innerHTML=res.bookings.map(function(b){
       var statusColors={REQUESTED:'#9A9390',PAID:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#9A9390'};
       var sc=statusColors[b.status]||'#9A9390';
