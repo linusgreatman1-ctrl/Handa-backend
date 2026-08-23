@@ -1815,9 +1815,13 @@ async function loadChatThreadDetail(id) {
     const composer = document.getElementById('chat-thread-composer');
     const closed = data.thread && data.thread.closedAt;
     if (closeBtn) closeBtn.style.display = closed ? 'none' : 'inline-block';
-    if (composer) composer.outerHTML = closed
-      ? '<div id="chat-thread-composer" style="padding:10px 12px;border-radius:10px;background:#242424;color:#9A9390;font-size:13px;">This chat has ended.</div>'
-      : composer.outerHTML;
+    // Only ever swap the composer to the "ended" placeholder, and only
+    // once -- reassigning outerHTML on every refresh tick (even to itself)
+    // would destroy and recreate the input every 8s, wiping out whatever
+    // the admin was mid-typing and stealing focus.
+    if (composer && closed && !composer.dataset.ended) {
+      composer.outerHTML = '<div id="chat-thread-composer" data-ended="1" style="padding:10px 12px;border-radius:10px;background:#242424;color:#9A9390;font-size:13px;">This chat has ended.</div>';
+    }
   } catch (e) {
     msgsEl.textContent = e.message;
   }

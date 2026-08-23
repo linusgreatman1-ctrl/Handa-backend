@@ -8362,6 +8362,7 @@ async function cookBkConfirmBooking(){
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
     _cb.bookingNumber=res.booking.bookingNumber;
+    _cb.total=Math.round(res.booking.totalKobo/100);
     // Payment now happens immediately when the request is sent, before the
     // vendor decides -- not after acceptance. The confirmation screen only
     // shows once payment actually succeeds; if the customer backs out of
