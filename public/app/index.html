@@ -8630,14 +8630,9 @@ async function renderEHistory(){
 function renderEHistoryItems(orders){
   if(!orders.length)return '<div style="text-align:center;padding:40px;color:#9A9390"><p>No orders in this category</p></div>';
   return orders.map(function(o){
-    // Home Cook only -- Event Planner bookings also start at REQUESTED but
-    // never take payment through the app at all. Payment now happens right
-    // after the request is sent (see cookBkConfirmBooking), so this is
-    // really a retry path for someone who backed out of that first prompt,
-    // not the primary way to pay.
-    var payBtn = (o.bookingId && o.status==='REQUESTED' && o.type==='Home Cook')
-      ? '<button onclick="event.stopPropagation();payForBooking(\''+o.bookingId+'\','+o.totalKobo+')" style="margin-top:6px;padding:6px 12px;border-radius:8px;border:none;background:#E8392E;color:#fff;font-weight:700;font-size:11px;cursor:pointer;">Pay Now</button>'
-      : '';
+    // No "Pay Now" here -- payment happens immediately when the request is
+    // sent (see cookBkConfirmBooking), before this list is ever reached, so
+    // there's nothing left to pay by the time a booking shows up in History.
     var detailClick=o.bookingId?"openCustomerHistoryDetail('booking','"+o.bookingId+"')":(o.sessionId?"openCustomerHistoryDetail('session','"+o.sessionId+"')":'');
     return '<div onclick="'+detailClick+'" style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;'+(detailClick?'cursor:pointer;':'')+'">'
       +'<div style="width:44px;height:44px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+o.icon+'</div>'
@@ -8645,7 +8640,7 @@ function renderEHistoryItems(orders){
       +'<div style="font-size:11px;color:#9A9390;margin-top:2px">'+o.sub+'</div>'
       +'<div style="font-size:10px;color:#555;margin-top:2px">'+o.date+'</div></div>'
       +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#F2EDE8;font-size:13px">₦'+Number(o.amount).toLocaleString()+'</div>'
-      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px">'+o.status+'</div>'+payBtn+'</div></div>';
+      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px">'+o.status+'</div></div></div>';
   }).join('');
 }
 // Opens a Wallet-vs-Card/Transfer/USSD picker for an ACCEPTED booking,
