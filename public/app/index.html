@@ -7478,6 +7478,15 @@ async function openCustomerHistoryDetail(kind,id){
     var needsCompletionResponse=!isTerminal&&b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
     var awaitingVendor=!isTerminal&&b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     var isEP=b.type==='EVENT_PLANNING';
+    // Two genuinely different waiting states, easy to conflate: the vendor
+    // hasn't even accepted yet (Event Planner: still REQUESTED, no payment
+    // step at all; Home Cook: PAID -- REQUESTED there just means "not paid
+    // yet", a brief in-flight window, not a real wait) vs. CONFIRMED (above)
+    // meaning they already accepted and it's the JOB itself not done yet.
+    // Both need their own message -- previously only CONFIRMED had one, so
+    // a Home Cook booking sitting at PAID (or an EP one still at REQUESTED)
+    // showed nothing at all while waiting on the vendor's decision.
+    var awaitingVendorDecision=!isTerminal&&((isEP&&b.status==='REQUESTED')||(!isEP&&b.status==='PAID'));
     var confirmCopy=isEP?'Confirm so it can be recorded, or let us know if it wasn\'t actually completed.':'Confirm so payment can be released, or let us know if it wasn\'t actually completed.';
     var terminalBanner='';
     if(hasOpenDispute){
@@ -7502,6 +7511,9 @@ async function openCustomerHistoryDetail(kind,id){
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
       +terminalBanner
+      +(awaitingVendorDecision?(
+        '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Vendor To Accept Your Booking</div>'
+      ):'')
       +(awaitingVendor?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Job To Be Completed</div>'
       ):'')
