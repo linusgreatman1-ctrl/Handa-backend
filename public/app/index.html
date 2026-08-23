@@ -1107,9 +1107,9 @@ async function openNotificationsModal(){
       // attribute, which the browser terminates at the first bare '"',
       // silently breaking every notification click (same bug class fixed
       // in the admin panel and avoided in the booking-detail buttons).
-      return '<div onclick="openNotification(\''+n.id+'\')" style="background:'+(n.read?'#1C1C1C':'#242424')+';border:1.5px solid '+(n.read?'#2A2850':'rgba(59,159,232,.35)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;">'
+      return '<div id="notif-row-'+n.id+'" onclick="openNotification(\''+n.id+'\')" style="background:'+(n.read?'#1C1C1C':'#242424')+';border:1.5px solid '+(n.read?'#2A2850':'rgba(59,159,232,.35)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;transition:background .25s,border-color .25s;">'
         +'<span style="font-size:18px;flex-shrink:0;">'+_notifIcon(n.type)+'</span>'
-        +'<div style="flex:1;min-width:0;"><div class="notif-row-title" style="font-weight:700;font-size:13px;color:#F2EDE8;">'+n.title+(n.read?'':' <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3B9FE8;margin-left:4px;"></span>')+'</div>'
+        +'<div style="flex:1;min-width:0;"><div class="notif-row-title" style="font-weight:700;font-size:13px;color:#F2EDE8;">'+n.title+(n.read?'':' <span class="notif-unread-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3B9FE8;margin-left:4px;"></span>')+'</div>'
         +'<div class="notif-row-body" style="font-size:12px;color:#9A9390;margin-top:2px;">'+n.body+'</div>'
         +'<div style="font-size:10px;color:#666;margin-top:4px;">'+_notifTimeAgo(n.createdAt)+'</div></div>'
         +'</div>';
@@ -1142,25 +1142,45 @@ async function openNotification(id){
     var res=await api('/notifications');
     var n=(res.notifications||[]).find(function(x){return x.id===id;});
     if(!n)return;
-    if(!n.read){ await api('/notifications/'+id+'/read',{method:'PATCH'}); setNotifBadge(Math.max(0,_notifUnread-1)); }
-    closeNotificationsModal();
+    if(!n.read){
+      await api('/notifications/'+id+'/read',{method:'PATCH'});
+      setNotifBadge(Math.max(0,_notifUnread-1));
+      // Flip this row to its "read" look in place, right where the user is
+      // already looking, instead of it only taking effect the next time the
+      // modal happens to be reopened -- the visible confirmation IS the
+      // color change, so it has to happen before (or instead of) any
+      // navigation below closes the modal out from under it.
+      var row=document.getElementById('notif-row-'+id);
+      if(row){
+        row.style.background='#1C1C1C';
+        row.style.borderColor='#2A2850';
+        var dot=row.querySelector('.notif-unread-dot');
+        if(dot)dot.remove();
+      }
+    }
     var d=n.data||{};
     var isVendor=S.role==='vendor';
     var isCustomer=!isVendor&&S.role!=='rider'&&S.role!=='shopper';
+    // Only close the notifications list when there's somewhere real to jump
+    // to -- a plain informational notification (no deep-link data) now just
+    // sits in the list showing its already-read color, matching "click it,
+    // read it, it changes color" instead of vanishing the instant it's tapped.
     if(d.bookingId){
-      if(isVendor&&typeof vendorNav==='function'&&typeof openVendorBookingDetail==='function'){vendorNav('orders');openVendorBookingDetail(d.bookingId);}
-      else if(isCustomer&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('booking',d.bookingId);}
+      if(isVendor&&typeof vendorNav==='function'&&typeof openVendorBookingDetail==='function'){closeNotificationsModal();vendorNav('orders');openVendorBookingDetail(d.bookingId);}
+      else if(isCustomer&&typeof openCustomerHistoryDetail==='function'){closeNotificationsModal();eGo('history');openCustomerHistoryDetail('booking',d.bookingId);}
       // rider/shopper: bookings aren't their concern -- stay put, already marked read.
     }else if(d.eventRequestId&&typeof openEventRequestDetailModal==='function'){
-      openEventRequestDetailModal(d.eventRequestId); // a floating modal, not a screen swap -- safe for any role.
+      openEventRequestDetailModal(d.eventRequestId); // a floating modal, not a screen swap -- safe for any role, and layers on top so the list stays intact underneath.
     }else if(d.shopSessionId){
-      if(isCustomer&&typeof openCustomerHistoryDetail==='function'){eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
-      else if(S.role==='shopper'&&typeof eGo==='function'){eGo('shopper');}
-      else if(S.role==='rider'&&typeof eGo==='function'){eGo('rider');}
+      if(isCustomer&&typeof openCustomerHistoryDetail==='function'){closeNotificationsModal();eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
+      else if(S.role==='shopper'&&typeof eGo==='function'){closeNotificationsModal();eGo('shopper');}
+      else if(S.role==='rider'&&typeof eGo==='function'){closeNotificationsModal();eGo('rider');}
     }else if(d.threadId&&typeof openChatByThreadId==='function'){
+      closeNotificationsModal();
       openChatByThreadId(d.threadId,'Handa Support');
     }
-    // No matching data: nothing to deep-link to -- leave the current screen alone.
+    // No matching data: nothing to deep-link to -- leave the modal open,
+    // showing the row's new read color.
   }catch(err){
     showToast&&showToast(err.message||'Could not open notification','warning');
   }
