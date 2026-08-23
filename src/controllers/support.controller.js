@@ -1,7 +1,9 @@
 const prisma = require("../config/db");
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
+const commissionSvc = require("../services/commission.service");
 const { logAdminAction } = require("../services/auditLog.service");
+const { notify } = require("../services/notifications.service");
 
 async function createTicket(req, res, next) {
   try {
@@ -194,6 +196,19 @@ async function updateTicketStatus(req, res, next) {
     if (status === "RESOLVED" && existing.isDispute) {
       const escrowCtx = escrowContextForTicket(existing);
       if (escrowCtx) {
+        // Booking-context disputes need the real booking (vendor/type/total/
+        // customer) to notify both sides and, for Event Planner specifically,
+        // to charge the 10% commission that would otherwise never happen --
+        // EP has no escrow hold to release, so the generic
+        // releaseAllHoldsForContext/resolveDisputedHoldsForContext calls
+        // below are a safe no-op for it and nothing else here used to charge
+        // its commission on the dispute path (only the non-disputed
+        // confirmBookingCompletion happy path did).
+        const booking =
+          escrowCtx.contextType === "BOOKING"
+            ? await prisma.booking.findUnique({ where: { id: escrowCtx.bookingId }, include: { vendor: { select: { id: true, userId: true } } } })
+            : null;
+
         if (!data.refundAmountKobo) {
           // No refund issued — the payee's side (vendor/rider/shopper) won.
           // Release BOTH any hold still genuinely HELD (a ticket resolved
@@ -203,8 +218,19 @@ async function updateTicketStatus(req, res, next) {
           await escrow.resolveDisputedHoldsForContext(escrowCtx, "RELEASE", opts);
           if (escrowCtx.contextType === "BOOKING") {
             await prisma.booking.update({ where: { id: escrowCtx.bookingId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => {});
+            if (booking && booking.type === "EVENT_PLANNING") {
+              await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
+            }
           } else {
             await prisma.shopSession.update({ where: { id: escrowCtx.shopSessionId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => {});
+          }
+          if (booking) {
+            const vendorMsg =
+              booking.type === "EVENT_PLANNING"
+                ? `The dispute on booking #${booking.bookingNumber} was resolved in your favor -- your 10% platform commission for it is now due on your dashboard.`
+                : `The dispute on booking #${booking.bookingNumber} was resolved in your favor -- payment has been released to you.`;
+            await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", vendorMsg, { bookingId: booking.id }).catch(() => {});
+            await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Dispute resolved", `The dispute on booking #${booking.bookingNumber} was resolved in the vendor's favor.`, { bookingId: booking.id }).catch(() => {});
           }
         } else {
           // A refund was already paid out above as a real ADJUSTMENT wallet
@@ -215,6 +241,13 @@ async function updateTicketStatus(req, res, next) {
             description: `Dispute resolved in the filer's favor — ${resolution || "admin decision"}`,
             skipCredit: true,
           });
+          if (escrowCtx.contextType === "BOOKING") {
+            await prisma.booking.update({ where: { id: escrowCtx.bookingId }, data: { status: "CANCELLED", cancelledAt: new Date() } }).catch(() => {});
+          }
+          if (booking) {
+            await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Dispute resolved", `The dispute on booking #${booking.bookingNumber} was resolved in your favor -- ₦${Math.round(Number(data.refundAmountKobo) / 100).toLocaleString()} was refunded to your wallet.`, { bookingId: booking.id }).catch(() => {});
+            await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", `The dispute on booking #${booking.bookingNumber} was resolved in the customer's favor.`, { bookingId: booking.id }).catch(() => {});
+          }
         }
       }
     }
@@ -253,6 +286,7 @@ async function respondToTicket(req, res, next) {
       where: { id: ticket.id },
       data: { secondPartyResponse: response.trim(), secondPartyRespondedAt: new Date(), secondPartyUserId: req.user.id },
     });
+    await notify(req.app.get("io"), ticket.userId, "ORDER_UPDATE", "Response added to your dispute", "The other party added their side of the story. An admin will review both and resolve it.", { ticketId: ticket.id }).catch(() => {});
     res.json({ ticket: updated });
   } catch (err) {
     next(err);

@@ -7233,6 +7233,32 @@ async function openVendorBookingDetail(id){
       ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with you (not via the app)':(b.paymentMethod||'—')],
     ];
     var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+    var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
+    var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
+    var vendorStatusBlock='';
+    if(vendorHasOpenDispute){
+      vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Customer Disputed This Booking</div>'
+        +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">'+dt.category+'</div>'
+        +'<div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+(dt.description||'')+'</div>'
+        +(dt.secondPartyResponse
+          ? '<div style="background:#1C1C1C;border-radius:10px;padding:10px;font-size:12px;color:#9A9390;"><b style="color:#F2EDE8;">Your response:</b> '+dt.secondPartyResponse+'</div>'
+          : '<button onclick="openVendorDisputeResponseModal(\''+dt.id+'\',\''+b.id+'\')" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid rgba(245,166,35,.4);background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Add Your Side</button>')
+        +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Dispute Is Pending Resolve From Handa.</div>'
+        +'</div>';
+    }else if(b.status==='COMPLETED'){
+      vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
+        +'<div style="font-weight:800;font-size:14px;color:#2ECC71;">&#x2705; This Session Is Completed</div>'
+        +'</div>';
+    }else if(b.status==='CANCELLED'&&vendorDisputeResolved){
+      vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
+        +'<div style="font-weight:800;font-size:14px;color:#F5A623;">Dispute Resolved -- Refunded To The Customer</div>'
+        +'</div>';
+    }else if(b.status==='CONFIRMED'){
+      vendorStatusBlock=b.vendorConfirmedCompleteAt
+        ? '<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>'
+        : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>';
+    }
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +itemsHtml
@@ -7244,21 +7270,7 @@ async function openVendorBookingDetail(id){
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(b.phone||c.phone||'—')+'</span></div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12px;color:#9A9390;">Address</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;max-width:60%;">'+(c.address||'—')+(c.state?', '+c.state:'')+'</span></div>'
       +'</div>'
-      +(dt?(
-        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
-        +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Customer Disputed This Booking</div>'
-        +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">'+dt.category+'</div>'
-        +'<div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+(dt.description||'')+'</div>'
-        +(dt.secondPartyResponse
-          ? '<div style="background:#1C1C1C;border-radius:10px;padding:10px;font-size:12px;color:#9A9390;"><b style="color:#F2EDE8;">Your response:</b> '+dt.secondPartyResponse+'</div>'
-          : '<button onclick="openVendorDisputeResponseModal(\''+dt.id+'\',\''+b.id+'\')" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid rgba(245,166,35,.4);background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Add Your Side</button>')
-        +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Payment stays held until an admin resolves this.</div>'
-        +'</div>'
-      ):(b.status==='CONFIRMED'?(
-        b.vendorConfirmedCompleteAt
-          ? '<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>'
-          : '<button onclick="vendorMarkBookingComplete(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>'
-      ):''));
+      +vendorStatusBlock;
     showBottomSheet('Booking Details',content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
@@ -7434,16 +7446,51 @@ async function openCustomerHistoryDetail(kind,id){
     var _jobNotPassed=!_jobInstant||_jobInstant.getTime()>Date.now();
     // Edit and Cancel share the exact same window: only while the booking is
     // still pre-completion AND the scheduled job time hasn't passed yet.
-    var editable=['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
-    var cancellable=['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
-    var needsCompletionResponse=b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
-    var awaitingVendor=b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
+    // Once a customer disputes or confirms a job, that response is final --
+    // reopening the booking from History used to just show the exact same
+    // Yes/No prompt again (or nothing at all for a dispute), with no memory
+    // that they'd already responded. These three are real terminal states:
+    // an open dispute stays "pending resolve" until an admin closes it, a
+    // completed job stays completed, and a dispute resolved in the
+    // customer's favor (refunded) is also done. All three: no more
+    // Chat/Call/WhatsApp (nothing left to discuss through those), no
+    // Edit/Cancel, no Yes/No -- just the facts, with the vendor's phone
+    // number in plain text since the Call button is gone.
+    var dt=res.disputeTicket;
+    var hasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
+    var disputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
+    var isCompleted=b.status==='COMPLETED';
+    var isCancelledFromDispute=b.status==='CANCELLED'&&disputeResolved;
+    var isTerminal=hasOpenDispute||isCompleted||isCancelledFromDispute;
+    var editable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
+    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
+    var needsCompletionResponse=!isTerminal&&b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
+    var awaitingVendor=!isTerminal&&b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     var isEP=b.type==='EVENT_PLANNING';
     var confirmCopy=isEP?'Confirm so it can be recorded, or let us know if it wasn\'t actually completed.':'Confirm so payment can be released, or let us know if it wasn\'t actually completed.';
+    var terminalBanner='';
+    if(hasOpenDispute){
+      terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Dispute Is Pending Resolve From Handa</div>'
+        +'<div style="font-size:12px;color:#9A9390;">An admin is reviewing this. You\'ll be notified once it\'s resolved.</div>'
+        +'<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:10px;border-top:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
+        +'</div>';
+    }else if(isCompleted){
+      terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#2ECC71;margin-bottom:6px;">&#x2705; This Session Is Completed</div>'
+        +'<div style="display:flex;justify-content:space-between;padding-top:4px;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
+        +'</div>';
+    }else if(isCancelledFromDispute){
+      terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#F5A623;margin-bottom:6px;">Dispute Resolved -- Refunded To Your Wallet</div>'
+        +'<div style="display:flex;justify-content:space-between;padding-top:4px;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
+        +'</div>';
+    }
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
+      +terminalBanner
       +(awaitingVendor?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Job To Be Completed</div>'
       ):'')
@@ -7456,11 +7503,13 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes - Complete</button>'
         +'</div></div>'
       ):'')
-      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'
-        +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
-        +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
-        +'<button onclick="openBookingWhatsApp()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>WhatsApp</button>'
-      +'</div>'
+      +(isTerminal?'':(
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'
+          +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
+          +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
+          +'<button onclick="openBookingWhatsApp()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>WhatsApp</button>'
+        +'</div>'
+      ))
       +((editable||cancellable)?(
         '<div style="display:flex;gap:10px;margin-top:10px;">'
         +(editable?'<button onclick=\'openEditBookingModal('+JSON.stringify(b)+')\' style="flex:1;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
