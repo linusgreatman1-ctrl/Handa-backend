@@ -7462,6 +7462,11 @@ async function openCustomerHistoryDetail(kind,id){
     var isCompleted=b.status==='COMPLETED';
     var isCancelledFromDispute=b.status==='CANCELLED'&&disputeResolved;
     var isTerminal=hasOpenDispute||isCompleted||isCancelledFromDispute;
+    // Chat/Call/WhatsApp are only removed once the job is actually
+    // completed -- an open dispute or a dispute refunded back to the
+    // customer can still reasonably need a conversation with the vendor,
+    // it's only "done, nothing left to discuss" once truly completed.
+    var hideContactButtons=isCompleted;
     var editable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
     var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed;
     var needsCompletionResponse=!isTerminal&&b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
@@ -7503,7 +7508,7 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="customerConfirmBookingComplete(\''+b.id+'\',true,'+isEP+')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Yes - Complete</button>'
         +'</div></div>'
       ):'')
-      +(isTerminal?'':(
+      +(hideContactButtons?'':(
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'
           +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
           +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
