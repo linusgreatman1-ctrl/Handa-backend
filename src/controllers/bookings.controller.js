@@ -473,24 +473,27 @@ async function completeBooking(req, res, next) {
     }
 
     // Event Planner: one-sided, ends the session immediately.
-    const now = new Date();
-    await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: now, customerConfirmedCompleteAt: now } });
-    await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Event planning booking completed by vendor" });
-    await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: now } });
-    await notify(
-      req.app.get("io"),
-      booking.customerId,
-      "ORDER_UPDATE",
-      "This Booking is completed",
-      `Booking #${booking.bookingNumber} is complete. Thank you for using Handa!`,
-      { bookingId: booking.id }
-    );
-    closeSupportThreadForContext(booking.id);
+    const updated = await completeEventPlanningBooking(booking, req.app.get("io"), "Event planning booking completed by vendor");
     res.json({ booking: updated });
   } catch (err) {
     next(err);
   }
+}
+
+// Shared by the real vendor-triggered completeBooking above AND the
+// 24h-past-event auto-complete sweep (bookingReminders.service.js) -- same
+// escrow release, same 10% commission, same customer notification either
+// way, so an EP vendor who simply never taps Mark Job Complete doesn't
+// leave the booking (and their own commission) stuck open forever.
+async function completeEventPlanningBooking(booking, io, escrowDescription) {
+  const now = new Date();
+  await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: now, customerConfirmedCompleteAt: now } });
+  await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: escrowDescription });
+  await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
+  const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: now } });
+  await notify(io, booking.customerId, "ORDER_UPDATE", "This Booking is completed", `Booking #${booking.bookingNumber} is complete. Thank you for using Handa!`, { bookingId: booking.id });
+  closeSupportThreadForContext(booking.id);
+  return updated;
 }
 
 // Two-sided completion, step 2: the customer's Yes/No response. Home Cook
@@ -614,6 +617,7 @@ module.exports = {
   payBooking,
   startBookingJob,
   completeBooking,
+  completeEventPlanningBooking,
   confirmBookingCompletion,
   cancelBooking,
 };

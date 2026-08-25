@@ -1480,6 +1480,12 @@ function openPostEventRequestModal(){
     + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:440px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
     + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">📢 Post an Event Request</div>'
     + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">Qualified event planners will see this and send you proposals to compare.</div>'
+    // Pre-filled from the account's own name/phone (editable, for whenever
+    // someone is posting on behalf of another person) -- _arField only
+    // sets a placeholder, not a real value, so these two are built
+    // directly to actually carry the pre-filled text.
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Your Name</label><input class="if" id="er-poster-name" value="'+((S.user&&S.user.name)||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Your Phone</label><input class="if" id="er-poster-phone" type="tel" value="'+((S.user&&S.user.phone)||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
     + _arSelect('Event Type','er-type','<option>Wedding</option><option>Birthday</option><option>Corporate Event</option><option>Conference</option><option>Party</option><option>Naming Ceremony</option><option>Other</option>')
     + _arField('Event Date','er-date','','date')
     + _arField('Venue / Location','er-venue','e.g. Eko Hotel, Lagos','')
@@ -1500,6 +1506,8 @@ function closeEventRequestModal(){
   var el=document.getElementById('event-request-modal'); if(el) el.remove();
 }
 async function submitEventRequest(){
+  var posterName=(document.getElementById('er-poster-name')||{}).value||'';
+  var posterPhone=(document.getElementById('er-poster-phone')||{}).value||'';
   var eventType=(document.getElementById('er-type')||{}).value||'';
   var eventDate=(document.getElementById('er-date')||{}).value||'';
   var venue=(document.getElementById('er-venue')||{}).value||'';
@@ -1511,6 +1519,7 @@ async function submitEventRequest(){
   if(!venue.trim()){showToast&&showToast('Please enter a venue','warning');return;}
   try{
     await api('/event-requests',{method:'POST',body:JSON.stringify({
+      posterName:posterName.trim()||undefined, posterPhone:posterPhone.trim()||undefined,
       eventType:eventType, eventDate:eventDate, venue:venue.trim(),
       guestCount: guests?parseInt(guests):null, budgetKobo: budget?Math.round(parseFloat(budget)*100):null,
       servicesRequested: services, notes: notes.trim()||null,
@@ -1581,7 +1590,12 @@ async function openEventRequestDetailModal(id){
         + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Includes: '+p.servicesIncluded.join(', ')+'</div>':'')
         + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
         + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">"'+p.notes+'"</div>':'')
-        + (canAccept?'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept This Proposal</button>':'')
+        + (canAccept?(
+          '<div style="display:flex;gap:8px;margin-top:8px;">'
+          +'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
+          +'<button onclick="declineEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;">✕ Decline</button>'
+          +'</div>'
+        ):'')
         + '</div>';
     }).join('');
   }catch(err){
@@ -1603,27 +1617,77 @@ async function acceptEventProposal(requestId, proposalId){
     showToast&&showToast(err.message||'Could not accept proposal','warning');
   }
 }
-
-async function openSubmitProposalModal(requestId){
-  var svcOpts = ['Decoration','Catering','Photography','Planning','Music/DJ','Venue'];
-  var html = '<div id="submit-proposal-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
-    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:420px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
-    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:8px;">Submit a Proposal</div>'
-    + _arField('Your Price (₦)','sp-price','e.g. 1800000','number')
-    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Included</label>'
-    + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="sp-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
-    + '</div>'
-    + _arField('Timeline','sp-timeline','e.g. Ready within 2 weeks','')
-    + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes to Customer</label><textarea id="sp-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Why choose you"></textarea>'
-    + '<div style="display:flex;gap:10px;margin-top:18px;">'
-    + '<button onclick="closeSubmitProposalModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;">Cancel</button>'
-    + '<button onclick="submitProposalForRequest(\''+requestId+'\')" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:700;cursor:pointer;">Submit</button>'
-    + '</div></div></div>';
-  var existing=document.getElementById('submit-proposal-modal'); if(existing) existing.remove();
-  document.body.insertAdjacentHTML('beforeend', html);
+// Declines just this ONE proposal -- the request stays open and every
+// other proposal is untouched, unlike acceptEventProposal which closes
+// the whole thing. Re-opens the same detail view so the customer keeps
+// comparing whatever's left.
+async function declineEventProposal(requestId, proposalId){
+  if(!confirm('Decline this proposal?')) return;
+  try{
+    await api('/event-requests/'+requestId+'/proposals/'+proposalId+'/decline',{method:'POST'});
+    showToast&&showToast('Proposal declined','success');
+    openEventRequestDetailModal(requestId);
+  }catch(err){
+    showToast&&showToast(err.message||'Could not decline proposal','warning');
+  }
 }
-function closeSubmitProposalModal(){
-  var el=document.getElementById('submit-proposal-modal'); if(el) el.remove();
+
+// Replaces the old bare "Submit Proposal" form-only modal -- the EP now
+// sees the full event details FIRST (what they're actually proposing
+// against), with the proposal form (same fields as before, unchanged)
+// embedded right below it, matching "understand the event details should
+// be where the submit a proposal form should be." Once a proposal already
+// exists, the SAME entry point instead shows those details alongside the
+// EP's own submitted proposal and a real waiting-for-feedback state,
+// instead of just an inline status pill on the list card.
+async function openEventRequestForVendor(requestId){
+  showProcedureModal('<div style="padding:0 0 20px;" id="erv-body"><div style="text-align:center;padding:30px;color:#9A9390;">Loading…</div></div>');
+  try{
+    var res=await api('/event-requests/'+requestId);
+    var r=res.request;
+    var mine=(r.proposals||[])[0];
+    var header='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Event Request</div></div>';
+    var details='<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:14px;margin-bottom:16px;">'
+      +'<b style="color:#F2EDE8;font-size:15px;">'+r.eventType+'</b>'
+      +'<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.7;">📍 '+r.venue+'<br>📅 '+new Date(r.eventDate).toLocaleDateString()
+      +(r.guestCount?'<br>👥 '+r.guestCount+' guests':'')
+      +(r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
+      +'</div>'
+      +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
+      +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">"'+r.notes+'"</div>':'')
+      +'<div style="border-top:1px solid #2A2850;margin-top:10px;padding-top:10px;font-size:12px;color:#9A9390;">Posted by <span style="color:#F2EDE8;font-weight:700;">'+(r.posterName||(r.customer&&r.customer.name)||'Customer')+'</span>'+((r.posterPhone||(r.customer&&r.customer.phone))?' • '+(r.posterPhone||r.customer.phone):'')+'</div>'
+      +'</div>';
+    var body=document.getElementById('erv-body');
+    if(!body)return;
+    if(mine){
+      var stateLabels={PENDING:'⏳ Waiting for the customer\'s feedback',ACCEPTED:'✓ Proposal Accepted — you got the booking!',DECLINED:'Proposal Declined',WITHDRAWN:'Withdrawn'};
+      var stateColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
+      var sc=stateColors[mine.status]||'#9A9390';
+      body.innerHTML=header+details
+        +'<div style="background:#242424;border:1.5px solid #2A2850;border-radius:13px;padding:14px;">'
+        +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:8px;">Your Proposal</div>'
+        +'<div style="font-weight:900;font-size:18px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(mine.priceKobo/100)).toLocaleString()+'</div>'
+        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Includes: '+mine.servicesIncluded.join(', ')+'</div>':'')
+        +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
+        +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">"'+mine.notes+'"</div>':'')
+        +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
+        +'</div>';
+    }else{
+      var svcOpts = ['Decoration','Catering','Photography','Planning','Music/DJ','Venue'];
+      body.innerHTML=header+details
+        +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:8px;">Submit a Proposal</div>'
+        + _arField('Your Price (₦)','sp-price','e.g. 1800000','number')
+        + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Included</label>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="sp-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
+        + '</div>'
+        + _arField('Timeline','sp-timeline','e.g. Ready within 2 weeks','')
+        + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes to Customer</label><textarea id="sp-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Why choose you"></textarea>'
+        + '<button onclick="submitProposalForRequest(\''+r.id+'\')" style="width:100%;margin-top:16px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Submit Proposal</button>';
+    }
+  }catch(err){
+    var body2=document.getElementById('erv-body');
+    if(body2)body2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load request')+'</div>';
+  }
 }
 async function submitProposalForRequest(requestId){
   var price=(document.getElementById('sp-price')||{}).value||'';
@@ -1636,7 +1700,7 @@ async function submitProposalForRequest(requestId){
       priceKobo: Math.round(parseFloat(price)*100), servicesIncluded: services,
       timeline: timeline.trim()||null, notes: notes.trim()||null,
     })});
-    closeSubmitProposalModal();
+    closeProcedureModal&&closeProcedureModal();
     showToast&&showToast('Proposal submitted!','success');
     if(typeof loadOpenEventRequests==='function') loadOpenEventRequests();
   }catch(err){
@@ -5457,12 +5521,12 @@ async function loadOpenEventRequests(){
         var mine=r.proposals&&r.proposals[0];
         var actionHtml;
         if(!mine){
-          actionHtml='<button onclick="openSubmitProposalModal(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Submit Proposal</button>';
+          actionHtml='<button onclick="openEventRequestForVendor(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Open Event Request</button>';
         }else{
           var stateColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
           var stateLabels={PENDING:'✓ Proposal Submitted',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
           var sc=stateColors[mine.status]||'#9A9390';
-          actionHtml='<div style="width:100%;padding:9px;border-radius:9px;border:1.5px solid '+sc+';background:'+sc+'1a;color:'+sc+';font-weight:700;font-size:12px;text-align:center;">'+(stateLabels[mine.status]||mine.status)+'</div>';
+          actionHtml='<button onclick="openEventRequestForVendor(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:1.5px solid '+sc+';background:'+sc+'1a;color:'+sc+';font-weight:700;font-size:12px;text-align:center;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(stateLabels[mine.status]||mine.status)+'</button>';
         }
         return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;">'
           + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="color:#9A9390;font-size:11px;">'+(r.customer?r.customer.name:'Customer')+'</span></div>'

@@ -12,13 +12,19 @@ const { generateReference } = require("../utils/reference");
 
 async function createEventRequest(req, res, next) {
   try {
-    const { eventType, eventDate, venue, guestCount, budgetKobo, servicesRequested, notes } = req.body;
+    const { eventType, eventDate, venue, guestCount, budgetKobo, servicesRequested, notes, posterName, posterPhone } = req.body;
     if (!eventType || !eventDate || !venue) {
       return res.status(400).json({ error: "eventType, eventDate, and venue are required." });
     }
+    // Explicit poster name/phone on the request itself, distinct from the
+    // account's own User fields -- defaults to the account's real
+    // name/phone when the customer leaves them blank (the common case),
+    // but stays editable for someone posting on behalf of another person.
     const request = await prisma.eventRequest.create({
       data: {
         customerId: req.user.id,
+        posterName: posterName || req.user.name || null,
+        posterPhone: posterPhone || req.user.phone || null,
         eventType,
         eventDate: new Date(eventDate),
         venue,
@@ -210,6 +216,40 @@ async function acceptProposal(req, res, next) {
   }
 }
 
+// Declines exactly ONE proposal -- unlike acceptProposal, which closes the
+// whole request and auto-declines every other one. This only ever touches
+// the single proposal the customer picked, leaving the request OPEN and
+// every other proposal untouched, so the customer can keep comparing and
+// decline/accept others independently.
+async function declineProposal(req, res, next) {
+  try {
+    const request = await prisma.eventRequest.findUnique({ where: { id: req.params.id } });
+    if (!request) return res.status(404).json({ error: "Event request not found." });
+    if (request.customerId !== req.user.id) return res.status(403).json({ error: "You do not own this event request." });
+
+    const proposal = await prisma.eventProposal.findUnique({ where: { id: req.params.proposalId } });
+    if (!proposal || proposal.eventRequestId !== request.id) return res.status(404).json({ error: "Proposal not found." });
+    if (proposal.status !== "PENDING") return res.status(400).json({ error: "This proposal is no longer pending." });
+
+    const updated = await prisma.eventProposal.update({ where: { id: proposal.id }, data: { status: "DECLINED" } });
+
+    const vendorProfile = await prisma.vendorProfile.findUnique({ where: { id: proposal.vendorId }, select: { userId: true } });
+    if (vendorProfile) {
+      await notify(
+        req.app.get("io"),
+        vendorProfile.userId,
+        "ORDER_UPDATE",
+        "Proposal Declined",
+        `Your proposal (₦${Math.round(proposal.priceKobo / 100).toLocaleString()}) for the ${request.eventType} request was declined by the customer.`,
+        { eventRequestId: request.id }
+      );
+    }
+    res.json({ proposal: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function cancelEventRequest(req, res, next) {
   try {
     const request = await prisma.eventRequest.findUnique({ where: { id: req.params.id } });
@@ -227,4 +267,4 @@ async function cancelEventRequest(req, res, next) {
   }
 }
 
-module.exports = { createEventRequest, listEventRequests, getEventRequest, submitProposal, acceptProposal, cancelEventRequest };
+module.exports = { createEventRequest, listEventRequests, getEventRequest, submitProposal, acceptProposal, declineProposal, cancelEventRequest };

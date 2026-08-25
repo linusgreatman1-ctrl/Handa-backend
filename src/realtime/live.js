@@ -245,6 +245,14 @@ function attachLiveSocket(httpServer) {
     bookingRemindersSvc.sendCompletionReminders(io).catch((err) => console.error("[booking] completion reminder sweep failed:", err));
   }, sweepMs);
 
+  // Event Planner has no two-sided confirmation step at all -- if the
+  // vendor never taps Mark Job Complete, nothing above ever closes the
+  // booking out. 24h past the scheduled event, auto-completes it (same
+  // escrow release + 10% commission as a real vendor-triggered complete).
+  setInterval(() => {
+    bookingRemindersSvc.autoCompleteOverdueEventPlannerBookings(io).catch((err) => console.error("[booking] EP auto-complete sweep failed:", err));
+  }, sweepMs);
+
   return io;
 }
 

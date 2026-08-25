@@ -10,6 +10,7 @@ router.get("/", ctrl.listEventRequests);
 router.get("/:id", ctrl.getEventRequest);
 router.post("/:id/proposals", ctrl.submitProposal);
 router.post("/:id/proposals/:proposalId/accept", ctrl.acceptProposal);
+router.post("/:id/proposals/:proposalId/decline", ctrl.declineProposal);
 router.post("/:id/cancel", ctrl.cancelEventRequest);
 
 module.exports = router;

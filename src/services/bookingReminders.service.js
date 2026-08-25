@@ -115,4 +115,37 @@ async function sendCompletionReminders(io) {
   return sent;
 }
 
-module.exports = { sendUpcomingReminders, sendCompletionReminders, combineDateAndTime };
+// Event Planner has no "Start Job" stage and no customer Yes/No step --
+// completeBooking's EP branch ends the whole booking the moment the
+// vendor taps Mark Job Complete. If they never tap it at all, the booking
+// (and the EP's own 10% commission on it) would otherwise sit open
+// forever, unlike Home Cook which at least keeps nudging both sides via
+// sendCompletionReminders above. 24h past the scheduled event time, this
+// closes it out automatically using the exact same escrow-release +
+// commission logic completeBooking already runs (see
+// bookings.controller.js's completeEventPlanningBooking), so there's no
+// separate code path to keep in sync.
+const AUTO_COMPLETE_EP_MS = 24 * 60 * 60 * 1000;
+async function autoCompleteOverdueEventPlannerBookings(io) {
+  // Required lazily to avoid a require-cycle at module-load time --
+  // bookings.controller.js's own top-level requires never touch this
+  // file, but requiring it eagerly at the top here isn't necessary either
+  // way since this function is only ever called from the sweep, well
+  // after both modules have finished loading.
+  const bookingsCtrl = require("../controllers/bookings.controller");
+  const now = Date.now();
+  const bookings = await prisma.booking.findMany({
+    where: { type: "EVENT_PLANNING", status: "CONFIRMED", eventDate: { not: null }, vendorConfirmedCompleteAt: null },
+  });
+
+  let completed = 0;
+  for (const booking of bookings) {
+    const eventInstant = combineDateAndTime(booking.eventDate, booking.eventTime).getTime();
+    if (now - eventInstant < AUTO_COMPLETE_EP_MS) continue;
+    await bookingsCtrl.completeEventPlanningBooking(booking, io, "Event planning booking auto-completed 24h after the scheduled event -- vendor never marked it complete.");
+    completed++;
+  }
+  return completed;
+}
+
+module.exports = { sendUpcomingReminders, sendCompletionReminders, autoCompleteOverdueEventPlannerBookings, combineDateAndTime };
