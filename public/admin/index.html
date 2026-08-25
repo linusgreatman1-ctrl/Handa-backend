@@ -1293,6 +1293,8 @@ async function renderBookingDetail(id) {
         card('Status', b.status, b.venue || '') +
       '</div>' +
       (b.eventDate ? '<div class="grid" style="margin-top:12px">' + card('Event Date', new Date(b.eventDate).toLocaleDateString(), b.eventTime || '') + card('Guests', b.guestCount || '—', '') + '</div>' : '') +
+      (b.status === 'CANCELLED' ? '<div class="card" style="margin-top:12px;border-color:#E8392E"><div class="label">Cancellation reason' + (b.cancelledBy ? ' (by ' + b.cancelledBy.toLowerCase() + ')' : '') + '</div><div class="value">' + (b.cancelReason || '—') + '</div></div>' : '') +
+      (b.wasEdited ? '<div class="card" style="margin-top:12px;border-color:#3B9FE8"><div class="value">✏️ This booking\'s details were edited at some point.</div></div>' : '') +
       '<h2 style="margin-top:24px">Items / Package</h2>' + (items ? '<table><thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead><tbody>' + items + '</tbody></table>' : (b.servicePackage ? '<div class="card"><div class="label">' + b.servicePackage.label + '</div><div class="value">' + money(b.servicePackage.priceKobo) + '</div></div>' : '<div class="empty">No itemized selection.</div>')) +
       '<h2 style="margin-top:24px">Payment / Escrow</h2>' + (escrow ? '<table><thead><tr><th>Payee</th><th>Amount</th><th>Status</th></tr></thead><tbody>' + escrow + '</tbody></table>' : '<div class="empty">No escrow holds.</div>');
   } catch (e) {

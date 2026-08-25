@@ -268,7 +268,7 @@ async function acceptEditedBooking(req, res, next) {
 
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null },
+      data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null, wasEdited: true },
     });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit accepted", `The vendor accepted your changes to booking #${booking.bookingNumber}.`, { bookingId: booking.id });
     res.json({ booking: updated });
@@ -566,10 +566,16 @@ async function confirmBookingCompletion(req, res, next) {
 
 async function cancelBooking(req, res, next) {
   try {
-    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
     if (["COMPLETED", "CANCELLED"].includes(booking.status)) return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
     if (booking.vendorJobStartedAt) return res.status(400).json({ error: "The vendor has already started this job — it can no longer be cancelled." });
+
+    // A reason is always required now -- both so the vendor/admin can see
+    // WHY, not just that it happened, and so the admin panel's booking
+    // detail has something real to show instead of nothing at all.
+    const reason = (req.body.reason || "").trim();
+    if (!reason) return res.status(400).json({ error: "A cancellation reason is required." });
 
     // PAID: the customer paid at request time and the vendor hasn't decided
     // yet. CONFIRMED: vendor already accepted (also already paid, for Home
@@ -579,8 +585,14 @@ async function cancelBooking(req, res, next) {
     if (["PAID", "CONFIRMED"].includes(booking.status)) {
       await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking cancelled by customer" });
     }
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason, cancelledBy: "CUSTOMER" },
+    });
     closeSupportThreadForContext(booking.id);
+    if (booking.vendor) {
+      await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking cancelled", `The customer cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
+    }
     res.json({ booking: updated });
   } catch (err) {
     next(err);

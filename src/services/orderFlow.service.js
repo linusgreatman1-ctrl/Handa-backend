@@ -118,6 +118,18 @@ async function confirmRiderFeeTopUp(sessionId, amountKobo) {
   });
 }
 
+// Applies a confirmed items-budget top-up (see shopSessions.controller's
+// topUpItems) — an insufficient-escrow item approval never creates its own
+// hold (the "items" portion of a deposit isn't held per-item, it's just
+// the spendable remainder of depositKobo), so paying this off is simply
+// crediting the deposit itself, unlike the call/rider-fee top-ups which
+// also mint a fresh SHOPPER hold for the delta.
+async function confirmItemsTopUp(sessionId, amountKobo) {
+  const session = await prisma.shopSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw Object.assign(new Error("Shop session not found."), { status: 404 });
+  return prisma.shopSession.update({ where: { id: sessionId }, data: { depositKobo: { increment: amountKobo } } });
+}
+
 async function confirmCommissionPayment(commissionPeriodId, reference) {
   const period = await prisma.commissionPeriod.findUnique({ where: { id: commissionPeriodId } });
   if (!period || period.status === "PAID") return period;
@@ -169,6 +181,7 @@ module.exports = {
   ensureShopperFeeHold,
   confirmCallTopUp,
   confirmRiderFeeTopUp,
+  confirmItemsTopUp,
   confirmCommissionPayment,
   confirmFeatureBoostPayment,
   applyTransferWebhook,

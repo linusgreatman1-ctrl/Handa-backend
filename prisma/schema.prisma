@@ -444,6 +444,19 @@ model Booking {
   pendingEditSnapshot    Json?
   pendingEditRequestedAt DateTime?
 
+  // Cancellation must always carry a reason (required at the API level) so
+  // both the customer's/vendor's own history and the admin panel can show
+  // WHY, not just that it happened. cancelledBy records who initiated it
+  // ('CUSTOMER' or 'VENDOR') since either side can cancel.
+  cancelReason String?
+  cancelledBy  String?
+
+  // Permanent flag: true forever once a pending edit is actually accepted,
+  // unlike pendingEditSnapshot which clears the moment it's resolved — this
+  // is what lets History show "Edited Booking Details" even long after the
+  // edit was approved, not just during the brief pending-approval window.
+  wasEdited Boolean @default(false)
+
   escrowHolds EscrowHold[]
   ratings     Rating[]
 
@@ -471,6 +484,14 @@ model EventRequest {
   id         String @id @default(uuid())
   customerId String
   customer   User   @relation(fields: [customerId], references: [id])
+
+  // Explicit poster name/phone, distinct from the account's own User
+  // fields — a customer may be posting on behalf of someone else, or just
+  // wants the request itself to carry a clear contact independent of
+  // whatever's on their account. Optional; frontend defaults to the
+  // account's own name/phone but lets it be edited.
+  posterName  String?
+  posterPhone String?
 
   eventType         String
   eventDate         DateTime
@@ -572,6 +593,20 @@ model ShopSession {
   // transitions.
   callStartedAt DateTime?
   callEndedAt   DateTime?
+
+  // Pause/resume for billed call duration: only the SHOPPER exiting the
+  // call pauses the clock (callPausedAt stamped); the customer exiting
+  // never pauses it. On the shopper's rejoin, the elapsed pause is folded
+  // into callPausedTotalMs and callPausedAt is cleared. startPackaging's
+  // duration math subtracts both from callEndedAt - callStartedAt.
+  callPausedAt      DateTime?
+  callPausedTotalMs Int       @default(0)
+
+  // Set when the shopper force-ends the call via the emergency-end action
+  // instead of the normal all-items-approved completion path — 'CUSTOMER'
+  // or 'SHOPPER', matching who the shopper attributed the early end to
+  // (drives the charge-vs-refund outcome and the History/notification copy).
+  emergencyEndedBy String?
 
   // Real 3-way audio call (rider + shopper + customer) the shopper starts
   // once the rider arrives at their location and the two of them have done

@@ -272,7 +272,89 @@ async function removeItem(req, res, next) {
     if (!item) return res.status(404).json({ error: "Item not found." });
     assertSessionAccess(req, item.session);
     await prisma.shopSessionItem.delete({ where: { id: item.id } });
+    req.app.get("io")?.to(`shop-session:${item.sessionId}`).emit("shop-session:item-removed", { sessionId: item.sessionId, itemId: item.id });
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The customer, non-destructively, sends a priced-or-approved item BACK to
+// the shopper for re-pricing -- clears priceKobo and approved, keeps the
+// item itself. Covers two distinct UI actions with the same real outcome:
+// "Reject" (an unapproved-but-priced item wasn't right) and "Disapprove"
+// (an already-approved item is being reconsidered) -- both just mean "this
+// item needs a new price," repeatable as many times as the customer likes,
+// unlike removeItem which is a permanent delete.
+async function resetItemPricing(req, res, next) {
+  try {
+    const item = await prisma.shopSessionItem.findUnique({ where: { id: req.params.itemId }, include: { session: true } });
+    if (!item || item.session.customerId !== req.user.id) return res.status(404).json({ error: "Item not found." });
+    const updated = await prisma.shopSessionItem.update({ where: { id: item.id }, data: { priceKobo: null, approved: false, approvedAt: null } });
+    // Approving this item may have contributed to itemsTotalKobo -- recompute
+    // it now that it no longer counts, so the running total shown elsewhere
+    // stays accurate immediately rather than only after the next approval.
+    const approvedTotal = await prisma.shopSessionItem.aggregate({
+      where: { sessionId: item.sessionId, approved: true },
+      _sum: { priceKobo: true },
+    });
+    await prisma.shopSession.update({ where: { id: item.sessionId }, data: { itemsTotalKobo: approvedTotal._sum.priceKobo || 0 } });
+    req.app.get("io")?.to(`shop-session:${item.sessionId}`).emit("shop-session:item-reset", { sessionId: item.sessionId, item: updated });
+    res.json({ item: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Lets the customer add a brand-new item mid-call -- addItem() above
+// already has no phase gate and works fine for this, this is just a
+// clearer, purpose-named entry point for the frontend's mid-call "+ Add
+// Item" action so it isn't confused with the pre-call bulk-create path.
+async function addItemMidCall(req, res, next) {
+  return addItem(req, res, next);
+}
+
+// The insufficient-funds error from approveItem carries a shortfallKobo —
+// this is what actually pays it off, mirroring payCallTopUp/
+// payRiderFeeTopUp's exact WALLET-vs-Paystack-vs-BankTransfer branching.
+// Unlike those two, no fresh escrow hold is minted here (see
+// orderFlow.confirmItemsTopUp's comment) -- the items portion of a deposit
+// is just spendable balance, not a per-item hold.
+async function topUpItems(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
+
+    const amountKobo = Math.max(0, parseInt(req.body.amountKobo) || 0);
+    if (amountKobo <= 0) return res.status(400).json({ error: "A valid amountKobo is required." });
+
+    if (req.body.paymentMethod === "WALLET") {
+      await prisma.$transaction(async (tx) => {
+        await walletSvc.debitWallet(req.user.id, amountKobo, "ESCROW_HOLD", { contextType: "SHOP_SESSION", contextId: session.id, description: "Shop-For-Me items budget top-up" }, tx);
+      });
+      const updated = await orderFlow.confirmItemsTopUp(session.id, amountKobo);
+      return res.json({ session: updated, paid: true });
+    }
+
+    // Reuses the SHOP_SESSION_PAYMENT purpose deliberately -- once verified,
+    // applyVerifiedPayment routes it to orderFlow.confirmShopSessionPayment,
+    // which does exactly the increment-deposit-and-ensure-holds work this
+    // top-up needs (ensureShopperFeeHold is idempotent, so re-running it
+    // here is a harmless no-op). No new purpose/route needed.
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_PAYMENT", session.id, amountKobo);
+      return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
+    const reference = generateReference("ITOP");
+    const payment = await paystack.initializeTransaction({
+      email: req.user.email,
+      amountKobo,
+      reference,
+      metadata: { purpose: "SHOP_SESSION_PAYMENT", sessionId: session.id },
+    });
+    res.json({ paid: false, authorizationUrl: payment.authorization_url, reference });
   } catch (err) {
     next(err);
   }
@@ -400,6 +482,40 @@ async function startCall(req, res, next) {
   }
 }
 
+// The shopper (only shopper leaving pauses it -- see the schema comment on
+// callPausedAt) exiting the live call stops the billed-duration clock;
+// rejoining resumes it. The customer's own exit/rejoin never touches this
+// -- called only from the frontend's shopper-side soft-exit/rejoin, never
+// the customer's.
+async function pauseCall(req, res, next) {
+  try {
+    if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.shopperId !== req.user.shopperProfile.id) return res.status(404).json({ error: "Shop session not found." });
+    if (session.status !== "LIVE_CALL" || session.callPausedAt) return res.json({ session });
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { callPausedAt: new Date() } });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+async function resumeCall(req, res, next) {
+  try {
+    if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.shopperId !== req.user.shopperProfile.id) return res.status(404).json({ error: "Shop session not found." });
+    if (!session.callPausedAt) return res.json({ session });
+    const pausedMs = Date.now() - session.callPausedAt.getTime();
+    const updated = await prisma.shopSession.update({
+      where: { id: session.id },
+      data: { callPausedAt: null, callPausedTotalMs: { increment: Math.max(0, pausedMs) } },
+    });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // The real duration-based fee is only knowable once the call ends — if it
 // exceeds the minimum tier already collected up front (see createSession),
 // the session stays in LIVE_CALL and the customer must pay the difference
@@ -415,8 +531,20 @@ async function startPackaging(req, res, next) {
     }
     if (session.status !== "LIVE_CALL") return res.status(409).json({ error: `Session must be LIVE_CALL (currently ${session.status}).` });
 
+    // The frontend already disables the shopper's "end call" button until
+    // every item is approved -- this is the server-side twin of that rule
+    // (defense in depth, since the frontend check alone can be bypassed by
+    // calling the API directly). The emergency-end path below is the one
+    // deliberate exception -- it exists precisely for abnormal
+    // circumstances where not everything gets approved.
+    const unresolvedCount = await prisma.shopSessionItem.count({ where: { sessionId: session.id, approved: false } });
+    if (unresolvedCount > 0) {
+      return res.status(400).json({ error: `${unresolvedCount} item(s) still need approval before the call can end.` });
+    }
+
     const callEndedAt = session.callEndedAt || new Date();
-    const durationMinutes = Math.max(1, Math.ceil((callEndedAt - session.callStartedAt) / 60000));
+    const pausedMs = session.callPausedTotalMs + (session.callPausedAt ? Date.now() - session.callPausedAt.getTime() : 0);
+    const durationMinutes = Math.max(1, Math.ceil(((callEndedAt - session.callStartedAt) - pausedMs) / 60000));
     const realFeeKobo = sessionFeeForDuration(durationMinutes);
     const topUpRequiredKobo = Math.max(0, realFeeKobo - session.sessionFeeKobo);
 
@@ -444,7 +572,8 @@ async function payCallTopUp(req, res, next) {
     if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "LIVE_CALL" || !session.callEndedAt) return res.status(409).json({ error: "No call top-up is currently due." });
 
-    const durationMinutes = Math.max(1, Math.ceil((session.callEndedAt - session.callStartedAt) / 60000));
+    const pausedMs = session.callPausedTotalMs + (session.callPausedAt ? Date.now() - session.callPausedAt.getTime() : 0);
+    const durationMinutes = Math.max(1, Math.ceil(((session.callEndedAt - session.callStartedAt) - pausedMs) / 60000));
     const realFeeKobo = sessionFeeForDuration(durationMinutes);
     const topUpKobo = realFeeKobo - session.sessionFeeKobo;
     if (topUpKobo <= 0) return res.status(409).json({ error: "No call top-up is currently due." });
@@ -476,6 +605,87 @@ async function payCallTopUp(req, res, next) {
     next(err);
   }
 }
+
+// Shopper-only, and the ONLY way a call can end before every item is
+// approved (startPackaging above hard-requires full approval otherwise).
+// attributedTo decides who's charged:
+//   'CUSTOMER' — the customer wanted out. They're charged the normal
+//     duration-based call fee (same tiers as a real completion, computed
+//     fresh from callStartedAt/callPausedTotalMs, capped at whatever was
+//     already collected as sessionFeeKobo -- an early end never bills MORE
+//     than what's already on deposit), the usual 20% platform commission
+//     still applies to that charge (releaseHold already does this for any
+//     SHOPPER-role hold), and everything else outstanding is refunded.
+//   'SHOPPER' — the shopper needs out. The customer is charged nothing at
+//     all; the full deposit is refunded.
+// Either way the session becomes CANCELLED/abandoned (same "Uncompleted
+// Session" History treatment as the stale-session sweep) and both sides
+// get pushed straight back to their home screen.
+async function emergencyEndCall(req, res, next) {
+  try {
+    if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.shopperId !== req.user.shopperProfile.id) return res.status(404).json({ error: "Shop session not found." });
+    if (session.status !== "LIVE_CALL") return res.status(409).json({ error: `Session must be LIVE_CALL (currently ${session.status}).` });
+
+    const attributedTo = req.body.attributedTo;
+    if (!["CUSTOMER", "SHOPPER"].includes(attributedTo)) return res.status(400).json({ error: "attributedTo must be CUSTOMER or SHOPPER." });
+
+    if (attributedTo === "CUSTOMER") {
+      const now = Date.now();
+      const pausedMs = session.callPausedTotalMs + (session.callPausedAt ? now - session.callPausedAt.getTime() : 0);
+      const durationMinutes = Math.max(1, Math.ceil((now - session.callStartedAt.getTime() - pausedMs) / 60000));
+      const chargeableKobo = Math.min(sessionFeeForDuration(durationMinutes), session.sessionFeeKobo);
+
+      const shopperHolds = await prisma.escrowHold.findMany({ where: { shopSessionId: session.id, payeeRole: "SHOPPER", status: "HELD" } });
+      let releasedSoFar = 0;
+      for (const hold of shopperHolds) {
+        if (releasedSoFar < chargeableKobo) {
+          await escrow.releaseHold(hold.id, { description: "Emergency call end -- customer charged for time spent (20% platform commission applies)." });
+          releasedSoFar += hold.amountKobo;
+        } else {
+          await escrow.refundHold(hold.id, { description: "Emergency call end -- unused portion of the call fee refunded." });
+        }
+      }
+    }
+
+    // Refunds whatever's still HELD (all of it for a SHOPPER-attributed end;
+    // just the leftover RIDER/other holds for a CUSTOMER-attributed one,
+    // since the SHOPPER holds were already resolved above).
+    await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: `Emergency call end (attributed to ${attributedTo === "CUSTOMER" ? "customer" : "shopper"}).` });
+
+    // The items/shopping-budget portion of the deposit was never turned
+    // into an EscrowHold in the first place (see topUpItems' comment), and
+    // riderFeeKobo has no hold yet either at LIVE_CALL stage (a rider isn't
+    // matched until much later) -- both need refunding directly as wallet
+    // credit rather than via a hold that doesn't exist, in both branches.
+    const shoppingBudgetKobo = Math.max(0, session.depositKobo - session.sessionFeeKobo - session.riderFeeKobo);
+    if (shoppingBudgetKobo > 0) {
+      await walletSvc.creditWallet(session.customerId, shoppingBudgetKobo, "ESCROW_REFUND", { contextType: "SHOP_SESSION", contextId: session.id, description: "Emergency call end -- unused shopping budget refunded." });
+    }
+
+    const now = new Date();
+    const updated = await prisma.shopSession.update({
+      where: { id: session.id },
+      data: { status: "CANCELLED", cancelledAt: now, abandonedAt: now, callEndedAt: session.callEndedAt || now, emergencyEndedBy: attributedTo },
+    });
+
+    const io = req.app.get("io");
+    io?.to(`shop-session:${session.id}`).emit("shop-session:emergency-ended", { sessionId: session.id, attributedTo });
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+    const custMsg = attributedTo === "CUSTOMER"
+      ? "Your shopping session was ended early. You were charged for the time spent on the call; everything else was refunded."
+      : "Your shopping session was ended early by your shopper. You were not charged anything -- your full deposit was refunded.";
+    await notify(io, session.customerId, "ORDER_UPDATE", "Session ended", custMsg, { sessionId: session.id });
+    if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session ended", "This shopping session was ended early via the emergency-end action.", { sessionId: session.id });
+    closeSupportThreadForContext(session.id);
+
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // The rider fee is computed right here — "immediately the shopper starts
 // searching for a rider" — using the shopper's and customer's registered
 // state/LGA (see utils/distanceFee.js for how, given no Maps API key is
@@ -717,8 +927,9 @@ async function confirmSellerPayouts(req, res, next) {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session || session.shopperId !== req.user.shopperProfile.id) return res.status(404).json({ error: "Shop session not found." });
 
-    const { allocations } = req.body; // [{ sellerId, amountKobo }] — bankCode now comes from the seller's own saved record, not re-sent by the client
+    const { allocations, payoutMethod } = req.body; // [{ sellerId, amountKobo }] — bankCode now comes from the seller's own saved record, not re-sent by the client
     if (!Array.isArray(allocations) || allocations.length === 0) return res.status(400).json({ error: "At least one payout allocation is required." });
+    const method = payoutMethod === "ESCROW_DIRECT" ? "ESCROW_DIRECT" : "PAYSTACK";
 
     const budgetKobo = session.depositKobo - session.sessionFeeKobo - session.riderFeeKobo;
     const existingPaid = await prisma.sellerPayout.aggregate({
@@ -738,6 +949,20 @@ async function confirmSellerPayouts(req, res, next) {
         continue;
       }
       const reference = generateReference("SLR");
+
+      // ESCROW_DIRECT: no real Paystack transfer at all -- the app trusts
+      // the shopper has already paid the seller some other way (cash, a
+      // personal transfer at the market) and just records the amount as
+      // spent against the tracked shopping budget, same accounting/cap
+      // check above as the Paystack path, just skipping the external rail.
+      if (method === "ESCROW_DIRECT") {
+        await prisma.sellerPayout.create({
+          data: { sessionId: session.id, sellerId: seller.id, amountKobo: alloc.amountKobo, reference, status: "PAID", paidAt: new Date() },
+        });
+        results.push({ sellerId: seller.id, status: "PAID" });
+        continue;
+      }
+
       const payout = await prisma.sellerPayout.create({
         data: { sessionId: session.id, sellerId: seller.id, amountKobo: alloc.amountKobo, reference },
       });
@@ -768,14 +993,20 @@ module.exports = {
   listSessions,
   getSession,
   addItem,
+  addItemMidCall,
   priceItem,
   approveItem,
   removeItem,
+  resetItemPricing,
+  topUpItems,
   paySession,
   matchSession,
   startCall,
+  pauseCall,
+  resumeCall,
   startPackaging,
   payCallTopUp,
+  emergencyEndCall,
   findRider,
   payRiderFeeTopUp,
   acceptDelivery,
