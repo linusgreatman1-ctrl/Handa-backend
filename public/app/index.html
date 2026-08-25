@@ -989,22 +989,62 @@ var _proactiveRefreshTimer = null;
 // a couple of minutes early so an active session never has to hit the
 // reactive 401-then-retry path below at all -- that reactive path is still
 // kept as a safety net, this just means it rarely fires in practice.
-function scheduleProactiveRefresh(){
+// A single transient failure (network blip, a Render free-tier cold-start)
+// used to permanently kill proactive refreshing for the rest of the tab's
+// session, since nothing ever rescheduled after a failed attempt -- that's
+// the real cause of "the app just goes dead until you refresh the page."
+// Retries a few times with backoff before falling back to the normal
+// 13-minute cadence, instead of dying silently on the first hiccup.
+var _proactiveRefreshRetries = 0;
+function scheduleProactiveRefresh(delayMs){
   if(_proactiveRefreshTimer)clearTimeout(_proactiveRefreshTimer);
   _proactiveRefreshTimer=setTimeout(async function(){
     if(!_accessToken)return;
+    var expectedSub=decodeJwtSub(_accessToken);
     try{
       if(!_refreshInFlight){
         _refreshInFlight=api('/auth/refresh',{method:'POST'}).catch(function(){return null;}).finally(function(){_refreshInFlight=null;});
       }
       var refreshed=await _refreshInFlight;
-      if(refreshed&&refreshed.accessToken){ setAccessToken(refreshed.accessToken); scheduleProactiveRefresh(); }
-    }catch(e){}
-  },13*60*1000); // 13 minutes -- 2 minutes of margin before the real 15-minute expiry
+      if(refreshed&&refreshed.accessToken){
+        // The refresh cookie is shared across every same-origin tab -- if a
+        // DIFFERENT account logged in from another tab since this token was
+        // issued, that shared cookie now belongs to THAT account, and this
+        // refresh would silently hand back a token for them instead. Same
+        // guard as the reactive 401 path in api() -- never adopt it.
+        if(expectedSub && decodeJwtSub(refreshed.accessToken)!==expectedSub){
+          setAccessToken(null);
+          showToast&&showToast('Your session changed in another tab. Please sign in again.','warning');
+          setTimeout(function(){ location.reload(); }, 1200);
+          return;
+        }
+        setAccessToken(refreshed.accessToken);
+        _proactiveRefreshRetries=0;
+        scheduleProactiveRefresh();
+      } else {
+        _retryProactiveRefresh();
+      }
+    }catch(e){ _retryProactiveRefresh(); }
+  },delayMs||13*60*1000); // 13 minutes -- 2 minutes of margin before the real 15-minute expiry
+}
+function _retryProactiveRefresh(){
+  _proactiveRefreshRetries=Math.min(_proactiveRefreshRetries+1,4);
+  scheduleProactiveRefresh(Math.min(30000*Math.pow(2,_proactiveRefreshRetries-1),4*60*1000)); // 30s,60s,120s,240s...
 }
 function clearProactiveRefresh(){
   if(_proactiveRefreshTimer){clearTimeout(_proactiveRefreshTimer);_proactiveRefreshTimer=null;}
+  _proactiveRefreshRetries=0;
 }
+// A backgrounded tab's setTimeout can be throttled by the browser for
+// minutes at a time -- if the one throttled/delayed firing also happened to
+// fail (see the retry logic above), refreshing would otherwise never
+// resume until a manual reload. Re-arming on every return-to-foreground
+// closes that gap without needing to guess the exact throttle window.
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState==='visible' && _accessToken && !_proactiveRefreshTimer){
+    scheduleProactiveRefresh();
+  }
+});
 
 async function api(path, opts){
   opts = opts || {};
@@ -1050,7 +1090,13 @@ async function api(path, opts){
 
 function connectSocket(){
   if (_socket || !_accessToken || typeof io === 'undefined') return;
-  _socket = io({ auth: { token: _accessToken } });
+  // A function (not a static object) so Socket.IO re-evaluates it on every
+  // connection AND every automatic reconnection attempt -- a static object
+  // captured the token once at first connect and kept resending that same
+  // stale value forever, so any reconnect after a token rotation (idle
+  // timeout, sleep/wake, a dropped network) silently failed auth
+  // server-side and never came back until a full page reload.
+  _socket = io({ auth: function(cb){ cb({ token: _accessToken }); } });
   _socket.on('notification:new', function(n){
     if(typeof toast==='function') toast(n.title + ': ' + n.body);
     bumpNotifBadge();
