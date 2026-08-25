@@ -190,14 +190,26 @@ async function uploadAvatar(req, res, next) {
 // (previously a hardcoded "GTBank • 0123456789" string on the client).
 async function linkBankAccount(req, res, next) {
   try {
-    const { bankName, bankCode, accountNumber } = req.body;
+    const { bankName, bankCode, accountNumber, accountName } = req.body;
     if (!bankName || !bankCode || !accountNumber) {
       return res.status(400).json({ error: "bankName, bankCode, and accountNumber are required." });
     }
-    const resolved = await paystack.resolveBankAccount(accountNumber, bankCode);
+    // A real bank-registered account name often differs from the person's
+    // display/business name -- Paystack's auto-resolution is still tried
+    // first (the most reliable source when it works), but a client-
+    // supplied name is now a real fallback/override instead of the whole
+    // request failing outright whenever resolution errors (no key
+    // configured, an unrecognized bank, a transient API issue).
+    let resolvedName = accountName ? String(accountName).trim() : "";
+    try {
+      const resolved = await paystack.resolveBankAccount(accountNumber, bankCode);
+      resolvedName = resolved.account_name;
+    } catch (err) {
+      if (!resolvedName) throw err;
+    }
     const user = await prisma.user.update({
       where: { id: req.user.id },
-      data: { bankName, bankAccountNumber: accountNumber, bankAccountName: resolved.account_name },
+      data: { bankName, bankAccountNumber: accountNumber, bankAccountName: resolvedName },
     });
     res.json({ bankName: user.bankName, bankAccountNumber: user.bankAccountNumber, bankAccountName: user.bankAccountName });
   } catch (err) {

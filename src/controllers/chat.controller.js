@@ -196,7 +196,11 @@ async function sendMessage(req, res, next) {
     });
 
     const io = req.app.get("io");
-    io?.to(`chat:${req.params.id}`).emit("chat:message", message);
+    // Carries the sender's own name/role alongside the raw message row --
+    // lets the recipient's client show a real "X (role) wants to chat with
+    // you" prompt instead of only a background bell notification, without
+    // a second round-trip to look the sender up.
+    io?.to(`chat:${req.params.id}`).emit("chat:message", { ...message, senderName: req.user.name, senderRole: req.user.role });
 
     const notifyText = body && body.trim() ? body.slice(0, 120) : "📎 Sent a photo";
     const others = await prisma.chatParticipant.findMany({ where: { threadId: req.params.id, userId: { not: req.user.id } } });

@@ -1241,7 +1241,11 @@ async function sendAdminChatMessage(req, res, next) {
     }
 
     const io = req.app.get("io");
-    io?.to(`chat:${thread.id}`).emit("chat:message", message);
+    // Same senderName/senderRole enrichment as the regular user-facing
+    // sendMessage (chat.controller.js) -- lets the recipient's client show
+    // a real "Support wants to chat with you" prompt for an admin-
+    // initiated message too, not just the background bell notification.
+    io?.to(`chat:${thread.id}`).emit("chat:message", { ...message, senderName: req.user.name || "Handa Support", senderRole: "ADMIN" });
 
     const notifyText = body || "📎 Sent a photo";
     const others = await prisma.chatParticipant.findMany({ where: { threadId: thread.id, userId: { not: req.user.id } } });

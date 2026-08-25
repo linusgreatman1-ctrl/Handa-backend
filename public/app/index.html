@@ -1110,6 +1110,7 @@ function connectSocket(){
     bumpNotifBadge();
   });
   confirmCallBindListeners();
+  bindGlobalChatRequestListener();
   refreshNotifBadge();
 }
 
@@ -2622,6 +2623,37 @@ function bindAppChatSocketListener(){
     msgsEl.scrollTop=msgsEl.scrollHeight;
   });
 }
+// A chat message landing on a thread the recipient ISN'T currently looking
+// at used to only ever reach them through the background bell notification
+// -- easy to miss entirely if they're mid-flow somewhere else in the app.
+// This is a separate, always-bound (any screen, any role) listener that
+// puts a real "X wants to chat with you" prompt on screen with a direct
+// Open Chat action, whoever initiated it -- a customer, vendor, rider, or
+// admin. Independent of bindAppChatSocketListener above, which only
+// updates the currently-open chat bubble list.
+function bindGlobalChatRequestListener(){
+  if(!_socket||_socket._chatReqBound)return;
+  _socket._chatReqBound=true;
+  _socket.on('chat:message',function(msg){
+    var myId=(S.user||{}).id;
+    if(!msg||msg.senderId===myId)return;
+    if(msg.threadId===window._activeChatThreadId)return; // already looking at this exact chat
+    var roleWord={CUSTOMER:'Customer',VENDOR:'Vendor',RIDER:'Rider',SHOPPER:'Shopper',ADMIN:'Support'}[msg.senderRole]||'Someone';
+    var name=msg.senderName||roleWord;
+    showChatRequestBanner(name,roleWord,msg.threadId);
+  });
+}
+function showChatRequestBanner(name,roleWord,threadId){
+  var existing=document.getElementById('chat-request-banner');if(existing)existing.remove();
+  var html='<div id="chat-request-banner" style="position:fixed;left:12px;right:12px;top:12px;z-index:10001;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:13px 15px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:\'DM Sans\',sans-serif;display:flex;align-items:center;gap:10px;">'
+    +'<span style="font-size:22px;flex-shrink:0;">💬</span>'
+    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;">'+name+' ('+roleWord+') wants to chat with you</div></div>'
+    +'<button onclick="openChatByThreadId(\''+threadId+'\',\''+name.replace(/'/g,"\\'")+'\');var b=document.getElementById(\'chat-request-banner\');if(b)b.remove();" style="background:#3B9FE8;border:none;border-radius:9px;padding:8px 12px;color:#111;font-weight:800;font-size:12px;cursor:pointer;flex-shrink:0;font-family:\'DM Sans\',sans-serif;">Open Chat</button>'
+    +'<button onclick="var b=document.getElementById(\'chat-request-banner\');if(b)b.remove();" style="background:none;border:none;color:#9A9390;font-size:18px;cursor:pointer;flex-shrink:0;">&#x2715;</button>'
+    +'</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(function(){var el=document.getElementById('chat-request-banner');if(el)el.remove();},15000);
+}
 function closeChat(){document.getElementById('chat-ov').classList.remove('on');window._activeChatThreadId=null;}
 async function sendMsg(){
   var inp=document.getElementById('chat-inp');var txt=inp.value.trim();if(!txt)return;
@@ -4123,16 +4155,20 @@ function showConfirmCallPanel(myRole){
   var sessionId = window._confirmCall ? window._confirmCall.sessionId : '';
   var canComplete = (myRole==='shopper'||myRole==='rider');
   var actionBtn = canComplete
-    ? '<button onclick="completeConfirmCallGeneric(\''+sessionId+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2713; Confirmed — End Call</button>'
-    : '<button onclick="leaveConfirmCallOnly()" style="flex:2;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Leave Call</button>';
+    ? '<button onclick="completeConfirmCallGeneric(\''+sessionId+'\')" style="flex:2;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2713; Confirmed — End Call</button>'
+    : '<button onclick="leaveConfirmCallOnly()" style="flex:2;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:9px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Leave Call</button>';
   var html='<div id="confirmcall-panel" style="position:fixed;left:12px;right:12px;bottom:84px;z-index:9998;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.4);font-family:\'DM Sans\',sans-serif;">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
     +'<div style="width:8px;height:8px;border-radius:50%;background:#2ECC71;animation:pulse .9s infinite;flex-shrink:0;"></div>'
     +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;">3-Way Confirm Call</div>'
     +'<div style="font-size:11px;color:#9A9390;margin-left:auto;" id="confirmcall-count">Connecting…</div>'
     +'</div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button onclick="toggleConfirmCallMic()" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3A4; Mic</button>'
+    // Mic and the end-call/leave action sit in one evenly-spaced row,
+    // both vertically and horizontally centered within their own button
+    // so the icon+label pair reads as a single aligned control, not two
+    // buttons of visually different weight.
+    +'<div style="display:flex;gap:8px;align-items:stretch;">'
+    +'<button onclick="toggleConfirmCallMic()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3A4; Mic</button>'
     +actionBtn
     +'</div></div>';
   document.body.insertAdjacentHTML('beforeend', html);
@@ -5255,7 +5291,7 @@ function openManualBankTransferModal(res,onConfirmed){
     +'<div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:16px;margin-bottom:16px;">'
     +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:12px;">Bank</span><span style="color:#F2EDE8;font-weight:700;font-size:13px;">'+(bd.bankName||'\u2014')+'</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:12px;">Account Name</span><span style="color:#F2EDE8;font-weight:700;font-size:13px;">'+(bd.accountName||'\u2014')+'</span></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:12px;">Account Number</span><span style="color:#F2EDE8;font-weight:800;font-size:15px;letter-spacing:1px;">'+(bd.accountNumber||'\u2014')+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:12px;">Account Number</span><span style="display:flex;align-items:center;gap:8px;"><span style="color:#F2EDE8;font-weight:800;font-size:15px;letter-spacing:1px;">'+(bd.accountNumber||'\u2014')+'</span>'+(bd.accountNumber?'<button onclick="copyToClipboard(\''+bd.accountNumber+'\',this)" title="Copy account number" style="background:#242424;border:1px solid #2A2850;border-radius:7px;padding:4px 8px;color:#9A9390;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">\ud83d\udccb Copy</button>':'')+'</span></div>'
     +(bd.ussdCode?'<div style="display:flex;justify-content:space-between;padding:7px 0;"><span style="color:#9A9390;font-size:12px;">USSD</span><span style="color:#F2EDE8;font-weight:700;font-size:13px;">'+bd.ussdCode+'</span></div>':'')
     +'</div>'
     +'<div id="mbt-status" style="text-align:center;font-size:12px;color:#9A9390;margin-bottom:14px;"></div>'
@@ -6042,6 +6078,7 @@ function _showHelpPanel(){
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x2753; Help & Support</div></div>'
     +'<p style="font-size:13px;color:#9A9390;margin-bottom:16px;">Support available Mon\u2013Sat, 8AM\u20138PM. Average response: 2 minutes.</p>'
+    +'<button onclick="closeProcedureModal();setTimeout(function(){openSupportChat();},200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:10px;">&#x1F3A7; Chat with Support</button>'
     +'<button onclick="closeProcedureModal();setTimeout(callSupport,200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4DE; Call Support</button>'
     +'</div>');
 }
@@ -6195,6 +6232,20 @@ function showPaymentModal(label, callback){
 
 function showToast(msg,type){
   toast(((type==="error"||type==="warning"||type==="success")?({"error":"🚨 ","warning":"⚠️ ","success":"✅ "}[type]):"")+(msg||""));
+}
+
+function copyToClipboard(text,btn){
+  var done=function(){
+    showToast&&showToast('Copied to clipboard','success');
+    if(btn){var orig=btn.textContent;btn.textContent='✓ Copied';setTimeout(function(){btn.textContent=orig;},1500);}
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(function(){
+      showToast&&showToast('Could not copy — long-press to select and copy manually','warning');
+    });
+  }else{
+    showToast&&showToast('Could not copy — long-press to select and copy manually','warning');
+  }
 }
 
 function renderApprovalItems() {
@@ -6919,10 +6970,11 @@ function showHelpModal(){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Help & Support</div></div>'
     +'<div style="background:#242424;border-radius:12px;padding:14px;margin-bottom:10px;">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Email</div>'
-    +'<div style="font-weight:700;color:#3B9FE8;">support@citychef.ng</div></div>'
+    +'<div style="font-weight:700;color:#3B9FE8;">support@handa.ng</div></div>'
     +'<div style="background:#242424;border-radius:12px;padding:14px;margin-bottom:16px;">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Hotline</div>'
-    +'<div style="font-weight:700;color:#2ECC71;">0800-CITYCHEF</div></div>'
+    +'<div style="font-weight:700;color:#2ECC71;">+234 800 HANDA 1</div></div>'
+    +'<button onclick="closeProcedureModal();setTimeout(function(){openSupportChat();},200)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:13px;font-size:14px;font-weight:700;color:#F2EDE8;cursor:pointer;margin-bottom:10px;">&#x1F3A7; Chat with Support</button>'
     +'<button onclick="closeProcedureModal()" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:13px;font-size:14px;font-weight:700;color:#9A9390;cursor:pointer;">Close</button>'
     +'</div>');
 }
@@ -6984,7 +7036,12 @@ async function openEditProfileModal(role){
       var bankOpts='<option value="">Select Bank</option>'+(banks||[]).map(function(b){return '<option value="'+b.code+'"'+(u.bankName===b.name?' selected':'')+'>'+b.name+'</option>';}).join('');
       html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Bank Name</label>'
         +'<select id="epf-bankname" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+bankOpts+'</select></div>'
-        +f('Account Number','epf-bankacct',u.bankAcct,'text','10-digit NUBAN');
+        +f('Account Number','epf-bankacct',u.bankAcct,'text','10-digit NUBAN')
+        // Most people's real account name differs from their business/
+        // display name -- this used to rely entirely on Paystack's silent
+        // auto-resolution with no way to see or correct it. Pre-filled
+        // from whatever's already on file, but now a real editable field.
+        +f('Account Name','epf-bankacctname',u.bankAccountName,'text','Name on the bank account');
     }
   }
   html+='<button id="epf-save-btn" onclick="saveEditProfile(\''+role+'\')" style="width:100%;background:#E8392E;border:none;border-radius:13px;padding:13px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-top:6px;">Save Changes</button>'
@@ -7017,8 +7074,9 @@ async function saveEditProfile(role){
     var bankCode=bankSel?bankSel.value:'';
     var bankName=bankSel&&bankSel.selectedIndex>0?bankSel.options[bankSel.selectedIndex].textContent:'';
     var bankAcct=val('epf-bankacct');
+    var bankAcctName=val('epf-bankacctname');
     if(role!=='customer' && bankCode && bankAcct){
-      var bRes=await api('/users/me/bank-account',{method:'POST',body:JSON.stringify({bankName:bankName,accountNumber:bankAcct,bankCode:bankCode})});
+      var bRes=await api('/users/me/bank-account',{method:'POST',body:JSON.stringify({bankName:bankName,accountNumber:bankAcct,bankCode:bankCode,accountName:bankAcctName||undefined})});
       S.user.bankName=bRes.bankName;S.user.bankAcct=bRes.bankAccountNumber;S.user.bankAccountName=bRes.bankAccountName;
     }
 

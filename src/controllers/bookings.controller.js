@@ -84,22 +84,25 @@ async function createBooking(req, res, next) {
       },
     });
 
-    // This previously only emitted a raw "booking:new" socket event to the
-    // vendor:{vendorId} room -- nothing in the frontend ever listened for
-    // it, and it never wrote a real Notification row, so a vendor had no
-    // way to learn a new booking request existed (no bell badge, nothing
-    // in their notification list, not even after refreshing). notify()
-    // is the same real mechanism every other booking-lifecycle event
-    // (accept/decline/complete/dispute) already uses.
-    const label = type === "EVENT_PLANNING" ? "event planning" : "home cook";
-    await notify(
-      req.app.get("io"),
-      vendor.userId,
-      "ORDER_UPDATE",
-      "New booking request",
-      `${req.user.name || "A customer"} sent you a ${label} booking request for ₦${Math.round(totalKobo / 100).toLocaleString()}.`,
-      { bookingId: booking.id }
-    );
+    // Home Cook bookings are unpaid at this exact moment (payment happens
+    // in a separate step right after creation, see payBooking/
+    // confirmBookingPayment) -- notifying the cook here would tell them
+    // about a request before the customer has actually paid for it, which
+    // is exactly the "shouldn't be able to see it before payment" gap.
+    // confirmBookingPayment (orderFlow.service.js) sends the real
+    // "New paid booking request" notify once payment actually clears.
+    // Event Planner never has a payment step at all, so it keeps notifying
+    // immediately here, unchanged.
+    if (type === "EVENT_PLANNING") {
+      await notify(
+        req.app.get("io"),
+        vendor.userId,
+        "ORDER_UPDATE",
+        "New booking request",
+        `${req.user.name || "A customer"} sent you an event planning booking request for ₦${Math.round(totalKobo / 100).toLocaleString()}.`,
+        { bookingId: booking.id }
+      );
+    }
     res.status(201).json({ booking });
   } catch (err) {
     next(err);
@@ -479,8 +482,8 @@ async function completeBooking(req, res, next) {
       req.app.get("io"),
       booking.customerId,
       "ORDER_UPDATE",
-      "Your booking was completed",
-      `Your booking #${booking.bookingNumber} was completed. Thank you for using Handa!`,
+      "This Booking is completed",
+      `Booking #${booking.bookingNumber} is complete. Thank you for using Handa!`,
       { bookingId: booking.id }
     );
     closeSupportThreadForContext(booking.id);
@@ -522,8 +525,8 @@ async function confirmBookingCompletion(req, res, next) {
           req.app.get("io"),
           vendor.userId,
           "ORDER_UPDATE",
-          "Booking completed",
-          `Job successfully completed: Escrow has released your payment.<br>Booking #${booking.bookingNumber} — ₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`,
+          "This Booking is completed",
+          `Booking #${booking.bookingNumber} is complete: Escrow has released your payment.<br>₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`,
           { bookingId: booking.id }
         );
       }
