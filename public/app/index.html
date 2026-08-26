@@ -2865,10 +2865,16 @@ function buildShop() {
     return;
   }
   // Resuming into an already-active session (see restoreActiveShopSession)
-  // -- skip the normal reset-to-empty-list behavior entirely.
+  // -- skip the normal reset-to-empty-list behavior entirely, and populate
+  // shopItems from the real session (shopItems/shopCart are otherwise only
+  // ever assigned inside this function, so on a fresh tab that never ran
+  // the normal buildList path they don't exist as identifiers at all yet).
   if (window._sfmResumePhase) {
     var resumePhase = window._sfmResumePhase;
     window._sfmResumePhase = null;
+    var resumeSession = window._sfmSession || {};
+    shopItems = (resumeSession.items||[]).map(function(i){return {id:i.id,text:i.text,approved:i.approved,price:i.priceKobo!=null?Math.round(i.priceKobo/100):null};});
+    shopCart = [];
     sfmSocketListeners();
     if (_socket) _socket.emit('shop-session:join', {sessionId: window._sfmSession.id});
     renderShopPhase(resumePhase);
