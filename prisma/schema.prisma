@@ -1074,9 +1074,10 @@ model ChatThread {
   // the AI stops auto-replying from then on.
   handledByAdminId String?
 
-  // DISPUTE threads only: once an admin closes a dispute chat, neither
-  // party can send further messages on it -- both sides see "This chat
-  // has ended" instead of a compose box.
+  // Once closed -- an admin closing a DISPUTE chat, or either real
+  // participant closing any other chat (manually, or via the frontend's
+  // 3-minute-idle auto-close) -- neither party can send further messages
+  // on it; both sides see "This chat has ended" instead of a compose box.
   closedAt DateTime?
   closedBy String?
 

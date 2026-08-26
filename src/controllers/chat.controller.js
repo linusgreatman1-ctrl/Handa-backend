@@ -225,6 +225,30 @@ async function sendMessage(req, res, next) {
   }
 }
 
+// Either participant can end a real (non-admin) chat -- customer/vendor/
+// rider/shopper, any direction. Idempotent (closing an already-closed
+// thread just returns its current state) so both a manual close and the
+// frontend's 3-minute-idle auto-close can safely race each other. Once
+// closed, sendMessage above already rejects new messages with 409 -- this
+// is what actually sets that closedAt, and broadcasts it live so it closes
+// on the OTHER participant's screen too, not just the closer's own.
+async function closeThread(req, res, next) {
+  try {
+    await assertParticipant(req.params.id, req.user.id);
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
+    if (!thread) return res.status(404).json({ error: "Thread not found." });
+    if (thread.closedAt) return res.json({ thread });
+    const updated = await prisma.chatThread.update({
+      where: { id: req.params.id },
+      data: { closedAt: new Date(), closedBy: req.user.id },
+    });
+    req.app.get("io")?.to(`chat:${req.params.id}`).emit("chat:closed", { threadId: req.params.id, closedBy: req.user.id });
+    res.json({ thread: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Real evidence/proof upload for a chat thread (e.g. a dispute discussion
 // in the account's own SUPPORT thread) — returns a URL only; the frontend
 // then calls sendMessage with that URL as attachmentUrl so it goes through
@@ -239,4 +263,4 @@ async function uploadChatAttachment(req, res, next) {
   }
 }
 
-module.exports = { openThread, listThreads, listMessages, sendMessage, openSupportThread, closeSupportThreadForContext, uploadChatAttachment };
+module.exports = { openThread, listThreads, listMessages, sendMessage, closeThread, openSupportThread, closeSupportThreadForContext, uploadChatAttachment };

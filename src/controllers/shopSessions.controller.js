@@ -11,7 +11,14 @@ const { closeSupportThreadForContext } = require("./chat.controller");
 const distanceFee = require("../utils/distanceFee");
 
 const SEARCHING_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-const STALE_LIVE_SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
+// Split by stage rather than one blanket 2h cutoff for every stage -- a
+// customer's dashboard was getting stuck resuming into a dead pre-rider
+// session (call/packaging/finding-rider -- nothing here should ever
+// legitimately take anywhere near 2 hours) for up to 2 full hours before
+// the sweep would clear it. Once a real rider is assigned, genuine
+// road-traffic variance still gets a longer allowance.
+const STALE_PRE_RIDER_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes — MATCHED/BUILDING_LIST/LIVE_CALL/PACKAGING/FINDING_RIDER
+const STALE_POST_RIDER_TIMEOUT_MS = 90 * 60 * 1000; // 90 minutes — RIDER_ASSIGNED/OUT_FOR_DELIVERY
 
 // Off-request-path sweep (same pattern as escrow's auto-release sweep) —
 // a SEARCHING session that no shopper ever accepts isn't something any
@@ -56,9 +63,15 @@ async function expireStaleSearchingSessions(io) {
 // still-HELD holds, so this is safe to run at any of these stages --
 // anything already released/paid out (e.g. seller payouts) is untouched.
 async function expireStaleLiveSessions(io) {
-  const cutoff = new Date(Date.now() - STALE_LIVE_SESSION_TIMEOUT_MS);
+  const preRiderCutoff = new Date(Date.now() - STALE_PRE_RIDER_TIMEOUT_MS);
+  const postRiderCutoff = new Date(Date.now() - STALE_POST_RIDER_TIMEOUT_MS);
   const stale = await prisma.shopSession.findMany({
-    where: { status: { in: ["MATCHED", "BUILDING_LIST", "LIVE_CALL", "PACKAGING", "FINDING_RIDER", "RIDER_ASSIGNED", "OUT_FOR_DELIVERY"] }, matchedAt: { lte: cutoff } },
+    where: {
+      OR: [
+        { status: { in: ["MATCHED", "BUILDING_LIST", "LIVE_CALL", "PACKAGING", "FINDING_RIDER"] }, matchedAt: { lte: preRiderCutoff } },
+        { status: { in: ["RIDER_ASSIGNED", "OUT_FOR_DELIVERY"] }, matchedAt: { lte: postRiderCutoff } },
+      ],
+    },
   });
   for (const session of stale) {
     await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session never completed — auto-cancelled and refunded." });
