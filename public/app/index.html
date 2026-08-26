@@ -3539,19 +3539,25 @@ function renderShopPhase(phase) {
         <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Items delivered</span><span style="font-weight:700;">${shopItems.length}</span></div>
         <div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;">Escrow</span><span class="badge b-green">🔓 Released</span></div>
       </div>
-      ${doneShopperRating ? _doneGivenBlock('Rated '+shopperName+' (Shopper)',doneShopperRating) : `<div id="rate-shopper-block">
+      ${doneShopperRating ? _doneGivenBlock('Rated '+shopperName+' (Shopper)',doneShopperRating) : (_isRatingSkipped(done.id+':SHOPPER') ? `<div style="padding:12px 0;text-align:left;color:#9A9390;font-size:13px;">Rating skipped for ${shopperName} (Shopper).</div>` : `<div id="rate-shopper-block">
         <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${shopperName} (Shopper):</p>
         <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSelectRatingStar('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
         <textarea id="rate-shopper-comment" placeholder="Leave a review for ${shopperName} (optional)..." style="width:100%;min-height:60px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:10px 12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:8px;font-family:'DM Sans',sans-serif;"></textarea>
-        <button onclick="sfmSubmitRating('SHOPPER','rate-shopper-stars','rate-shopper-comment')" style="background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:10px;font-family:'DM Sans',sans-serif;">Submit Review</button>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button onclick="sfmSubmitRating('SHOPPER','rate-shopper-stars','rate-shopper-comment')" style="flex:2;background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;">Submit Review</button>
+          <button onclick="_markRatingSkipped('${done.id}:SHOPPER');renderShopPhase('done');" style="flex:1;background:transparent;border:1px solid #333;border-radius:10px;padding:8px 16px;color:#9A9390;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;">Skip</button>
+        </div>
         ${(done.shopper&&done.shopper.id) ? `<button data-label="${shopperName}" onclick="toggleFavourite('SHOPPER','${done.shopper.id}',this)" style="background:transparent;border:1.5px solid #2A2850;border-radius:20px;padding:6px 14px;color:#9A9390;font-size:12px;cursor:pointer;margin-bottom:18px;font-family:'DM Sans',sans-serif;">☆ Favourite ${shopperName}</button>` : ''}
-      </div>`}
-      ${doneRiderRating ? _doneGivenBlock('Rated '+riderName+' (Rider)',doneRiderRating) : `<div id="rate-rider-block">
+      </div>`)}
+      ${doneRiderRating ? _doneGivenBlock('Rated '+riderName+' (Rider)',doneRiderRating) : (_isRatingSkipped(done.id+':RIDER') ? `<div style="padding:12px 0;text-align:left;color:#9A9390;font-size:13px;">Rating skipped for ${riderName} (Rider).</div>` : `<div id="rate-rider-block">
         <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${riderName} (Rider):</p>
         <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-rider-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSelectRatingStar('RIDER',${s},'rate-rider-stars')">⭐</span>`).join('')}</div>
         <textarea id="rate-rider-comment" placeholder="Leave a review for ${riderName} (optional)..." style="width:100%;min-height:60px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:10px 12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:8px;font-family:'DM Sans',sans-serif;"></textarea>
-        <button onclick="sfmSubmitRating('RIDER','rate-rider-stars','rate-rider-comment')" style="background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:22px;font-family:'DM Sans',sans-serif;">Submit Review</button>
-      </div>`}
+        <div style="display:flex;gap:8px;margin-bottom:22px;">
+          <button onclick="sfmSubmitRating('RIDER','rate-rider-stars','rate-rider-comment')" style="flex:2;background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;">Submit Review</button>
+          <button onclick="_markRatingSkipped('${done.id}:RIDER');renderShopPhase('done');" style="flex:1;background:transparent;border:1px solid #333;border-radius:10px;padding:8px 16px;color:#9A9390;font-size:12px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;">Skip</button>
+        </div>
+      </div>`)}
       <div style="display:flex;gap:10px;width:100%;margin-bottom:10px;">
         <button onclick="showReportIssue('shopper_session','${done.id||''}')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">⚠️ Report Shopper</button>
         <button onclick="showReportIssue('rider','${done.id||''}')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">⚠️ Report Rider</button>
@@ -6722,7 +6728,7 @@ function showOrderProcessing(){
 }
 
 var _reportContext='order';var _reportSelected='';var _reportContextId=null;var _reportSubmitting=false;
-var _reportCategories={order:['Missing items','Wrong items','Food quality issue','Late delivery','Rider was rude','Other'],shopper_session:['Shopper behaviour','Item not as described','Price discrepancy','Other'],rider:['Dangerous driving','Rude behaviour','Package damaged','Other'],vendor:['Wrong order prepared','Missing items','Rude behaviour','Other'],customer:['Rude or abusive','False report','No show','Other'],vendor_shopper:['Not ready at pickup time','Wrong/missing items','Rude behaviour','Unsafe location','Other']};
+var _reportCategories={order:['Missing items','Wrong items','Food quality issue','Late delivery','Rider was rude','Other'],shopper_session:['Shopper behaviour','Item not as described','Price discrepancy','Other'],rider:['Dangerous driving','Rude behaviour','Package damaged','Other'],vendor:['Wrong order prepared','Missing items','Rude behaviour','Other'],customer:['Rude or abusive','False report','No show','Other'],vendor_shopper:['Not ready at pickup time','Wrong/missing items','Rude behaviour','Unsafe location','Other'],booking:['Wrong order prepared','Missing items','Rude behaviour','Other']};
 function showReportIssue(ctx,contextId){_reportContext=ctx||'order';_reportContextId=contextId||null;_reportSelected='';var cats=_reportCategories[ctx]||_reportCategories.order;var el=document.getElementById('report-categories');if(el){el.innerHTML=cats.map(function(c){return '<button onclick="selectReportCat(this,\''+c+'\')" style="padding:10px 14px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:13px;cursor:pointer;text-align:left;">'+c+'</button>';}).join('');}var desc=document.getElementById('report-desc');if(desc)desc.value='';document.getElementById('report-modal').style.display='flex';}
 function selectReportCat(btn,cat){_reportSelected=cat;document.querySelectorAll('#report-categories button').forEach(function(b){b.style.background='#242424';b.style.color='#9A9390';b.style.borderColor='#2A2850';});btn.style.background='rgba(232,57,46,.12)';btn.style.color='#E8392E';btn.style.borderColor='rgba(232,57,46,.4)';}
 // Uploads one evidence photo to an already-created ticket — raw fetch,
@@ -6744,7 +6750,7 @@ async function submitReport(){
   _reportSubmitting=true;
   var submitBtn=document.getElementById('report-submit-btn');
   if(submitBtn){submitBtn.disabled=true;submitBtn.style.opacity='.6';submitBtn.style.cursor='not-allowed';}
-  var ctxMap={order:'ORDER',order_live:'ORDER',shopper_session:'SHOP_SESSION',rider:'RIDER',vendor:'VENDOR',customer:'CUSTOMER',vendor_shopper:'VENDOR'};
+  var ctxMap={order:'ORDER',order_live:'ORDER',shopper_session:'SHOP_SESSION',rider:'RIDER',vendor:'VENDOR',customer:'CUSTOMER',vendor_shopper:'VENDOR',booking:'BOOKING'};
   var desc=(document.getElementById('report-desc')||{}).value||'';
   var refundEl=document.getElementById('report-refund');
   var refundNaira=refundEl?parseFloat(refundEl.value):NaN;
@@ -9243,6 +9249,22 @@ async function vendorMarkBookingComplete(id,isEP){
     showToast&&showToast(err.message||'Could not mark this booking complete','warning');
   }
 }
+// "Skip" on a rating prompt is a real, permanent choice, not just a
+// this-viewing dismissal -- reopening the same booking later shouldn't
+// nag again. There's no backend field for this (and none is needed: a
+// skip never creates a Rating row, so the vendor/rider/shopper genuinely
+// see nothing either way) -- remembered per-browser in localStorage,
+// keyed by booking/session id, which is enough to stop the same device
+// from being asked twice without a schema change.
+function _isRatingSkipped(id){
+  try{ return (JSON.parse(localStorage.getItem('handa_skipped_ratings')||'[]')).indexOf(id)>-1; }catch(e){ return false; }
+}
+function _markRatingSkipped(id){
+  try{
+    var list=JSON.parse(localStorage.getItem('handa_skipped_ratings')||'[]');
+    if(list.indexOf(id)===-1){list.push(id);localStorage.setItem('handa_skipped_ratings',JSON.stringify(list));}
+  }catch(e){}
+}
 // Customer's own History detail — covers both a Booking (home cook/event
 // planner) and a Shop-For-Me session, since populateHistory() merges both
 // into one list. Bookings still in a live pre-completion status and whose
@@ -9395,17 +9417,28 @@ async function openCustomerHistoryDetail(kind,id){
       // THIS booking before offering Rate/Review again, so a customer who
       // already rated doesn't see the prompt every time they reopen it.
       var existingRating=(b.ratings||[]).find(function(r){return r.rateeRole==='VENDOR';});
+      var ratingSkipped=!existingRating&&_isRatingSkipped(b.id);
+      // A skip never creates a Rating row (nothing for the vendor to ever
+      // see, same as if the customer had simply never rated), it just
+      // stops THIS device from being asked again on future visits.
+      var rateRow=existingRating
+        ? '<div style="background:#1C1C1C;border:1px solid #2A2850;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;"><div style="color:#F5A623;font-size:13px;letter-spacing:1px;margin-bottom:4px;">'+'★'.repeat(existingRating.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-existingRating.score)+'</span></div>'+(existingRating.comment?'<div style="color:#9A9390;font-size:12px;">'+existingRating.comment+'</div>':'')+'</div>'
+        : (ratingSkipped
+          ? '<div style="color:#9A9390;font-size:12px;margin-bottom:10px;">Rating skipped.</div>'
+          : '<div style="display:flex;gap:8px;margin-bottom:10px;">'
+            +'<button onclick="openSubmitRatingModal(\''+vu.id+'\',\'VENDOR\',\'BOOKING\',\''+b.id+'\',\''+(v.bizName||'this vendor').replace(/'/g,"\\'")+'\',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="flex:2;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2B50; Rate/Review</button>'
+            +'<button onclick="_markRatingSkipped(\''+b.id+'\');openCustomerHistoryDetail(\'booking\',\''+b.id+'\');" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Skip</button>'
+            +'</div>');
+      var reportRow=b.reportTicket
+        ? '<div style="padding:12px;border-radius:12px;border:1.5px solid rgba(245,166,35,.35);background:rgba(245,166,35,.08);color:#F5A623;font-weight:700;font-size:12px;">Issue Reported — your report has been received and will be treated within 1–24 hours. You\'ll hear back from us.</div>'
+        : '<button onclick="showReportIssue(\'booking\',\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report Issues</button>';
       terminalBanner='<div style="margin-top:14px;padding:20px;border-radius:16px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
         +'<div style="font-size:40px;margin-bottom:8px;">&#x1F389;</div>'
         +'<div style="font-weight:900;font-size:16px;color:#2ECC71;margin-bottom:4px;">Thank You for Using Handa!</div>'
         +'<div style="font-size:12px;color:#9A9390;margin-bottom:16px;">Your booking with '+(v.bizName||'the vendor')+' is complete.</div>'
-        +(existingRating
-          ? '<div style="background:#1C1C1C;border:1px solid #2A2850;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;"><div style="color:#F5A623;font-size:13px;letter-spacing:1px;margin-bottom:4px;">'+'★'.repeat(existingRating.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-existingRating.score)+'</span></div>'+(existingRating.comment?'<div style="color:#9A9390;font-size:12px;">'+existingRating.comment+'</div>':'')+'</div>'
-          : '')
-        +'<div style="display:flex;gap:10px;">'
-        +(existingRating?'':'<button onclick="openSubmitRatingModal(\''+vu.id+'\',\'VENDOR\',\'BOOKING\',\''+b.id+'\',\''+(v.bizName||'this vendor').replace(/'/g,"\\'")+'\',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="flex:1;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2B50; Rate/Review</button>')
-        +'<button onclick="showReportIssue(\'vendor\',\''+v.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report Issues</button>'
-        +'</div></div>';
+        +rateRow
+        +reportRow
+        +'</div>';
     }else if(isCancelledFromDispute){
       terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;margin-bottom:6px;">Dispute Resolved -- Refunded To Your Wallet</div>'
@@ -9555,6 +9588,15 @@ async function confirmCancelBookingWithReason(){
     showToast&&showToast('Booking cancelled.','success');
     closeProcedureModal();
     closeBottomSheet&&closeBottomSheet();
+    // This reason modal can be reached from the just-booked "confirmed"
+    // overlay screen (Cancel Booking button right there), not only from
+    // History -- closing just the modal + bottom sheet left that whole
+    // full-screen overlay (with its now-stale Chat/Call/WhatsApp buttons)
+    // sitting visible underneath History instead of everything actually
+    // clearing off screen. Both are harmless no-ops if that overlay was
+    // never open.
+    if(typeof closeCookBooking==='function')closeCookBooking();
+    if(typeof closeEPBooking==='function')closeEPBooking();
     eGo('history');
   }catch(err){
     showToast&&showToast(err.message||'Could not cancel this booking','warning');
@@ -9580,6 +9622,22 @@ function openEditBookingModal(b){
       +'<input class="if" id="eb-guests" type="number" min="1"'+(maxGuests?' max="'+maxGuests+'" oninput="_clampEpbGuests(this,'+maxGuests+')"':'')+' value="'+(b.guestCount||'')+'" placeholder="e.g. 200" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
       +(maxGuests?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0">Up to '+maxGuests+' guests for this package</p>':''))
     :'';
+  // The items originally booked (Home Cook a-la-carte picks, EP add-ons) --
+  // each one's own text is freely retypeable to swap in something else
+  // entirely, keeping its original price/quantity so the total doesn't
+  // silently jump around from what's really just a wording change. Every
+  // line is submitted as a custom item (see saveBookingEdit) rather than
+  // kept linked to its original menuItemId, since a real menu item's name
+  // is always re-derived server-side from that id and would otherwise
+  // silently ignore whatever the customer typed here.
+  var bookedItems=Array.isArray(b.selectedItems)?b.selectedItems:[];
+  var itemsField=bookedItems.length
+    ?('<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Items Booked</label>'
+      +'<p style="color:#9A9390;font-size:11px;margin:0 0 8px;">Type over any item to replace it — its price stays the same.</p>'
+      +bookedItems.map(function(it,idx){
+        return '<input class="if eb-item-inp" data-price="'+(it.priceKobo||0)+'" data-qty="'+(it.qty||1)+'" value="'+String(it.name||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;margin-bottom:8px;">';
+      }).join(''))
+    :'';
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
@@ -9590,6 +9648,7 @@ function openEditBookingModal(b){
     +_arField('Event Time','eb-time',b.eventTime||'','')
     +_arField('Venue','eb-venue',b.venue||'','')
     +guestsField
+    +itemsField
     +'<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="eb-notes" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:70px;">'+(b.notes||'')+'</textarea>'
     +'<button onclick="saveBookingEdit()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save Changes</button>'
     +'</div>'
@@ -9603,10 +9662,17 @@ async function saveBookingEdit(){
   var venue=(document.getElementById('eb-venue')||{}).value||'';
   var guests=(document.getElementById('eb-guests')||{}).value||'';
   var notes=(document.getElementById('eb-notes')||{}).value||'';
+  var itemInps=document.querySelectorAll('.eb-item-inp');
+  var items;
+  if(itemInps.length){
+    items=Array.from(itemInps).map(function(inp){
+      return {customName:inp.value.trim(),customPriceKobo:parseInt(inp.getAttribute('data-price'),10)||0,qty:parseInt(inp.getAttribute('data-qty'),10)||1};
+    }).filter(function(it){return it.customName;});
+  }
   try{
     var res=await api('/bookings/'+_editingBooking.id,{method:'PATCH',body:JSON.stringify({
       eventDate:date||undefined,eventTime:time||undefined,venue:venue||undefined,
-      guestCount:guests?parseInt(guests):undefined,notes:notes,
+      guestCount:guests?parseInt(guests):undefined,notes:notes,items:items,
     })});
     showToast&&showToast(res.pending?'Changes sent — waiting for the vendor to approve.':'Booking updated — vendor notified','success');
     closeProcedureModal();

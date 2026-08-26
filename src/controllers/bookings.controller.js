@@ -160,7 +160,17 @@ async function getBooking(req, res, next) {
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ booking, disputeTicket });
+    // Any plain "Report Issues" ticket on this booking (dispute or not) --
+    // separate from disputeTicket above, which is specifically the
+    // job-not-completed dispute flow. Lets the frontend swap the Report
+    // Issues button for a static "Issue Reported" state instead of
+    // letting the same booking be reported over and over.
+    const reportTicket = await prisma.supportTicket.findFirst({
+      where: { context: "BOOKING", contextId: booking.id },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({ booking, disputeTicket, reportTicket });
   } catch (err) {
     next(err);
   }
