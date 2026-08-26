@@ -1135,6 +1135,20 @@ function connectSocket(){
     if(typeof toast==='function') toast(n.title + ': ' + n.body);
     bumpNotifBadge();
   });
+  // Socket.IO rooms don't survive a reconnect (network blip, idle timeout,
+  // Render sleep/wake) -- without this, a client silently drops out of
+  // every shop-session/booking/chat room it had joined and never gets
+  // real-time pushes again until a full page reload. 'connect' fires on
+  // the very first connect too, so this doubles as the initial join path
+  // for whatever's already active in memory (e.g. right after a session
+  // resume sets window._sfmSession before the socket finishes connecting).
+  _socket.on('connect', function(){
+    if(window._sfmSession) _socket.emit('shop-session:join',{sessionId:window._sfmSession.id});
+    if(window._shopperSession) _socket.emit('shop-session:join',{sessionId:window._shopperSession.id});
+    if(window._riderActiveSession) _socket.emit('shop-session:join',{sessionId:window._riderActiveSession.id});
+    if(window._activeChatThreadId) _socket.emit('chat:join',{threadId:window._activeChatThreadId});
+    if(window._openBookingDetailId) _socket.emit('booking:join',{bookingId:window._openBookingDetailId});
+  });
   confirmCallBindListeners();
   bindGlobalChatRequestListener();
   refreshNotifBadge();
