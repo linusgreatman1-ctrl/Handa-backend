@@ -921,7 +921,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       </label>
       <input id="report-evidence" type="file" accept="image/*" style="display:none;" onchange="var t=document.getElementById('report-evidence-label-text');if(t)t.textContent=this.files[0]?this.files[0].name:'Choose a photo';">
     </div>
-    <button onclick="submitReport()" style="width:100%;padding:14px;border-radius:13px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-family:'DM Sans',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">Submit Report</button>
+    <button id="report-submit-btn" onclick="submitReport()" style="width:100%;padding:14px;border-radius:13px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-family:'DM Sans',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">Submit Report</button>
     <button onclick="closeReportIssue()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>
   </div>
 </div>
@@ -6620,7 +6620,7 @@ function showOrderProcessing(){
   advanceStage();
 }
 
-var _reportContext='order';var _reportSelected='';var _reportContextId=null;
+var _reportContext='order';var _reportSelected='';var _reportContextId=null;var _reportSubmitting=false;
 var _reportCategories={order:['Missing items','Wrong items','Food quality issue','Late delivery','Rider was rude','Other'],shopper_session:['Shopper behaviour','Item not as described','Price discrepancy','Other'],rider:['Dangerous driving','Rude behaviour','Package damaged','Other'],vendor:['Wrong order prepared','Missing items','Rude behaviour','Other'],customer:['Rude or abusive','False report','No show','Other'],vendor_shopper:['Not ready at pickup time','Wrong/missing items','Rude behaviour','Unsafe location','Other']};
 function showReportIssue(ctx,contextId){_reportContext=ctx||'order';_reportContextId=contextId||null;_reportSelected='';var cats=_reportCategories[ctx]||_reportCategories.order;var el=document.getElementById('report-categories');if(el){el.innerHTML=cats.map(function(c){return '<button onclick="selectReportCat(this,\''+c+'\')" style="padding:10px 14px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:13px;cursor:pointer;text-align:left;">'+c+'</button>';}).join('');}var desc=document.getElementById('report-desc');if(desc)desc.value='';document.getElementById('report-modal').style.display='flex';}
 function selectReportCat(btn,cat){_reportSelected=cat;document.querySelectorAll('#report-categories button').forEach(function(b){b.style.background='#242424';b.style.color='#9A9390';b.style.borderColor='#2A2850';});btn.style.background='rgba(232,57,46,.12)';btn.style.color='#E8392E';btn.style.borderColor='rgba(232,57,46,.4)';}
@@ -6639,11 +6639,16 @@ async function uploadTicketEvidence(ticketId, fileInputEl){
 
 async function submitReport(){
   if(!_reportSelected){toast('Please select an issue category');return;}
+  if(_reportSubmitting)return;
+  _reportSubmitting=true;
+  var submitBtn=document.getElementById('report-submit-btn');
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.opacity='.6';submitBtn.style.cursor='not-allowed';}
   var ctxMap={order:'ORDER',order_live:'ORDER',shopper_session:'SHOP_SESSION',rider:'RIDER',vendor:'VENDOR',customer:'CUSTOMER',vendor_shopper:'VENDOR'};
   var desc=(document.getElementById('report-desc')||{}).value||'';
   var refundEl=document.getElementById('report-refund');
   var refundNaira=refundEl?parseFloat(refundEl.value):NaN;
   var evidenceEl=document.getElementById('report-evidence');
+  var wasOrderLive=_reportContext==='order_live';
   try{
     var res = await api('/support/tickets',{method:'POST',body:JSON.stringify({
       context: ctxMap[_reportContext]||'GENERAL',
@@ -6655,8 +6660,17 @@ async function submitReport(){
     })});
     if(evidenceEl&&evidenceEl.files&&evidenceEl.files[0]) await uploadTicketEvidence(res.ticket.id, evidenceEl);
     document.getElementById('report-modal').style.display='none';
+    // Clear every field so a reopened form never carries over a stale
+    // selection, and close whatever detail sheet the Report button was
+    // opened from -- otherwise that sheet (and its own Report button)
+    // stays sitting on top of the home screen after eGo('home') below,
+    // letting the same report be submitted again and again.
+    if(refundEl)refundEl.value='';
+    if(evidenceEl){evidenceEl.value='';var lt=document.getElementById('report-evidence-label-text');if(lt)lt.textContent='Choose a photo';}
+    closeBottomSheet&&closeBottomSheet();
+    closeProcedureModal&&closeProcedureModal();
     toast('Report submitted! Our team will contact you within 30 mins.');
-    if(_reportContext==='order_live'){
+    if(wasOrderLive){
       var rm=document.getElementById('rating-modal');if(rm)rm.style.display='flex';
     }else{
       eGo(_eRole==='customer'?'home':_eRole);
@@ -6665,6 +6679,8 @@ async function submitReport(){
     toast(err.message||'Could not submit report');
   }
   _reportContext='';_reportContextId=null;
+  _reportSubmitting=false;
+  if(submitBtn){submitBtn.disabled=false;submitBtn.style.opacity='1';submitBtn.style.cursor='pointer';}
 }
 
 function closeReportIssue(){
@@ -8889,11 +8905,14 @@ async function openVendorBookingDetail(id){
       ['Type',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
       ['Date',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
-      ['Guests',b.guestCount||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:'—'],
       ['Total',N(Math.round(b.totalKobo/100))],
       ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with you (not via the app)':(b.paymentMethod||'—')],
     ];
+    // Guest count is only meaningful for Event Planning bookings -- Home
+    // Cook bookings never collect it, so showing "Guests: Not set" there
+    // was pure noise.
+    if(b.type==='EVENT_PLANNING')rows.splice(4,0,['Guests',b.guestCount||'Not set']);
     var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
     var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
@@ -9148,10 +9167,13 @@ async function openCustomerHistoryDetail(kind,id){
       ['Booked On',b.createdAt?new Date(b.createdAt).toLocaleString():'—'],
       ['Scheduled For',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
-      ['Guests',b.guestCount||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:'—'],
       ['Total',N(Math.round(b.totalKobo/100))],
     ];
+    // Guest count is only meaningful for Event Planning bookings -- Home
+    // Cook bookings never collect it, so showing "Guests: Not set" there
+    // was pure noise.
+    if(b.type==='EVENT_PLANNING')rows.splice(6,0,['Guests',b.guestCount||'Not set']);
     // Combines eventDate + eventTime (a separate "HH:MM" string) into a real
     // instant -- comparing eventDate alone treats the whole day as "not yet
     // passed" until midnight, hours after the actual scheduled time.
@@ -9420,6 +9442,17 @@ function openEditBookingModalById(id){
 function openEditBookingModal(b){
   _editingBooking=b;
   closeBottomSheet&&closeBottomSheet();
+  // Guests only applies to Event Planning bookings -- Home Cook bookings
+  // never collect a guest count. When the booking's package has a real
+  // configured guestCount, cap the field to it (same clamp-on-type used by
+  // the original booking form) instead of leaving it freely editable.
+  var isEP=b.type==='EVENT_PLANNING';
+  var maxGuests=(isEP&&b.servicePackage&&b.servicePackage.guestCount)?b.servicePackage.guestCount:null;
+  var guestsField=isEP
+    ?('<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Guests</label>'
+      +'<input class="if" id="eb-guests" type="number" min="1"'+(maxGuests?' max="'+maxGuests+'" oninput="_clampEpbGuests(this,'+maxGuests+')"':'')+' value="'+(b.guestCount||'')+'" placeholder="e.g. 200" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
+      +(maxGuests?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0">Up to '+maxGuests+' guests for this package</p>':''))
+    :'';
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
@@ -9429,7 +9462,7 @@ function openEditBookingModal(b){
     +_arField('Event Date','eb-date',b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'','date')
     +_arField('Event Time','eb-time',b.eventTime||'','')
     +_arField('Venue','eb-venue',b.venue||'','')
-    +_arField('Guests','eb-guests',b.guestCount||'','number')
+    +guestsField
     +'<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="eb-notes" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:70px;">'+(b.notes||'')+'</textarea>'
     +'<button onclick="saveBookingEdit()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save Changes</button>'
     +'</div>'
@@ -9866,7 +9899,7 @@ function confirmMealPicker(){
 // (real menu items + free-text "Other"), no fixed meal-count cap. ──
 var _eventCatering=null;
 function openEventCateringPicker(tpl){
-  _eventCatering={tpl:tpl,eventType:'Wedding',guestCount:'',selections:[]};
+  _eventCatering={tpl:tpl,eventType:'Wedding',selections:[]};
   renderEventCateringPicker();
 }
 function renderEventCateringPicker(){
@@ -9884,8 +9917,6 @@ function renderEventCateringPicker(){
     +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
     +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
     +'</select>'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Number of Guests</label>'
-    +'<input id="ec-guests" type="number" value="'+ec.guestCount+'" oninput="_eventCatering.guestCount=this.value" placeholder="e.g. 100" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:16px;">'
     +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select Foods</p>'
     +menu.map(function(m){
       var picked=ec.selections.some(function(x){return x.menuItemId===m.id;});
@@ -9938,7 +9969,7 @@ function removeEventCateringCustom(cid){
 function confirmEventCatering(){
   if(!_eventCatering.selections.length){showToast&&showToast('Select at least one food item','warning');return;}
   var total=_eventCatering.selections.reduce(function(s,x){return s+x.priceKobo;},0);
-  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:_eventCatering.tpl.nm+' — '+_eventCatering.eventType,em:_eventCatering.tpl.em,pr:Math.round(total/100),includes:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType,guestCount:_eventCatering.guestCount};
+  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:_eventCatering.tpl.nm+' — '+_eventCatering.eventType,em:_eventCatering.tpl.em,pr:Math.round(total/100),includes:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType};
   _cb.selected={};
   cookBkRender('packages');
 }
@@ -9968,7 +9999,6 @@ async function cookBkConfirmBooking(){
   if(!pkgReal&&_cb.selectedPkg&&String(_cb.selectedPkg.id).indexOf('custom_')===0){
     pkgReal=((_cb.cook&&_cb.cook.pkgs&&_cb.cook.pkgs._custom)||[]).find(function(p){return p.key===_cb.selectedPkg.id;});
   }
-  var guestCount;
   // Meal-picker packages (3-Day/Weekly/Multiple Meals/Event Catering) are
   // priced purely from the real+custom items the customer picked — never
   // also charge a flat servicePackage price on top, even if the vendor
@@ -9978,14 +10008,12 @@ async function cookBkConfirmBooking(){
     items=items.concat(_cb.selectedPkg.mealPickerItems.map(function(x){
       return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:x.qty}:{menuItemId:x.menuItemId,qty:x.qty};
     }));
-    if(_cb.selectedPkg.guestCount)guestCount=parseInt(_cb.selectedPkg.guestCount)||undefined;
     if(_cb.selectedPkg.eventType)notes=(notes?notes+' — ':'')+'Event type: '+_cb.selectedPkg.eventType;
   }
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_cb.cookId, type:'HOME_COOK', items:items,
       servicePackageId:pkgReal?pkgReal.id:undefined,
-      guestCount:guestCount,
       eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes,
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
