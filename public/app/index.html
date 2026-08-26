@@ -3167,14 +3167,39 @@ function renderShopPhase(phase) {
       </div>
     </div>`;
     renderApprovalItems();
-    if(window._sfmSession) sfmStartCall(window._sfmSession.id, 'callee', null, 'rtc-remote-video');
+    if(window._sfmSession){
+      sfmStartCall(window._sfmSession.id, 'callee', null, 'rtc-remote-video');
+      // Join the real chat thread's room proactively, not lazily on first
+      // send -- messages broadcast ONLY to chat:{threadId} (see
+      // chat.controller.js's sendMessage), so a party whose socket never
+      // joined that room never receives anything sent to it, no matter how
+      // many messages arrive. Previously only sfmEnsureChatThread (called
+      // from sendLiveChat) did this join, meaning only whoever sent a
+      // message FIRST was ever actually in the room -- if the customer
+      // sent first, the shopper's socket wasn't listening at all until
+      // THEY also sent one, silently losing everything before that.
+      if(window._sfmSession.shopper&&window._sfmSession.shopper.userId){
+        sfmEnsureChatThread(window._sfmSession.id, window._sfmSession.shopper.userId).then(function(){
+          sfmBindChatSocketListener('live-chat-msgs', S.user.id);
+        });
+      }
+    }
 
   // ── PHASE 5: Shopper Packages Items ───────────────────────────────────
   } else if (phase === 'packaging') {
     const total = shopItems.reduce((s,i)=>s+(i.price||0),0);
     const shopperNm = sfmShopperName();
     const liveStatus = (window._sfmSession&&window._sfmSession.status)||'PACKAGING';
-    const waitingText = liveStatus==='FINDING_RIDER'
+    // RIDER_ASSIGNED stays on this same waiting screen now (see
+    // SFM_STATUS_PHASE) rather than immediately revealing the rider's
+    // real details -- nothing's actually been handed over yet until the
+    // shopper and rider finish the 3-way confirm call. Sub-branches the
+    // copy on whether the rider has reached the shopper yet.
+    const waitingText = liveStatus==='RIDER_ASSIGNED'
+      ? (window._sfmSession&&window._sfmSession.riderArrivedShopperAt
+          ? 'Your rider has arrived and is confirming items with '+shopperNm+' before heading to you'
+          : 'A rider is on the way to '+shopperNm+' to collect your items')
+      : liveStatus==='FINDING_RIDER'
       ? shopperNm+' is finding a rider to pick up your items'
       : shopperNm+' is now packaging your items';
     body.innerHTML = `<div class="fi" style="text-align:center;padding:20px 0;">
@@ -3800,7 +3825,10 @@ function sfmSocketListeners(){
   _socket.on('shop-session:rider-arrived-shopper',function(p){
     if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
     window._sfmSession.riderArrivedShopperAt=new Date().toISOString();
-    if(window._sfmPhase==='riderArrived')renderShopPhase('riderArrived');
+    // The customer sits on 'packaging' throughout RIDER_ASSIGNED now (see
+    // SFM_STATUS_PHASE) -- re-render there, not the no-longer-reachable
+    // 'riderArrived' phase, so the waiting copy picks up the arrival.
+    if(window._sfmPhase==='packaging')renderShopPhase('packaging');
     showToast&&showToast('Your rider has arrived at the shopper\'s location','success');
   });
   _socket.on('shop-session:rider-arrived-customer',function(p){
@@ -3954,10 +3982,19 @@ function sfmRiderVehicle(){
 
 // Real status → customer phase map. FINDING_RIDER shares the 'packaging'
 // screen (nothing new for the customer to do in either state — just
-// waiting on the shopper), matching the doc's own delivery-code mockup
-// once a rider is actually assigned.
-var SFM_STATUS_PHASE = { LIVE_CALL:'liveCall', PACKAGING:'packaging', FINDING_RIDER:'packaging', RIDER_ASSIGNED:'riderArrived', OUT_FOR_DELIVERY:'customerTracking', DELIVERED:'delivered' };
-var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packaging','riderArrived','customerTracking','delivered','done'];
+// waiting on the shopper). RIDER_ASSIGNED ALSO stays on 'packaging' now
+// (was 'riderArrived', revealing the rider's real name/vehicle/rating
+// immediately) -- a rider being assigned doesn't mean anything has
+// actually been handed over yet; the shopper and rider still need to do
+// the 3-way confirm call and handover first. Showing "here's your rider"
+// that early was inaccurate and let the customer see rider details before
+// the handover that's supposed to gate it. Real reveal now happens at
+// OUT_FOR_DELIVERY (customerTracking), which already has the rider's
+// full info plus a real map to track them heading to the customer -- a
+// strictly more complete screen than 'riderArrived' ever was, so nothing
+// is lost by skipping straight to it.
+var SFM_STATUS_PHASE = { LIVE_CALL:'liveCall', PACKAGING:'packaging', FINDING_RIDER:'packaging', RIDER_ASSIGNED:'packaging', OUT_FOR_DELIVERY:'customerTracking', DELIVERED:'delivered' };
+var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packaging','customerTracking','delivered','done'];
 function onSfmStatus(status){
   if(!(S.curScreen==='liveshop'||S.curScreen==='sfm')||!window._sfmSession)return;
   if(status==='CANCELLED'){
@@ -4763,7 +4800,18 @@ function renderShopperPhase(phase) {
     </div>`;
     shopperBindItemSocketListeners();
     renderShopperItemStatus();
-    if(window._shopperSession) sfmStartCall(window._shopperSession.id, 'caller', 'rtc-local-video', 'rtc-remote-video');
+    if(window._shopperSession){
+      sfmStartCall(window._shopperSession.id, 'caller', 'rtc-local-video', 'rtc-remote-video');
+      // Same proactive room-join as the customer side -- see the matching
+      // comment there. Without this, whichever party didn't send the
+      // first message never actually joined chat:{threadId} and silently
+      // never received anything sent to it.
+      if(window._shopperSession.customer&&window._shopperSession.customer.id){
+        sfmEnsureChatThread(window._shopperSession.id, window._shopperSession.customer.id).then(function(){
+          sfmBindChatSocketListener('shopper-chat-msgs', S.user.id);
+        });
+      }
+    }
 
   // PHASE C: Package the items
   } else if (phase === 'packaging') {
@@ -4842,29 +4890,55 @@ function renderShopperPhase(phase) {
     var _rVeh=(function(){var r=window._shopperSession&&window._shopperSession.rider;return r?[r.vehicleType,r.plateNumber].filter(Boolean).join(' • '):'';})();
     var _rRating=(window._shopperSession&&window._shopperSession.rider&&window._shopperSession.rider.ratingAvg)?window._shopperSession.rider.ratingAvg.toFixed(1):'New';
     var _riderHere=window._shopperSession&&window._shopperSession.riderArrivedShopperAt;
-    body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
-      <div style="text-align:center;margin-bottom:18px;">
-        <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
-        <div class="h2">Rider Assigned!</div>
-        <p style="color:#9A9390;font-size:13px;margin-top:5px;">${_riderHere?'The rider has arrived — confirm all items with them before handover':'Confirm all items with the rider once they arrive to collect'}</p>
-      </div>
-      ${_riderHere?`<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
-        <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${_rNm} has arrived at your location</span>
-      </div>`:''}
-
-      <!-- Rider info -->
-      <div class="card" style="margin-bottom:14px;">
+    // Rider details/chat/call stay visible in both states -- they're
+    // useful whether the rider is still en route or already here to
+    // confirm items. Only the map (before arrival) vs. the item/call/
+    // handover flow (after arrival) actually swap out.
+    var _riderContactCard=`<div class="card" style="margin-bottom:14px;">
         <div style="display:flex;gap:13px;align-items:center;">
           <div style="width:52px;height:52px;background:rgba(100,48,200,0.10);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">👨🏿</div>
           <div style="flex:1;">
             <div style="font-weight:800;font-size:15px;">${_rNm}</div>
             <div style="font-size:12px;color:#9A9390;margin-top:2px;">${_rVeh?_rVeh+' &nbsp;•&nbsp; ':''}★${_rRating}</div>
-            <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ Assigned</div>
+            <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ ${_riderHere?'Arrived':'En Route'}</div>
           </div>
           <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(59,159,232,.4);margin-right:6px;" onclick="openShopperRiderChat()">💬</button>
           <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${_rNm}','${shopperRiderPhone()}','${_rVeh}','🏍️')">📞</button>
         </div>
+      </div>`;
+    if(!_riderHere){
+      // State 1: rider assigned, still on the way -- a real map (matching
+      // the same visual language as the rider's own map screens) instead
+      // of just a card, so the shopper can actually see them approaching.
+      body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
+        <div style="text-align:center;margin-bottom:18px;">
+          <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
+          <div class="h2">Rider Found!</div>
+          <p style="color:#9A9390;font-size:13px;margin-top:5px;">${_rNm} is on the way to your location</p>
+        </div>
+        <div class="mapbox" style="border-radius:16px;height:200px;margin-bottom:16px;">
+          <div class="mgrid"></div><div class="mroad"></div>
+          <div class="mpin" style="left:8%"><div class="mpc" style="width:40px;height:40px;background:#2ECC71;">&#x1F3E0;</div><div class="mpl">You</div></div>
+          <div class="mpin mrider" style="right:12%"><div class="mpc" style="width:48px;height:48px;background:#F5A623;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#F5A623;font-weight:800;">${_rNm.split(' ')[0]}</div></div>
+          <div class="mlive">&#x25CF; LIVE</div>
+        </div>
+        ${_riderContactCard}
+        <p style="text-align:center;color:#9A9390;font-size:12px;">You'll be notified the moment ${_rNm} arrives.</p>
+      </div>`;
+      return;
+    }
+    // State 2: rider has arrived -- confirm items, 3-way call, handover.
+    body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
+      <div style="text-align:center;margin-bottom:18px;">
+        <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
+        <div class="h2">Confirming Items With Rider</div>
+        <p style="color:#9A9390;font-size:13px;margin-top:5px;">Confirm all items with ${_rNm} before handover</p>
       </div>
+      <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
+        <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${_rNm} has arrived at your location</span>
+      </div>
+
+      ${_riderContactCard}
 
       <!-- Real items from this session -- go through these with the rider
            before the 3-way call below; the call itself is the real gate,
@@ -4900,7 +4974,7 @@ function renderShopperPhase(phase) {
       </div>
 
       <button class="btn btn-primary" id="confirm-handover-btn" ${(window._shopperSession&&window._shopperSession.confirmCallCompletedAt)?'':'disabled'} style="${(window._shopperSession&&window._shopperSession.confirmCallCompletedAt)?'':'opacity:.4;cursor:not-allowed;'}margin-bottom:9px;" onclick="shopperHandoverConfirmed()">🤝 Confirm Handover to Rider</button>
-      
+
     </div>`;
     renderJointConfirmList();
 
@@ -5100,11 +5174,14 @@ function shopperBindItemSocketListeners(){
     showToast&&showToast('Customer continues the call','success');
   });
   // Rider tapped "I've Arrived" (at the shopper's own location) -- reflect
-  // it live on the shopper's own riderFound screen.
+  // it live regardless of which screen the shopper is currently on (was
+  // gated on window._shopperPhase==='riderFound' -- the same class of bug
+  // just fixed on the RIDER_ASSIGNED listener above: navigating away while
+  // waiting silently dropped this update forever, with no fallback).
   _socket.on('shop-session:rider-arrived-shopper',function(p){
     if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
     window._shopperSession.riderArrivedShopperAt=new Date().toISOString();
-    if(window._shopperPhase==='riderFound')renderShopperPhase('riderFound');
+    renderShopperPhase('riderFound');
     showToast&&showToast('Your rider has arrived','success');
   });
   _socket.on('shop-session:emergency-ended',function(p){
@@ -7966,6 +8043,15 @@ async function acceptRiderDelivery(sessionId){
 function riderMapPhase1(){
   var body=document.getElementById('rider-body');
   if(!body)return;
+  // The rider is a real party to the 3-way confirm call, but only ever
+  // gets invited to it once the shopper starts it -- the listener for
+  // that invite (and the confirmcall:* signaling relay itself) previously
+  // only ever got bound from inside sfmStartCall(), which a rider never
+  // calls (they're not on the shopping video call). The rider's client
+  // never bound any of it, so the invite banner never showed and the
+  // signaling had nowhere to land even if it had -- "rider not receiving
+  // the 3-way call" traced to exactly this. Idempotent, safe to call here.
+  sfmBindWebrtcListeners();
   var s=window._riderActiveSession;
   var customerName=(s&&s.customer&&s.customer.name)||'the customer';
   var shopperName=(s&&s.shopper&&s.shopper.user&&s.shopper.user.name)||'the shopper';
@@ -7999,16 +8085,14 @@ function riderMapPhase1(){
     +'</div>'
     +(arrived?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ You marked arrival — waiting for handover</div>'
       :'<button onclick="riderMarkArrivedAtShopper()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F5A623;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
-    +'<div style="background:#1C1C1C;border:1.5px solid rgba(245,166,35,.4);border-radius:14px;padding:14px;margin-bottom:12px;">'
-    +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Deliver to</div>'
-    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:8px;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button class="btn" style="flex:1;padding:9px;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;font-size:12px;" onclick="riderChatWithCustomer()">💬 Chat</button>'
-    +'<button class="btn" style="flex:1;padding:9px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;font-size:12px;" onclick="riderCallCustomer()">📞 Call</button>'
-    +'</div>'
-    +'</div>'
-    +'<button onclick="riderConfirmPickup()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Items Collected — Head to Customer</button>'
-    +'<button onclick="openRiderReportChooser()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">&#x26A0;&#xFE0F; Report an Issue</button>'
+    // Customer's own details/chat/call only make sense once the rider is
+    // actually heading to deliver to them (riderMapPhase2) -- showing them
+    // here, while still heading to (or waiting at) the shopper with
+    // nothing collected yet, let the rider "contact the customer" about a
+    // delivery that hasn't even started. Same reasoning gates the confirm
+    // button below on having arrived first.
+    +'<button onclick="riderConfirmPickup()" '+(arrived?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;'+(arrived?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Items Collected — Head to Customer</button>'
+    +(arrived?'':'<div style="text-align:center;color:#9A9390;font-size:11px;margin-top:6px;">Mark "I\'ve Arrived" above once you\'re at '+shopperName+'\'s location</div>')
     +'</div>';
 }
 // A rider only ever has two people they'd be reporting mid-delivery — the
@@ -8102,6 +8186,10 @@ async function finishDelivery(){
 }
 async function riderConfirmPickup(){
   var s=window._riderActiveSession;
+  if(s && !s.riderArrivedShopperAt){
+    showToast&&showToast('Mark "I\'ve Arrived" first','warning');
+    return;
+  }
   if(s && !s.confirmCallCompletedAt){
     showToast&&showToast('Ask the shopper to start the 3-way confirm call with you and the customer first','warning');
     return;
