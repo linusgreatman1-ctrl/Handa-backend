@@ -4081,9 +4081,23 @@ async function depositAndFindShopper() {
 // via contextType+contextId so either side opening it first gets the
 // same thread instead of two separate ones.
 window._sfmChatThreadId = null;
+// Cached per sessionId, not just as one bare flag -- the old version
+// returned whatever thread the FIRST Shop-For-Me call of the whole page
+// session ever created and never looked it up again, for the rest of that
+// tab's lifetime. Since this is a normal SPA (the tab stays open across
+// many separate shop sessions, not reloaded between each one), every
+// session after the very first one silently sent chat messages into a
+// dead thread neither current party was even a participant of -- looked
+// exactly like "the chat button doesn't work" with zero error, since the
+// POST itself still succeeded, just against the wrong thread.
+window._sfmChatThreadIdsBySession = {};
 async function sfmEnsureChatThread(sessionId, otherUserId){
-  if(window._sfmChatThreadId) return window._sfmChatThreadId;
+  if(window._sfmChatThreadIdsBySession[sessionId]){
+    window._sfmChatThreadId = window._sfmChatThreadIdsBySession[sessionId];
+    return window._sfmChatThreadId;
+  }
   var res = await api('/chat/threads',{method:'POST',body:JSON.stringify({contextType:'SHOP_SESSION',contextId:sessionId,participantIds:[otherUserId]})});
+  window._sfmChatThreadIdsBySession[sessionId] = res.thread.id;
   window._sfmChatThreadId = res.thread.id;
   if(_socket) _socket.emit('chat:join',{threadId:res.thread.id});
   return window._sfmChatThreadId;
@@ -5111,7 +5125,15 @@ function shopperBindStatusListener(){
   _socket.on('shop-session:status',function(p){
     if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
     window._shopperSession.status=p.status;
-    if(p.status==='RIDER_ASSIGNED'&&window._shopperPhase==='riderSearch'){
+    // Was gated on window._shopperPhase==='riderSearch' -- meant a rider
+    // accepting while the shopper had navigated to any other screen
+    // (profile, earnings, anywhere) while waiting silently dropped this
+    // update forever, with no fallback to catch up: they'd come back to
+    // "Finding a rider..." even though one had genuinely accepted minutes
+    // earlier. RIDER_ASSIGNED always means "show riderFound" regardless of
+    // whatever screen the shopper happens to be on right now, except when
+    // they're already there (nothing new to show).
+    if(p.status==='RIDER_ASSIGNED'&&window._shopperPhase!=='riderFound'){
       api('/shop-sessions/'+window._shopperSession.id).then(function(res){
         window._shopperSession=res.session;
         renderShopperPhase('riderFound');

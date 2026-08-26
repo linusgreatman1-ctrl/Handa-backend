@@ -37,15 +37,28 @@ async function expireStaleSearchingSessions(io) {
 // A session a shopper HAS accepted can still get stuck -- the video call
 // never completes, someone's connection drops, a tab gets closed -- with
 // nothing else in this codebase ever revisiting it (no other sweep covers
-// MATCHED/BUILDING_LIST/LIVE_CALL). Refunds and cancels it the same way
+// MATCHED/BUILDING_LIST/LIVE_CALL/PACKAGING/FINDING_RIDER/RIDER_ASSIGNED/
+// OUT_FOR_DELIVERY). Refunds and cancels it the same way
 // expireStaleSearchingSessions does, but stamps abandonedAt so History can
 // show a plain "Uncompleted Session" with no details instead of a normal
 // cancelled display -- there's nothing real to show (no completed items,
 // no delivery) for a session that never got anywhere.
+//
+// Originally only covered MATCHED/BUILDING_LIST/LIVE_CALL -- a session
+// that got as far as RIDER_ASSIGNED or OUT_FOR_DELIVERY and then genuinely
+// stalled (rider never delivers, app closed mid-delivery) had no sweep
+// covering it at all, so it stayed "active" forever. restoreActiveShopSession
+// (public/app/index.html) treats any of these statuses as "resume into
+// it" on every future login -- with no sweep ever clearing a truly-stuck
+// one, that customer got permanently routed back into a dead session's
+// screen (e.g. stuck on the delivery-tracking screen) every time they
+// logged in, with no way out. refundAllHoldsForContext only touches
+// still-HELD holds, so this is safe to run at any of these stages --
+// anything already released/paid out (e.g. seller payouts) is untouched.
 async function expireStaleLiveSessions(io) {
   const cutoff = new Date(Date.now() - STALE_LIVE_SESSION_TIMEOUT_MS);
   const stale = await prisma.shopSession.findMany({
-    where: { status: { in: ["MATCHED", "BUILDING_LIST", "LIVE_CALL"] }, matchedAt: { lte: cutoff } },
+    where: { status: { in: ["MATCHED", "BUILDING_LIST", "LIVE_CALL", "PACKAGING", "FINDING_RIDER", "RIDER_ASSIGNED", "OUT_FOR_DELIVERY"] }, matchedAt: { lte: cutoff } },
   });
   for (const session of stale) {
     await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session never completed — auto-cancelled and refunded." });
