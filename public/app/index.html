@@ -5904,21 +5904,21 @@ async function loadOpenEventRequests(){
     var res=await api('/event-requests?as=vendor&status=OPEN');
     var headerHtml='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
       +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;">📢 Event Requests</div>'
-      +'<button onclick="openAllEventRequestsModal()" style="background:transparent;border:1.5px solid #2A2850;border-radius:8px;padding:5px 10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:11px;cursor:pointer;">View All</button>'
+      +'<button onclick="openAllEventRequestsModal()" style="background:transparent;border:1.5px solid #2A2850;border-radius:8px;padding:5px 10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:11px;cursor:pointer;">View Event Requests/Proposals</button>'
       +'</div>';
-    if(!res.requests.length){ el.innerHTML=headerHtml; return; }
+    // The dashboard's own inline section is ONLY for genuinely new, never-
+    // opened-and-proposed-on requests -- it's a "needs your attention" pop-
+    // up list, not a status tracker. The moment this vendor has submitted a
+    // proposal (any status: pending/accepted/declined), that request moves
+    // out of here entirely and lives only inside "View Event Requests/
+    // Proposals" (openAllEventRequestsModal, which already shows every
+    // request regardless of state) -- it must not keep sitting on the
+    // dashboard with a status pill.
+    var newOnes=(res.requests||[]).filter(function(r){return !(r.proposals&&r.proposals[0]);});
+    if(!newOnes.length){ el.innerHTML=headerHtml; return; }
     el.innerHTML=headerHtml
-      + res.requests.map(function(r){
-        var mine=r.proposals&&r.proposals[0];
-        var actionHtml;
-        if(!mine){
-          actionHtml='<button onclick="openEventRequestForVendor(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Open Event Request</button>';
-        }else{
-          var stateColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
-          var stateLabels={PENDING:'✓ Proposal Submitted',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
-          var sc=stateColors[mine.status]||'#9A9390';
-          actionHtml='<button onclick="openEventRequestForVendor(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:1.5px solid '+sc+';background:'+sc+'1a;color:'+sc+';font-weight:700;font-size:12px;text-align:center;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(stateLabels[mine.status]||mine.status)+'</button>';
-        }
+      + newOnes.map(function(r){
+        var actionHtml='<button onclick="openEventRequestForVendor(\''+r.id+'\')" style="width:100%;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Open Event Request</button>';
         return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;">'
           + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="color:#9A9390;font-size:11px;">'+(r.customer?r.customer.name:'Customer')+'</span></div>'
           + '<div style="font-size:12px;color:#9A9390;margin-bottom:8px;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+(r.guestCount?' • 👥 '+r.guestCount:'')+(r.budgetKobo?' • Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')+'</div>'
