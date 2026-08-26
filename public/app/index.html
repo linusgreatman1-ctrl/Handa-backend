@@ -3708,12 +3708,22 @@ function renderShopItemsList() {
   const list = document.getElementById('shop-items-list'); if(!list) return;
   list.innerHTML = shopItems.map(item=>`<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
     <span style="font-size:14px;color:#9A9390;">•</span>
-    <input value="${item.text}" class="inp" style="flex:1;padding:10px 13px;" placeholder="e.g. 2kg fresh tomatoes" oninput="shopItems.find(x=>x.id==${item.id}).text=this.value">
+    <input id="shop-item-inp-${item.id}" value="${item.text}" class="inp" style="flex:1;padding:10px 13px;" placeholder="e.g. 2kg fresh tomatoes" oninput="shopItems.find(x=>x.id==${item.id}).text=this.value">
     <button class="ibtn" style="background:rgba(232,57,46,0.10);border-color:rgba(204,31,54,.3);flex-shrink:0;" onclick="removeShopItem(${item.id})">✕</button>
   </div>`).join('');
 }
 
-function addShopItem() { shopItems.push({id:Date.now(),text:'',approved:false,price:null}); renderShopItemsList(); }
+// Focuses the freshly added row's own input immediately -- previously the
+// customer had to click "+ Add Item" AND THEN click into the new row
+// before they could type, since renderShopItemsList() rebuilds every
+// input as a new DOM node with nothing ever focusing the one just added.
+function addShopItem() {
+  var newId=Date.now();
+  shopItems.push({id:newId,text:'',approved:false,price:null});
+  renderShopItemsList();
+  var inp=document.getElementById('shop-item-inp-'+newId);
+  if(inp)inp.focus();
+}
 function removeShopItem(id) { shopItems=shopItems.filter(x=>x.id!==id); renderShopItemsList(); }
 
 // ── Real Shop-For-Me session state ──────────────────────────────────────
@@ -6963,7 +6973,15 @@ async function addShopItemMidCall() {
       shopItems.push({id:res.item.id,text:res.item.text,approved:res.item.approved,price:res.item.priceKobo?Math.round(res.item.priceKobo/100):null});
       if(document.getElementById('approval-items'))renderApprovalItems();
     }
-    if(inp)inp.value='';
+    // renderApprovalItems() rebuilds #approval-items' whole innerHTML,
+    // which recreates #sfm-new-item-inp as a brand new DOM node -- the
+    // stale `inp` reference above is now detached, and clearing it (or
+    // just never refocusing) left the customer having to click back into
+    // the box themselves before typing the next item. Re-fetch the real
+    // (new) node and focus it so adding several items in a row doesn't
+    // need a re-click between each one.
+    var freshInp=document.getElementById('sfm-new-item-inp');
+    if(freshInp){freshInp.value='';freshInp.focus();}
     showToast('Item added — waiting for '+sfmShopperName()+' to price it','success');
   }catch(err){showToast(err.message||'Could not add item','warning');}
 }
