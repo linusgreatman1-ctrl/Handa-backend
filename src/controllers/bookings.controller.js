@@ -274,6 +274,7 @@ async function acceptEditedBooking(req, res, next) {
       data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null, wasEdited: true },
     });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit accepted", `The vendor accepted your changes to booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -289,6 +290,7 @@ async function declineEditedBooking(req, res, next) {
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingEditSnapshot: null, pendingEditRequestedAt: null } });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit declined", `The vendor declined your proposed changes to booking #${booking.bookingNumber} — the booking is unchanged.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -329,6 +331,7 @@ async function acceptBooking(req, res, next) {
       ? "Your event planning booking was accepted! Payment is arranged directly with your planner, outside the app."
       : "Your home cook booking was accepted and confirmed.";
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", message, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -358,6 +361,7 @@ async function declineBooking(req, res, next) {
         ? "Your event planning booking request was declined."
         : "Your home cook booking request was declined -- your payment has been refunded to your wallet.";
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking declined", message, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -430,6 +434,7 @@ async function startBookingJob(req, res, next) {
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorJobStartedAt: new Date() } });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Job started", `Your vendor has started the job for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -469,6 +474,7 @@ async function completeBooking(req, res, next) {
         `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
         { bookingId: booking.id }
       );
+      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
     }
 
@@ -493,6 +499,7 @@ async function completeEventPlanningBooking(booking, io, escrowDescription) {
   const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: now } });
   await notify(io, booking.customerId, "ORDER_UPDATE", "This Booking is completed", `Booking #${booking.bookingNumber} is complete. Thank you for using Handa!`, { bookingId: booking.id });
   closeSupportThreadForContext(booking.id);
+  io?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
   return updated;
 }
 
@@ -534,6 +541,7 @@ async function confirmBookingCompletion(req, res, next) {
         );
       }
       closeSupportThreadForContext(booking.id);
+      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
     }
 
@@ -564,6 +572,7 @@ async function confirmBookingCompletion(req, res, next) {
         { bookingId: booking.id, ticketId: ticket.id }
       );
     }
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking, ticket });
   } catch (err) {
     next(err);
@@ -599,6 +608,7 @@ async function cancelBooking(req, res, next) {
     if (booking.vendor) {
       await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking cancelled", `The customer cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
     }
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);

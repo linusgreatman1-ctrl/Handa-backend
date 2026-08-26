@@ -26,4 +26,19 @@ async function listMyKycDocuments(req, res, next) {
   }
 }
 
-module.exports = { uploadKycDocument, listMyKycDocuments };
+// Lets an already-approved (or pending) document be removed so the user can
+// upload a fresh one in its place — the next POST /kyc/documents naturally
+// becomes the new PENDING doc of that type, same as the first-time/rejected
+// upload flow already works.
+async function deleteMyKycDocument(req, res, next) {
+  try {
+    const doc = await prisma.kycDocument.findUnique({ where: { id: req.params.id } });
+    if (!doc || doc.userId !== req.user.id) return res.status(404).json({ error: "Document not found." });
+    await prisma.kycDocument.delete({ where: { id: doc.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { uploadKycDocument, listMyKycDocuments, deleteMyKycDocument };

@@ -8,5 +8,6 @@ router.use(requireAuth);
 
 router.post("/documents", upload.single("document"), ctrl.uploadKycDocument);
 router.get("/documents", ctrl.listMyKycDocuments);
+router.delete("/documents/:id", ctrl.deleteMyKycDocument);
 
 module.exports = router;

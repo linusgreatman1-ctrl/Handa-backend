@@ -131,11 +131,31 @@ async function listSessions(req, res, next) {
 
     const sessions = await prisma.shopSession.findMany({
       where,
-      include: { items: true, customer: { select: { name: true, phone: true } } },
+      // shopper is only ever populated for the rider's own as=available
+      // list (FINDING_RIDER sessions already have a shopperId) -- lets the
+      // rider see where they'd actually be picking up from before
+      // accepting, not just the customer's drop-off address.
+      include: { items: true, customer: { select: { name: true, phone: true } }, shopper: { select: { market: true, user: { select: { name: true, address: true, state: true, lga: true } } } } },
       orderBy: { createdAt: "desc" },
     });
     if (as === "rider" || as === "available") {
       sessions.forEach((s) => { s.pickupCode = undefined; s.deliveryCode = undefined; });
+    }
+    // Same honest approximation tier as the rider-fee estimate (no Maps key
+    // configured) -- gives the rider a real distance/ETA to the shopper
+    // before deciding to accept, instead of nothing at all.
+    if (as === "available" && req.user.riderProfile) {
+      // req.user (from requireAuth) doesn't carry state/lga -- a small
+      // separate lookup rather than widening that shared middleware's
+      // select for every request app-wide just for this one screen.
+      const riderUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { state: true, lga: true } });
+      const riderPickup = { state: riderUser?.state, lga: riderUser?.lga };
+      sessions.forEach((s) => {
+        if (!s.shopper?.user) return;
+        const km = distanceFee.computeDistanceKm(riderPickup, { state: s.shopper.user.state, lga: s.shopper.user.lga });
+        s.distanceToShopperKm = Math.round(km * 10) / 10;
+        s.etaToShopperMinutes = Math.max(3, Math.round((km / 25) * 60)); // ~25km/h average urban speed, documented estimate
+      });
     }
     res.json({ sessions });
   } catch (err) {
@@ -170,9 +190,12 @@ async function getSession(req, res, next) {
       where: { id: req.params.id },
       include: {
         items: true,
-        customer: { select: { name: true, phone: true } },
-        shopper: { include: { user: { select: { name: true, phone: true } } } },
-        rider: { include: { user: { select: { name: true, phone: true } } } },
+        // id included on all three so the frontend's real chat buttons
+        // (customer<->shopper, shopper<->rider, rider<->customer) have a
+        // real otherUserId to open a thread with, not just a display name.
+        customer: { select: { id: true, name: true, phone: true } },
+        shopper: { include: { user: { select: { id: true, name: true, phone: true } } } },
+        rider: { include: { user: { select: { id: true, name: true, phone: true } } } },
         sellerPayouts: { include: { seller: true } },
       },
     });
@@ -621,15 +644,50 @@ async function payCallTopUp(req, res, next) {
 // Either way the session becomes CANCELLED/abandoned (same "Uncompleted
 // Session" History treatment as the stale-session sweep) and both sides
 // get pushed straight back to their home screen.
-async function emergencyEndCall(req, res, next) {
+// Step 1 of 2 -- the shopper's request alone never charges/refunds/ends
+// anything. It just flags the session as awaiting the CUSTOMER's own
+// Yes/No answer (see confirmEmergencyEnd below, which is where the real
+// charge/refund/CANCELLED logic actually lives) and pushes a real prompt
+// to the customer's screen. The session stays LIVE_CALL until they answer.
+async function requestEmergencyEnd(req, res, next) {
   try {
     if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session || session.shopperId !== req.user.shopperProfile.id) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "LIVE_CALL") return res.status(409).json({ error: `Session must be LIVE_CALL (currently ${session.status}).` });
+    if (session.emergencyEndPendingBy) return res.status(409).json({ error: "An emergency-end request is already awaiting the customer's response." });
 
     const attributedTo = req.body.attributedTo;
     if (!["CUSTOMER", "SHOPPER"].includes(attributedTo)) return res.status(400).json({ error: "attributedTo must be CUSTOMER or SHOPPER." });
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { emergencyEndPendingBy: attributedTo } });
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:emergency-end-requested", { sessionId: session.id, attributedTo });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Step 2 of 2 -- customer-only. { confirm:true } actually executes the
+// charge/refund/CANCELLED logic (moved here verbatim from the old
+// single-step emergencyEndCall); { confirm:false } just clears the pending
+// flag and leaves the session exactly as it was -- nothing was ever torn
+// down or charged while merely "pending", so declining is a true no-op on
+// the money/session side, only the UI needs to resume.
+async function confirmEmergencyEnd(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
+    if (!session.emergencyEndPendingBy) return res.status(409).json({ error: "No emergency-end request is awaiting your response." });
+
+    const attributedTo = session.emergencyEndPendingBy;
+    const io = req.app.get("io");
+
+    if (!req.body.confirm) {
+      const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { emergencyEndPendingBy: null } });
+      io?.to(`shop-session:${session.id}`).emit("shop-session:emergency-end-declined", { sessionId: session.id });
+      return res.json({ session: updated });
+    }
 
     if (attributedTo === "CUSTOMER") {
       const now = Date.now();
@@ -667,10 +725,9 @@ async function emergencyEndCall(req, res, next) {
     const now = new Date();
     const updated = await prisma.shopSession.update({
       where: { id: session.id },
-      data: { status: "CANCELLED", cancelledAt: now, abandonedAt: now, callEndedAt: session.callEndedAt || now, emergencyEndedBy: attributedTo },
+      data: { status: "CANCELLED", cancelledAt: now, abandonedAt: now, callEndedAt: session.callEndedAt || now, emergencyEndedBy: attributedTo, emergencyEndPendingBy: null },
     });
 
-    const io = req.app.get("io");
     io?.to(`shop-session:${session.id}`).emit("shop-session:emergency-ended", { sessionId: session.id, attributedTo });
     const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
     const custMsg = attributedTo === "CUSTOMER"
@@ -796,7 +853,7 @@ async function acceptDelivery(req, res, next) {
     const updated = await prisma.shopSession.update({
       where: { id: session.id },
       data: { status: "RIDER_ASSIGNED", riderId: req.user.riderProfile.id },
-      include: { items: true, customer: { select: { name: true, phone: true } }, shopper: { include: { user: { select: { name: true, phone: true } } } } },
+      include: { items: true, customer: { select: { id: true, name: true, phone: true } }, shopper: { include: { user: { select: { id: true, name: true, phone: true } } } } },
     });
 
     if (session.riderFeeKobo > 0) {
@@ -830,6 +887,29 @@ const markOutForDelivery = transitionHandler(["RIDER_ASSIGNED"], "OUT_FOR_DELIVE
   codeErrorMessage: "Incorrect pickup code. Ask the shopper for the code on their screen.",
   requireConfirmCall: true,
 });
+// Distinct from the pickup-code/confirm-call gated handover itself
+// (markOutForDelivery below) -- this is just a real "I'm here" signal so
+// the shopper and customer both see genuine progress before anything else
+// happens.
+async function riderArrivedShopper(req, res, next) {
+  try {
+    if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.riderId !== req.user.riderProfile.id) return res.status(404).json({ error: "Shop session not found." });
+    if (session.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: `Session must be RIDER_ASSIGNED (currently ${session.status}).` });
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { riderArrivedShopperAt: new Date() } });
+    const io = req.app.get("io");
+    io?.to(`shop-session:${session.id}`).emit("shop-session:rider-arrived-shopper", { sessionId: session.id });
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+    if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Rider has arrived", "Your rider has arrived to collect the items.", { sessionId: session.id });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Rider has arrived", "Your rider has arrived at the shopper's location to collect your items.", { sessionId: session.id });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
   requireRider: true,
   codeField: "deliveryCode",
@@ -843,6 +923,28 @@ const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
     }
   },
 });
+
+// Distinct from markDelivered above (entering the code and confirming
+// delivery) -- a real "I'm here" signal at the customer's door first, same
+// pattern as riderArrivedShopper.
+async function riderArrivedCustomer(req, res, next) {
+  try {
+    if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.riderId !== req.user.riderProfile.id) return res.status(404).json({ error: "Shop session not found." });
+    if (session.status !== "OUT_FOR_DELIVERY") return res.status(409).json({ error: `Session must be OUT_FOR_DELIVERY (currently ${session.status}).` });
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { riderArrivedCustomerAt: new Date() } });
+    const io = req.app.get("io");
+    io?.to(`shop-session:${session.id}`).emit("shop-session:rider-arrived-customer", { sessionId: session.id });
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+    if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Rider has arrived", "Your rider has arrived at the customer's location.", { sessionId: session.id });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Rider has arrived", "Your rider has arrived — have your delivery code ready.", { sessionId: session.id });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
 
 // The shopper taps this once the rider has arrived at their location and
 // the two of them have done the joint item check — invites the rider
@@ -921,6 +1023,38 @@ async function cancelSession(req, res, next) {
 // Shopper allocates the deposited shopping budget (deposit minus the
 // session fee already earmarked for them) across the market sellers they
 // bought from, paying each directly by bank transfer.
+// Real emergency signal from the customer's live-tracking screen -- creates
+// a genuinely visible SupportTicket (shows up in the admin's existing
+// Support Tickets list, flagged as urgent via its own category) AND
+// notifies every admin directly and immediately, rather than waiting on
+// someone to happen to check a dashboard count.
+async function sendSOS(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    assertSessionAccess(req, session);
+
+    const ticket = await prisma.supportTicket.create({
+      data: {
+        userId: req.user.id,
+        context: "SHOP_SESSION",
+        contextId: session.id,
+        category: "🆘 SOS — Emergency Alert",
+        description: req.body.message || "Emergency SOS triggered from an active Shop-For-Me session.",
+      },
+    });
+
+    const io = req.app.get("io");
+    const admins = await prisma.user.findMany({ where: { role: "ADMIN", status: "ACTIVE" }, select: { id: true } });
+    for (const admin of admins) {
+      await notify(io, admin.id, "ORDER_UPDATE", "🆘 SOS Alert", `${req.user.name || "A user"} triggered an emergency SOS on an active Shop-For-Me session.`, { sessionId: session.id, ticketId: ticket.id });
+    }
+    res.status(201).json({ ticket });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function confirmSellerPayouts(req, res, next) {
   try {
     if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
@@ -1006,12 +1140,16 @@ module.exports = {
   resumeCall,
   startPackaging,
   payCallTopUp,
-  emergencyEndCall,
+  requestEmergencyEnd,
+  confirmEmergencyEnd,
+  sendSOS,
   findRider,
   payRiderFeeTopUp,
   acceptDelivery,
+  riderArrivedShopper,
   markOutForDelivery,
   markDelivered,
+  riderArrivedCustomer,
   startConfirmCall,
   completeConfirmCall,
   confirmSession,

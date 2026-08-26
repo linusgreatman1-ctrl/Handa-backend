@@ -48,8 +48,15 @@ async function listEventRequests(req, res, next) {
       if (!req.user.vendorProfile || req.user.vendorProfile.vtype !== "EVENT_PLANNER") {
         return res.status(403).json({ error: "Only event planner accounts can browse event requests." });
       }
+      // No explicit status: every currently-open request, plus every
+      // request this vendor has ever proposed on regardless of its status
+      // (the "Event Requests" full-history view). An explicit status=OPEN
+      // keeps the original dashboard-only behavior unchanged.
+      const requestsWhere = status
+        ? { status }
+        : { OR: [{ status: "OPEN" }, { proposals: { some: { vendorId: req.user.vendorProfile.id } } }] };
       const requests = await prisma.eventRequest.findMany({
-        where: { status: status || "OPEN" },
+        where: requestsWhere,
         include: {
           customer: { select: { name: true } },
           _count: { select: { proposals: true } },

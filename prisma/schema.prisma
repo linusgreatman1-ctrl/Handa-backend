@@ -608,6 +608,20 @@ model ShopSession {
   // (drives the charge-vs-refund outcome and the History/notification copy).
   emergencyEndedBy String?
 
+  // Two-step emergency end: the shopper's request sets this (awaiting the
+  // customer's Yes/No) but does NOT itself charge/refund/cancel anything —
+  // only the customer's confirm endpoint does that, at which point this is
+  // cleared and emergencyEndedBy (above) records the final outcome. Kept
+  // separate from emergencyEndedBy so "a request is pending" and "the call
+  // actually ended this way" are never the same signal.
+  emergencyEndPendingBy String?
+
+  // Rider arrival signals, distinct from the pickup/delivery-code
+  // confirmation steps themselves — lets the shopper/customer see real
+  // progress ("rider has arrived") before the actual handover happens.
+  riderArrivedShopperAt  DateTime?
+  riderArrivedCustomerAt DateTime?
+
   // Real 3-way audio call (rider + shopper + customer) the shopper starts
   // once the rider arrives at their location and the two of them have done
   // the joint item check — the rider confirms the items directly with the

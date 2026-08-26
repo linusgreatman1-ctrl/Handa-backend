@@ -110,7 +110,13 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
 @media (min-width:1024px){
   .sfm-livecall-layout{flex-direction:row;gap:20px;align-items:flex-start;}
   .sfm-livecall-video-col{flex:0 0 380px;position:static;padding-bottom:0;}
-  .sfm-livecall-content-col{flex:1;min-width:0;max-height:calc(100vh - 90px);overflow-y:auto;padding-right:4px;}
+  /* Was calc(100vh - 90px) -- under-accounted for the real fixed chrome
+     above this column (the screen header ~90-100px, plus the surrounding
+     container's own top/bottom padding, plus the shopper-side phase's
+     extra inline padding on top of that), so the bottom of the scrollable
+     area (chat box / "+ Add Item" row) sat outside the visible/scrollable
+     box on real desktop heights instead of being reachable by scrolling. */
+  .sfm-livecall-content-col{flex:1;min-width:0;max-height:calc(100vh - 170px);overflow-y:auto;padding-right:4px;}
 }
 .screen{display:none;min-height:100vh;padding-bottom:84px;overflow-y:auto;-webkit-overflow-scrolling:touch}.screen.active{display:block;animation:fi .22s ease}.screen.active.flex-screen{display:flex !important;flex-direction:column;}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -1328,11 +1334,25 @@ async function loadMyKycDocuments(){
   try{ var res = await api('/kyc/documents'); window._kycDocs = res.documents; }
   catch(e){ window._kycDocs = window._kycDocs || []; }
 }
-function _kycStatusPill(doc){
+function _kycStatusPill(doc,profileType){
   if (!doc) return '<span style="font-size:11px;color:#9A9390;background:#242424;padding:3px 9px;border-radius:20px;">Not submitted</span>';
-  if (doc.status === 'APPROVED') return '<span style="font-size:11px;color:#4ADE80;background:rgba(46,204,113,.15);padding:3px 9px;border-radius:20px;font-weight:700;">Approved &#x2705;</span>';
+  var clickAttr = (doc.status==='APPROVED'||doc.status==='PENDING') ? ' onclick="openKycDeleteConfirm(\''+doc.id+'\',\''+profileType+'\')" style="cursor:pointer;'  : ' style="';
+  if (doc.status === 'APPROVED') return '<span'+clickAttr+'font-size:11px;color:#4ADE80;background:rgba(46,204,113,.15);padding:3px 9px;border-radius:20px;font-weight:700;" title="Tap to delete and re-upload">Approved &#x2705;</span>';
   if (doc.status === 'REJECTED') return '<span style="font-size:11px;color:#E8392E;background:rgba(232,57,46,.12);padding:3px 9px;border-radius:20px;font-weight:700;">Rejected'+(doc.rejectionReason?' — '+doc.rejectionReason:'')+'</span>';
-  return '<span style="font-size:11px;color:#F5A623;background:rgba(245,166,35,.15);padding:3px 9px;border-radius:20px;font-weight:700;">Pending review</span>';
+  return '<span'+clickAttr+'font-size:11px;color:#F5A623;background:rgba(245,166,35,.15);padding:3px 9px;border-radius:20px;font-weight:700;" title="Tap to delete and re-upload">Pending review</span>';
+}
+function openKycDeleteConfirm(docId,profileType){
+  if(!confirm('Delete this document? You can upload a new one right after.'))return;
+  deleteKycDocument(docId,profileType);
+}
+async function deleteKycDocument(docId,profileType){
+  try{
+    await api('/kyc/documents/'+docId,{method:'DELETE'});
+    showToast&&showToast('Document deleted','success');
+    refreshKycSection(profileType);
+  }catch(err){
+    showToast&&showToast(err.message||'Could not delete document','warning');
+  }
 }
 function renderKycSection(profileType){
   var types = KYC_DOC_TYPES[profileType] || [];
@@ -1345,7 +1365,7 @@ function renderKycSection(profileType){
     var doc = docsByType[t[0]];
     var canUpload = !doc || doc.status === 'REJECTED';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2A2850;">'
-      + '<div><div style="font-size:13px;color:#F2EDE8;font-weight:600;">'+t[1]+'</div><div style="margin-top:4px;">'+_kycStatusPill(doc)+'</div></div>'
+      + '<div><div style="font-size:13px;color:#F2EDE8;font-weight:600;">'+t[1]+'</div><div style="margin-top:4px;">'+_kycStatusPill(doc,profileType)+'</div></div>'
       + (canUpload ? '<button onclick="triggerKycUpload(\''+t[0]+'\',\''+profileType+'\')" style="background:#242424;border:1px solid #2A2850;border-radius:7px;padding:6px 11px;color:#9A9390;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(doc?'Re-upload':'Upload')+'</button>' : '')
       + '</div>';
   }).join('');
@@ -1513,7 +1533,9 @@ function openPostEventRequestModal(){
     + _arField('Budget (₦)','er-budget','e.g. 1500000','number')
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Needed</label>'
     + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="er-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
+    + '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" id="er-svc-other-cb" onchange="document.getElementById(\'er-svc-other-wrap\').style.display=this.checked?\'block\':\'none\'" style="margin:0;">Others</label>'
     + '</div>'
+    + '<div id="er-svc-other-wrap" style="display:none;margin-bottom:4px;"><input id="er-svc-other" placeholder="What else do you need?" style="width:100%;box-sizing:border-box;padding:9px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:9px;color:#F2EDE8;font-size:13px;"></div>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="er-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Anything else planners should know"></textarea>'
     + '<div style="display:flex;gap:10px;margin-top:18px;">'
     + '<button onclick="closeEventRequestModal()" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #2A2850;background:transparent;color:#9A9390;font-weight:700;cursor:pointer;">Cancel</button>'
@@ -1535,6 +1557,8 @@ async function submitEventRequest(){
   var budget=(document.getElementById('er-budget')||{}).value||'';
   var notes=(document.getElementById('er-notes')||{}).value||'';
   var services=[].slice.call(document.querySelectorAll('.er-svc:checked')).map(function(c){return c.value;});
+  var otherSvc=(document.getElementById('er-svc-other')||{}).value||'';
+  if((document.getElementById('er-svc-other-cb')||{}).checked&&otherSvc.trim())services.push(otherSvc.trim());
   if(!eventDate){showToast&&showToast('Please select an event date','warning');return;}
   if(!venue.trim()){showToast&&showToast('Please enter a venue','warning');return;}
   try{
@@ -1592,9 +1616,14 @@ async function openEventRequestDetailModal(id){
     var res = await api('/event-requests/'+id);
     var r = res.request;
     var body = document.getElementById('event-detail-body');
-    var header = '<div style="background:#242424;border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
-      + '<b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><br>'
-      + '<span style="font-size:12px;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+(r.guestCount?' • 👥 '+r.guestCount:'')+'</span>'
+    var header = '<div style="background:#242424;border-radius:12px;padding:14px;margin-bottom:14px;">'
+      + '<b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b>'
+      + '<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.7;">📍 '+r.venue+'<br>📅 '+new Date(r.eventDate).toLocaleDateString()
+      + (r.guestCount?'<br>👥 '+r.guestCount+' guests':'')
+      + (r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
+      + '</div>'
+      + (r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
+      + (r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">"'+r.notes+'"</div>':'')
       + '</div>';
     if(!r.proposals.length){
       body.innerHTML = header + '<div style="text-align:center;padding:20px;">No proposals yet — check back soon.</div>';
@@ -1699,7 +1728,9 @@ async function openEventRequestForVendor(requestId){
         + _arField('Your Price (₦)','sp-price','e.g. 1800000','number')
         + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Included</label>'
         + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="sp-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
+        + '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" id="sp-svc-other-cb" onchange="document.getElementById(\'sp-svc-other-wrap\').style.display=this.checked?\'block\':\'none\'" style="margin:0;">Others</label>'
         + '</div>'
+        + '<div id="sp-svc-other-wrap" style="display:none;margin-bottom:4px;"><input id="sp-svc-other" placeholder="What else is included?" style="width:100%;box-sizing:border-box;padding:9px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:9px;color:#F2EDE8;font-size:13px;"></div>'
         + _arField('Timeline','sp-timeline','e.g. Ready within 2 weeks','')
         + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes to Customer</label><textarea id="sp-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Why choose you"></textarea>'
         + '<button onclick="submitProposalForRequest(\''+r.id+'\')" style="width:100%;margin-top:16px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Submit Proposal</button>';
@@ -1714,6 +1745,8 @@ async function submitProposalForRequest(requestId){
   var timeline=(document.getElementById('sp-timeline')||{}).value||'';
   var notes=(document.getElementById('sp-notes')||{}).value||'';
   var services=[].slice.call(document.querySelectorAll('.sp-svc:checked')).map(function(c){return c.value;});
+  var otherSvc2=(document.getElementById('sp-svc-other')||{}).value||'';
+  if((document.getElementById('sp-svc-other-cb')||{}).checked&&otherSvc2.trim())services.push(otherSvc2.trim());
   if(!price||parseFloat(price)<=0){showToast&&showToast('Enter a valid price','warning');return;}
   try{
     await api('/event-requests/'+requestId+'/proposals',{method:'POST',body:JSON.stringify({
@@ -2088,19 +2121,26 @@ function autoSuggestFoodEmoji(name){
 var VENDOR_CUISINE_TAGS=['Nigerian','Continental','Pastry','Vegetarian'];
 function openEditVendorTagsModal(){
   var cur=(S.user&&S.user.tags)||[];
+  var customTags=cur.filter(function(t){return VENDOR_CUISINE_TAGS.indexOf(t)===-1;});
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Cuisine Specialities</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Customers filter home cooks by these — pick everything that fits your menu.</p>'
-    +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">'
+    +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">'
     +VENDOR_CUISINE_TAGS.map(function(t){
       var checked=cur.indexOf(t)>-1;
       return '<label style="display:flex;align-items:center;gap:10px;background:#242424;border:1.5px solid '+(checked?'#9B59B6':'#2A2850')+';border-radius:12px;padding:12px;cursor:pointer;">'
         +'<input type="checkbox" class="vendor-tag-cb" value="'+t+'"'+(checked?' checked':'')+' style="width:18px;height:18px;">'
         +'<span style="color:#F2EDE8;font-size:14px;">'+t+'</span></label>';
     }).join('')
+    +'<label style="display:flex;align-items:center;gap:10px;background:#242424;border:1.5px solid '+(customTags.length?'#9B59B6':'#2A2850')+';border-radius:12px;padding:12px;cursor:pointer;">'
+    +'<input type="checkbox" id="vendor-tag-other-cb"'+(customTags.length?' checked':'')+' onchange="document.getElementById(\'vendor-tag-other-wrap\').style.display=this.checked?\'block\':\'none\'" style="width:18px;height:18px;">'
+    +'<span style="color:#F2EDE8;font-size:14px;">Others</span></label>'
+    +'</div>'
+    +'<div id="vendor-tag-other-wrap" style="display:'+(customTags.length?'block':'none')+';margin-bottom:20px;">'
+    +'<input id="vendor-tag-other-inp" value="'+customTags.join(', ').replace(/"/g,'&quot;')+'" placeholder="e.g. Swallow, Seafood, Small Chops (comma-separated)" style="width:100%;box-sizing:border-box;padding:11px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;">'
     +'</div>'
     +'<button onclick="saveVendorTags()" style="width:100%;background:#9B59B6;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save</button>'
     +'</div>'
@@ -2108,6 +2148,11 @@ function openEditVendorTagsModal(){
 }
 async function saveVendorTags(){
   var tags=[].slice.call(document.querySelectorAll('.vendor-tag-cb:checked')).map(function(el){return el.value;});
+  var otherCb=document.getElementById('vendor-tag-other-cb');
+  var otherInp=document.getElementById('vendor-tag-other-inp');
+  if(otherCb&&otherCb.checked&&otherInp&&otherInp.value.trim()){
+    otherInp.value.split(',').map(function(s){return s.trim();}).filter(Boolean).forEach(function(t){tags.push(t);});
+  }
   try{
     var res=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify({tags:tags})});
     if(S.user)S.user.tags=tags;
@@ -2628,6 +2673,7 @@ async function openChat(p){
     var myId=(S.user||{}).id;
     msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">Say hello \ud83d\udc4b</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
+    _setChatComposerClosed(!!((mres.thread&&mres.thread.closedAt)||(tres.thread&&tres.thread.closedAt)));
     bindAppChatSocketListener();
   }catch(err){
     msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:12px">'+(err.message||'Could not load chat')+'</div>';
@@ -2818,11 +2864,63 @@ function buildShop() {
     showToast&&showToast('Your AI meal plan grocery list is ready — review it and tap Find a Shopper!','success');
     return;
   }
+  // Resuming into an already-active session (see restoreActiveShopSession)
+  // -- skip the normal reset-to-empty-list behavior entirely.
+  if (window._sfmResumePhase) {
+    var resumePhase = window._sfmResumePhase;
+    window._sfmResumePhase = null;
+    sfmSocketListeners();
+    if (_socket) _socket.emit('shop-session:join', {sessionId: window._sfmSession.id});
+    renderShopPhase(resumePhase);
+    return;
+  }
   // Starts genuinely empty -- the customer types their real list, no
   // fake demo items (tomatoes/onions/pepper) pre-filling the screen.
   shopItems = [];
   shopCart = [];
   renderShopPhase('buildList');
+}
+
+// Brings a user straight back into an in-progress Shop-For-Me session after
+// a reload/logout/reconnect, instead of dropping them on the home screen
+// while money/a live session is still in flight. Returns true if an active
+// session was found and restored.
+async function restoreActiveShopSession(role) {
+  try {
+    if (role === 'shopper') {
+      var rs = await api('/shop-sessions?as=shopper');
+      var activeS = (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED'].indexOf(s.status)>-1;});
+      if (!activeS) return false;
+      window._shopperSession = activeS;
+      var sPhase = {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound'}[activeS.status]||'accepted';
+      afterShopperAuth();
+      shopperBindItemSocketListeners();
+      if (_socket) _socket.emit('shop-session:join', {sessionId: activeS.id});
+      renderShopperPhase(sPhase);
+      return true;
+    }
+    if (role === 'rider') {
+      var rr = await api('/shop-sessions?as=rider');
+      var activeR = (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
+      if (!activeR) return false;
+      window._riderActiveSession = activeR;
+      eGo('rider');
+      if (_socket) _socket.emit('shop-session:join', {sessionId: activeR.id});
+      if (activeR.status === 'OUT_FOR_DELIVERY') riderMapPhase2(); else riderMapPhase1();
+      return true;
+    }
+    // customer
+    var rc = await api('/shop-sessions?as=customer');
+    var activeC = (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1;});
+    if (!activeC) return false;
+    window._sfmSession = activeC;
+    var cPhase = activeC.status==='SEARCHING'?'finding':(activeC.status==='MATCHED'?'shopperProfile':(SFM_STATUS_PHASE[activeC.status]||'liveCall'));
+    window._sfmResumePhase = cPhase;
+    eGo('sfm');
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3040,7 +3138,7 @@ function renderShopPhase(phase) {
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:11px 14px;margin-bottom:18px;text-align:left;">
         <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to ${shopperNm} after the rider confirms pickup of all your items.</div>
       </div>
-      <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+      <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:14px;">
         <div style="font-size:32px;animation:float 2s ease-in-out infinite;flex-shrink:0;">🧑‍💼</div>
         <div style="flex:1;">
           <div style="font-weight:700;font-size:14px;">${waitingText}...</div>
@@ -3052,6 +3150,10 @@ function renderShopPhase(phase) {
           </div>
         </div>
       </div>
+      <div style="display:flex;gap:9px;margin-bottom:18px;">
+        <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.4);background:rgba(59,159,232,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="customerCallShopper()">📞 Call Shopper</button>
+        <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(26,140,80,.4);background:rgba(46,204,113,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="customerChatShopper()">💬 Chat Shopper</button>
+      </div>
     </div>`;
 
   // ── PHASE 6: Rider Assigned — heading to collect from the shopper ──────
@@ -3059,11 +3161,19 @@ function renderShopPhase(phase) {
     const shopperNm = sfmShopperName();
     const riderNm = sfmRiderName();
     const riderVehicle = sfmRiderVehicle();
+    const _riderAtShopper = window._sfmSession && window._sfmSession.riderArrivedShopperAt;
     body.innerHTML = `<div class="fi">
       <div style="text-align:center;margin-bottom:18px;">
         <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
         <div style="font-weight:800;font-size:19px;">Rider Assigned!</div>
-        <p style="font-size:13px;color:#9A9390;margin-top:5px;">${riderNm} is on the way to collect your items from ${shopperNm}</p>
+        <p style="font-size:13px;color:#9A9390;margin-top:5px;">${_riderAtShopper?riderNm+' has arrived at '+shopperNm+'\'s location':riderNm+' is heading to '+shopperNm+'\'s location to collect your items'}</p>
+      </div>
+      ${_riderAtShopper?`<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
+        <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${riderNm} has arrived — items are being handed over</span>
+      </div>`:''}
+      <div style="display:flex;gap:9px;margin-bottom:14px;">
+        <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.4);background:rgba(59,159,232,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="openCallModal('${riderNm}','${sfmRiderPhone()}','${riderVehicle}','🏍️')">📞 Call Rider</button>
+        <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(26,140,80,.4);background:rgba(46,204,113,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="openShopChatModal()">💬 Chat Rider</button>
       </div>
 
       <!-- Shopper + Rider cards side by side -->
@@ -3108,7 +3218,11 @@ function renderShopPhase(phase) {
     const riderNm = sfmRiderName();
     const riderVehicle = sfmRiderVehicle();
     const deliveryCode = (window._sfmSession&&window._sfmSession.deliveryCode)||'····';
+    const _riderAtCustomer = window._sfmSession && window._sfmSession.riderArrivedCustomerAt;
     body.innerHTML = `<div class="fi">
+      ${_riderAtCustomer?`<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
+        <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${riderNm} has arrived — give them your delivery code below</span>
+      </div>`:''}
       <div class="map-box" style="height:160px;margin-bottom:14px;">
         <div class="map-grid"></div>
         <svg style="position:absolute;inset:0;width:100%;height:100%;">
@@ -3133,7 +3247,7 @@ function renderShopPhase(phase) {
             <div style="font-size:12px;color:#F5A623;font-weight:700;margin-top:2px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="openRatingsModal(window._sfmSession&&window._sfmSession.rider&&window._sfmSession.rider.userId,'RIDER',window._sfmSession&&window._sfmSession.rider&&window._sfmSession.rider.id)">★ ${sfmRiderRating()}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:7px;">
-            <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openShopRiderCallModal()">📞</button>
+            <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${riderNm}','${sfmRiderPhone()}','${riderVehicle}','🏍️')">📞</button>
             <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(26,95,212,.4);" onclick="openShopChatModal()">💬</button>
           </div>
         </div>
@@ -3150,7 +3264,7 @@ function renderShopPhase(phase) {
       <div style="display:flex;gap:10px;margin-bottom:12px;">
         <div class="card" style="flex:1;text-align:center;padding:13px 8px;">
           <div style="font-size:11px;color:#9A9390;">Status</div>
-          <div style="font-weight:800;font-size:13px;margin-top:4px;color:#6430C8;">🏍️ On the way</div>
+          <div style="font-weight:800;font-size:13px;margin-top:4px;color:${_riderAtCustomer?'#2ECC71':'#6430C8'};">${_riderAtCustomer?'✅ Arrived':'🏍️ On the way'}</div>
         </div>
         <div class="card" style="flex:1;text-align:center;padding:13px 8px;">
           <div style="font-size:11px;color:#9A9390;">Items</div>
@@ -3556,8 +3670,33 @@ function sfmSocketListeners(){
       if(document.getElementById('approval-items'))renderApprovalItems();
     }
   });
+  // Step 1 of the two-step emergency end: the shopper requested it, but
+  // NOTHING has actually ended yet -- the call stays fully connected while
+  // this prompt is up. Only shop-session:emergency-ended (below) means it
+  // actually happened.
+  _socket.on('shop-session:emergency-end-requested',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    showEmergencyEndPrompt(p.attributedTo);
+  });
+  _socket.on('shop-session:emergency-end-declined',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    hideEmergencyEndPrompt();
+  });
+  _socket.on('shop-session:rider-arrived-shopper',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    window._sfmSession.riderArrivedShopperAt=new Date().toISOString();
+    if(window._sfmPhase==='riderArrived')renderShopPhase('riderArrived');
+    showToast&&showToast('Your rider has arrived at the shopper\'s location','success');
+  });
+  _socket.on('shop-session:rider-arrived-customer',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    window._sfmSession.riderArrivedCustomerAt=new Date().toISOString();
+    if(window._sfmPhase==='customerTracking')renderShopPhase('customerTracking');
+    showToast&&showToast('Your rider has arrived at your location','success');
+  });
   _socket.on('shop-session:emergency-ended',function(p){
     if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    hideEmergencyEndPrompt();
     sfmEndCall();
     clearInterval(window._sfmPollIv);
     var msg=p.attributedTo==='CUSTOMER'
@@ -3567,6 +3706,42 @@ function sfmSocketListeners(){
     window._sfmSession=null;window._sfmPhase=null;
     eGo('home');
   });
+}
+
+// Real on-screen prompt (not a native confirm()) laid over the live-call
+// screen -- the call stays fully connected underneath while this is up,
+// nothing ends until the customer actually answers.
+function showEmergencyEndPrompt(attributedTo){
+  hideEmergencyEndPrompt();
+  var explain=attributedTo==='CUSTOMER'
+    ? 'Your shopper says you asked to end the call. If you confirm, you\'ll be charged only for the time already spent on the call — everything else will be refunded.'
+    : 'Your shopper needs to end the call. If you confirm, you will not be charged anything — your full deposit will be refunded.';
+  var html='<div id="emergency-end-prompt" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10002;display:flex;align-items:center;justify-content:center;padding:20px;">'
+    +'<div style="background:#1C1C1C;border:1.5px solid #E8392E;border-radius:16px;max-width:400px;width:100%;padding:22px;font-family:\'DM Sans\',sans-serif;text-align:center;">'
+    +'<div style="font-size:36px;margin-bottom:10px;">🆘</div>'
+    +'<div style="font-weight:900;font-size:16px;color:#F2EDE8;margin-bottom:8px;">Your shopper wants to end the call</div>'
+    +'<div style="font-size:13px;color:#9A9390;margin-bottom:20px;line-height:1.5;">'+explain+'</div>'
+    +'<div style="display:flex;gap:10px;">'
+    +'<button onclick="answerEmergencyEnd(true)" style="flex:1;padding:13px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Yes — End</button>'
+    +'<button onclick="answerEmergencyEnd(false)" style="flex:1;padding:13px;border-radius:12px;border:1.5px solid #2A2850;background:transparent;color:#F2EDE8;font-weight:800;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">No — Continue</button>'
+    +'</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function hideEmergencyEndPrompt(){
+  var el=document.getElementById('emergency-end-prompt'); if(el)el.remove();
+}
+async function answerEmergencyEnd(confirm){
+  hideEmergencyEndPrompt();
+  if(!window._sfmSession){return;}
+  try{
+    await api('/shop-sessions/'+window._sfmSession.id+'/emergency-end/confirm',{method:'POST',body:JSON.stringify({confirm:confirm})});
+    if(!confirm)showToast&&showToast('Call continues.','success');
+    // shop-session:emergency-ended (Yes) or shop-session:emergency-end-declined
+    // (No) — both already pushed via socket and handled by the listeners
+    // above; this call itself doesn't need to do anything further either way.
+  }catch(err){
+    showToast&&showToast(err.message||'Could not respond to the request','warning');
+  }
 }
 
 // Your live call ran past the tier you already paid for — this is the
@@ -3629,9 +3804,27 @@ function sfmShopperRating(){
   var s=window._sfmSession;
   return (s&&s.shopper&&s.shopper.ratingAvg)?s.shopper.ratingAvg.toFixed(1):'New';
 }
+function sfmShopperPhone(){
+  var s=window._sfmSession;
+  return (s&&s.shopper&&s.shopper.user&&s.shopper.user.phone)||'';
+}
+function customerChatShopper(){
+  var s=window._sfmSession; var u=s&&s.shopper&&s.shopper.user;
+  if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
+  openChat({name:u.name||'Shopper',em:'🧑‍💼',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id});
+}
+function customerCallShopper(){
+  var s=window._sfmSession; var u=s&&s.shopper&&s.shopper.user;
+  if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
+  openCallModal(u.name||'Shopper',u.phone||'','Shopper','🧑‍💼');
+}
 function sfmRiderName(){
   var s=window._sfmSession;
   return (s&&s.rider&&s.rider.user&&s.rider.user.name)||'your rider';
+}
+function sfmRiderPhone(){
+  var s=window._sfmSession;
+  return (s&&s.rider&&s.rider.user&&s.rider.user.phone)||'';
 }
 function sfmRiderRating(){
   var s=window._sfmSession;
@@ -4501,12 +4694,16 @@ function renderShopperPhase(phase) {
     var _cNm=shopperCustomerName();
     var _rVeh=(function(){var r=window._shopperSession&&window._shopperSession.rider;return r?[r.vehicleType,r.plateNumber].filter(Boolean).join(' • '):'';})();
     var _rRating=(window._shopperSession&&window._shopperSession.rider&&window._shopperSession.rider.ratingAvg)?window._shopperSession.rider.ratingAvg.toFixed(1):'New';
+    var _riderHere=window._shopperSession&&window._shopperSession.riderArrivedShopperAt;
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
       <div style="text-align:center;margin-bottom:18px;">
         <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
         <div class="h2">Rider Assigned!</div>
-        <p style="color:#9A9390;font-size:13px;margin-top:5px;">Confirm all items with the rider once they arrive to collect</p>
+        <p style="color:#9A9390;font-size:13px;margin-top:5px;">${_riderHere?'The rider has arrived — confirm all items with them before handover':'Confirm all items with the rider once they arrive to collect'}</p>
       </div>
+      ${_riderHere?`<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
+        <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${_rNm} has arrived at your location</span>
+      </div>`:''}
 
       <!-- Rider info -->
       <div class="card" style="margin-bottom:14px;">
@@ -4517,7 +4714,8 @@ function renderShopperPhase(phase) {
             <div style="font-size:12px;color:#9A9390;margin-top:2px;">${_rVeh?_rVeh+' &nbsp;•&nbsp; ':''}★${_rRating}</div>
             <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ Assigned</div>
           </div>
-          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="showToast('Calling '+'${_rNm}'+'... 📞','success')">📞</button>
+          <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(59,159,232,.4);margin-right:6px;" onclick="openShopperRiderChat()">💬</button>
+          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${_rNm}','${shopperRiderPhone()}','${_rVeh}','🏍️')">📞</button>
         </div>
       </div>
 
@@ -4641,8 +4839,10 @@ function renderShopperPhase(phase) {
         <div style="font-weight:700;font-size:14px;margin-bottom:8px;">🏍️ ${rdrNm} is delivering</div>
         <div style="font-size:13px;color:#9A9390;margin-bottom:10px;">You'll be notified once ${custNm} confirms the delivery is complete</div>
         <div style="display:flex;gap:9px;">
-          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="showToast('Calling '+'${rdrNm}'+' 📞','success')">📞 Call ${rdrNm}</button>
+          <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="openShopperRiderChat()">💬 Chat</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal('${rdrNm}','${shopperRiderPhone()}','Rider','🏍️')">📞 Call</button>
         </div>
+        <button class="btn btn-outline" style="width:100%;margin-top:9px;" onclick="openShopperRiderLocationModal()">📍 View Rider Location</button>
       </div>
 
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.25);border-radius:13px;padding:13px 15px;margin-bottom:18px;text-align:left;">
@@ -4744,8 +4944,25 @@ function shopperBindItemSocketListeners(){
       showToast&&showToast('Customer added a new item: '+p.item.text,'success');
     }
   });
+  // The customer answered "No — Continue" to this shopper's own emergency-
+  // end request -- nothing was ever torn down while it was pending, so
+  // resuming is just dismissing the shopper's own waiting state.
+  _socket.on('shop-session:emergency-end-declined',function(p){
+    if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
+    hideShopperEmergencyEndWaiting();
+    showToast&&showToast('Customer continues the call','success');
+  });
+  // Rider tapped "I've Arrived" (at the shopper's own location) -- reflect
+  // it live on the shopper's own riderFound screen.
+  _socket.on('shop-session:rider-arrived-shopper',function(p){
+    if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
+    window._shopperSession.riderArrivedShopperAt=new Date().toISOString();
+    if(window._shopperPhase==='riderFound')renderShopperPhase('riderFound');
+    showToast&&showToast('Your rider has arrived','success');
+  });
   _socket.on('shop-session:emergency-ended',function(p){
     if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
+    hideShopperEmergencyEndWaiting();
     sfmEndCall();
     showToast&&showToast('Session ended.','warning');
     window._shopperSession=null;
@@ -4808,31 +5025,39 @@ async function shopperEndCallAndPackage(){
 
 // Shopper-only, the one way a call can end before every item is approved.
 // The shopper picks who the early end is attributed to -- that choice
-// drives the backend's charge-vs-refund outcome (see emergencyEndCall in
-// shopSessions.controller.js): CUSTOMER means they're charged the normal
-// time-based rate and everything else is refunded; SHOPPER means the
-// customer is charged nothing at all.
+// drives the eventual charge-vs-refund outcome (see confirmEmergencyEnd in
+// shopSessions.controller.js) once the CUSTOMER actually confirms it. This
+// is only a REQUEST: nothing charges, refunds, or ends until the customer
+// answers Yes/No on their own screen -- the call stays fully connected on
+// both sides while it's pending.
 function openEmergencyEndModal(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">🆘 Emergency End Call</div></div>'
-    +'<p style="color:#9A9390;font-size:13px;margin-bottom:16px;">This ends the session right now, before every item has been approved. Who is this early end for?</p>'
-    +'<button onclick="confirmEmergencyEnd(\'CUSTOMER\')" style="width:100%;text-align:left;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:10px;font-family:\'DM Sans\',sans-serif;">Customer wants to end<div style="font-weight:400;font-size:12px;color:#9A9390;margin-top:4px;">They\'ll be charged for time spent on the call; everything else is refunded.</div></button>'
-    +'<button onclick="confirmEmergencyEnd(\'SHOPPER\')" style="width:100%;text-align:left;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">I need to end<div style="font-weight:400;font-size:12px;color:#9A9390;margin-top:4px;">The customer is charged nothing — their full deposit is refunded.</div></button>'
+    +'<p style="color:#9A9390;font-size:13px;margin-bottom:16px;">This asks the customer to confirm ending the session before every item has been approved. Who is this early end for?</p>'
+    +'<button onclick="requestEmergencyEnd(\'CUSTOMER\')" style="width:100%;text-align:left;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:10px;font-family:\'DM Sans\',sans-serif;">Customer wants to end<div style="font-weight:400;font-size:12px;color:#9A9390;margin-top:4px;">If confirmed, they\'ll be charged for time spent on the call; everything else is refunded.</div></button>'
+    +'<button onclick="requestEmergencyEnd(\'SHOPPER\')" style="width:100%;text-align:left;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">I need to end<div style="font-weight:400;font-size:12px;color:#9A9390;margin-top:4px;">If confirmed, the customer is charged nothing — their full deposit is refunded.</div></button>'
     +'</div>');
 }
-async function confirmEmergencyEnd(attributedTo){
-  if(!confirm('End this call right now? This cannot be undone.'))return;
+async function requestEmergencyEnd(attributedTo){
   closeProcedureModal();
   if(!window._shopperSession){showToast('No active session','warning');return;}
   try{
     await api('/shop-sessions/'+window._shopperSession.id+'/emergency-end',{method:'POST',body:JSON.stringify({attributedTo:attributedTo})});
-    sfmEndCall();
-    window._shopperSession=null;
-    showToast&&showToast('Session ended.','warning');
-    renderShopperHome();
+    showShopperEmergencyEndWaiting();
   }catch(err){
-    showToast&&showToast(err.message||'Could not end the call','warning');
+    showToast&&showToast(err.message||'Could not send the request','warning');
   }
+}
+function showShopperEmergencyEndWaiting(){
+  hideShopperEmergencyEndWaiting();
+  var html='<div id="shopper-emergency-end-waiting" style="position:fixed;left:12px;right:12px;top:12px;z-index:10001;background:#1C1C1C;border:1.5px solid #F5A623;border-radius:14px;padding:13px 15px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:\'DM Sans\',sans-serif;display:flex;align-items:center;gap:10px;">'
+    +'<span style="font-size:20px;flex-shrink:0;">⏳</span>'
+    +'<div style="flex:1;font-weight:700;font-size:13px;color:#F2EDE8;">Waiting for the customer to respond…</div>'
+    +'</div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function hideShopperEmergencyEndWaiting(){
+  var el=document.getElementById('shopper-emergency-end-waiting'); if(el)el.remove();
 }
 
 async function shopperCallFindRider(){
@@ -4881,6 +5106,40 @@ function shopperCustomerName(){
 function shopperRiderName(){
   var s=window._shopperSession;
   return (s&&s.rider&&s.rider.user&&s.rider.user.name)||'your rider';
+}
+function shopperRiderPhone(){
+  var s=window._shopperSession;
+  return (s&&s.rider&&s.rider.user&&s.rider.user.phone)||'';
+}
+function openShopperRiderChat(){
+  var s=window._shopperSession; var r=s&&s.rider;
+  if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
+  var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
+  openChat({name:r.user.name||'Rider',em:'🏍️',phone:r.user.phone||'',otherUserId:r.user.id,contextType:'SHOP_SESSION',contextId:s.id});
+}
+// Lets the shopper check in on the rider's delivery progress after
+// handover, once they're already free to accept new sessions — same
+// decorative map treatment the customer's own tracking screen uses.
+function openShopperRiderLocationModal(){
+  var s=window._shopperSession; var r=s&&s.rider;
+  if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
+  var arrived=s.riderArrivedCustomerAt;
+  var html='<div id="shopper-rider-loc-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10002;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.remove()">'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:400px;width:100%;padding:18px;font-family:\'DM Sans\',sans-serif;">'
+    +'<div style="font-weight:900;font-size:15px;color:#F2EDE8;margin-bottom:10px;">📍 '+(r.user.name||'Rider')+'\'s Delivery</div>'
+    +'<div class="map-box" style="height:150px;margin-bottom:12px;position:relative;overflow:hidden;border-radius:12px;background:#141414;">'
+    +'<div class="map-grid"></div>'
+    +'<div style="position:absolute;top:38%;left:'+(arrived?'70%':'30%')+';font-size:22px;transition:left 1s;">🏍️</div>'
+    +'<div style="position:absolute;top:32%;right:12%;font-size:20px;">📍</div>'
+    +'</div>'
+    +'<div style="text-align:center;font-weight:700;font-size:13px;color:'+(arrived?'#2ECC71':'#6430C8')+';margin-bottom:14px;">'+(arrived?'✅ Arrived at customer\'s location':'🏍️ Heading to customer\'s location')+'</div>'
+    +'<div style="display:flex;gap:9px;margin-bottom:10px;">'
+    +'<button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="openShopperRiderChat()">💬 Chat</button>'
+    +'<button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal(\''+(r.user.name||'Rider')+'\',\''+(r.user.phone||'')+'\',\'Rider\',\'🏍️\')">📞 Call</button>'
+    +'</div>'
+    +'<button class="btn btn-outline" style="width:100%;" onclick="document.getElementById(\'shopper-rider-loc-modal\').remove()">Close</button>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
 }
 
 window._shopperSession = null;
@@ -5538,8 +5797,12 @@ async function loadOpenEventRequests(){
   el.innerHTML='<div style="font-size:12px;color:#9A9390;padding:8px 0;">Loading open event requests…</div>';
   try{
     var res=await api('/event-requests?as=vendor&status=OPEN');
-    if(!res.requests.length){ el.innerHTML=''; return; }
-    el.innerHTML='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📢 Open Event Requests</div>'
+    var headerHtml='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+      +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;">📢 Event Requests</div>'
+      +'<button onclick="openAllEventRequestsModal()" style="background:transparent;border:1.5px solid #2A2850;border-radius:8px;padding:5px 10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:11px;cursor:pointer;">View All</button>'
+      +'</div>';
+    if(!res.requests.length){ el.innerHTML=headerHtml; return; }
+    el.innerHTML=headerHtml
       + res.requests.map(function(r){
         var mine=r.proposals&&r.proposals[0];
         var actionHtml;
@@ -5563,6 +5826,32 @@ async function loadOpenEventRequests(){
 }
 
 function vendorTrackRider(orderId){toast('Tracking rider for '+orderId);showVendorTrackModal('Emeka O.','~4 mins');}
+
+// Full history of every event request this planner has ever seen — every
+// currently-open one plus every one they've ever proposed on, regardless of
+// outcome (accepted/not-selected/declined/waiting), badged by outcome.
+async function openAllEventRequestsModal(){
+  showProcedureModal('<div style="padding:0 0 10px;"><div style="font-size:18px;font-weight:900;color:#F2EDE8;margin-bottom:14px;">📢 Event Requests</div><div id="all-evreq-list"><div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div></div></div>');
+  var list=document.getElementById('all-evreq-list');
+  try{
+    var res=await api('/event-requests?as=vendor');
+    if(!res.requests.length){ list.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:13px;">No event requests yet.</div>'; return; }
+    var stateColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
+    var stateLabels={PENDING:'⏳ Waiting for customer feedback',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
+    list.innerHTML=res.requests.map(function(r){
+      var mine=r.proposals&&r.proposals[0];
+      var badge=!mine
+        ? '<span style="color:#3B9FE8;font-weight:700;font-size:11px;">Open — Not Proposed Yet</span>'
+        : '<span style="color:'+(stateColors[mine.status]||'#9A9390')+';font-weight:700;font-size:11px;">'+(stateLabels[mine.status]||mine.status)+'</span>';
+      return '<div onclick="closeProcedureModal();openEventRequestForVendor(\''+r.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
+        +'<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:13px;">'+r.eventType+'</b>'+badge+'</div>'
+        +'<div style="font-size:11px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
+        +'</div>';
+    }).join('');
+  }catch(err){
+    list.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px;">'+(err.message||'Could not load requests')+'</div>';
+  }
+}
 
 async function renderVendorMenu(){
   var body=vendorBodyEl();if(!body)return;
@@ -5922,6 +6211,7 @@ async function loadRiderAvailableDeliveries(){
     list.innerHTML=sessions.map(function(s){
       return '<div id="rider-delivery-card-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
         +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 Shop-For-Me Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div><span style="background:#F5A623;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
+        +(s.shopper&&s.shopper.user?('<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:8px;"><div style="font-weight:700;font-size:13px;color:#F5A623;">📍 Pick up from: '+(s.shopper.user.name||'Shopper')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.shopper.market||s.shopper.user.address||'Market location shared on acceptance')+(s.distanceToShopperKm!=null?' • ~'+s.distanceToShopperKm+'km • ~'+s.etaToShopperMinutes+' min away':'')+'</div></div>'):'')
         +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(s.customer?s.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.deliveryAddress||'Address on acceptance')+'</div></div>'
         +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderDelivery(\''+s.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button>'
         +'<button onclick="declineRiderDelivery(\''+s.id+'\',this)" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">✕ Decline</button></div>'
@@ -6113,6 +6403,8 @@ async function submitReport(){
     toast('Report submitted! Our team will contact you within 30 mins.');
     if(_reportContext==='order_live'){
       var rm=document.getElementById('rating-modal');if(rm)rm.style.display='flex';
+    }else{
+      eGo(_eRole==='customer'?'home':_eRole);
     }
   }catch(err){
     toast(err.message||'Could not submit report');
@@ -6430,12 +6722,9 @@ async function approveItem(id) {
 // Reopenable indefinitely -- no one-shot guard, so this can happen as many
 // times as it needs to in one call.
 function promptItemsTopUp(shortfallKobo,itemId){
-  showToast('Insufficient escrow balance — add '+N(shortfallKobo/100)+' to approve this item','warning');
-  openEscrowModal(shortfallKobo/100, async function(){
+  openAddFundsModal(shortfallKobo, async function(amountKobo,paymentMethod){
     try{
-      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
-      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
-      var res=await api('/shop-sessions/'+window._sfmSession.id+'/topup-items',{method:'POST',body:JSON.stringify({amountKobo:shortfallKobo,paymentMethod:paymentMethod})});
+      var res=await api('/shop-sessions/'+window._sfmSession.id+'/topup-items',{method:'POST',body:JSON.stringify({amountKobo:amountKobo,paymentMethod:paymentMethod})});
       if(res.session)window._sfmSession=res.session;
       if(res.manual){
         openManualBankTransferModal(res,function(){showToast('Top-up submitted — approve the item again once it\'s confirmed.','success');});
@@ -6450,6 +6739,57 @@ function promptItemsTopUp(shortfallKobo,itemId){
       showToast(err.message||'Could not process the top-up payment','warning');
     }
   });
+}
+
+// Real editable Add Funds modal — the customer types the amount they want
+// to add (defaults to the shortfall so a one-tap top-up still works), not
+// an amount silently pinned to the item's price. `minKobo` is shown as
+// context only; the confirm button is disabled below it since the
+// escrow-approval action that triggered this still needs at least that much.
+function openAddFundsModal(minKobo,onConfirm){
+  var methods=[['wallet','💰 Wallet'],['card','💳 Card'],['transfer','🏦 Bank Transfer'],['ussd','📱 USSD']];
+  showProcedureModal(
+    '<div style="padding:0 0 20px;" id="add-funds-modal">'
+    +'<div style="text-align:center;margin-bottom:16px;">'
+    +'<div style="font-size:36px;margin-bottom:8px;">🔒</div>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds — Escrow Payment</div>'
+    +'<div style="font-size:12px;color:#9A9390;margin-top:4px;">You need at least '+N(minKobo/100)+' more to approve this item. Add any amount you like.</div>'
+    +'</div>'
+    +'<div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:16px;">'
+    +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Amount to Add (₦)</div>'
+    +'<input id="add-funds-amount" type="number" min="'+(minKobo/100)+'" value="'+(minKobo/100)+'" style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:12px;color:#F2EDE8;font-size:18px;font-weight:800;font-family:\'DM Sans\',sans-serif;">'
+    +'</div>'
+    +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Payment Method</div>'
+    +'<div id="add-funds-methods" style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px;">'
+    +methods.map(function(m){return '<button onclick="selectAddFundsMethod(this,\''+m[0]+'\')" style="padding:12px;border-radius:11px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+m[1]+'</button>';}).join('')
+    +'</div>'
+    +'<button id="add-funds-confirm-btn" onclick="submitAddFundsModal()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;opacity:.4;pointer-events:none;">Add Funds</button>'
+    +'<button onclick="closeProcedureModal()" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
+    +'</div>'
+  );
+  window._addFundsMin=minKobo;
+  window._addFundsMethod=null;
+  window._addFundsCallback=onConfirm;
+}
+function selectAddFundsMethod(btn,method){
+  window._addFundsMethod=method;
+  document.querySelectorAll('#add-funds-methods button').forEach(function(b){b.style.borderColor='#2A2850';b.style.background='#242424';});
+  btn.style.borderColor='#E8392E';btn.style.background='rgba(232,57,46,.1)';
+  var cb=document.getElementById('add-funds-confirm-btn');if(cb){cb.style.opacity='1';cb.style.pointerEvents='auto';}
+}
+function submitAddFundsModal(){
+  var inp=document.getElementById('add-funds-amount');
+  var naira=Number((inp&&inp.value)||0);
+  if(!naira||naira*100<window._addFundsMin){
+    showToast&&showToast('Enter at least '+N(window._addFundsMin/100),'warning');
+    return;
+  }
+  if(!window._addFundsMethod){showToast&&showToast('Choose a payment method','warning');return;}
+  var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+  var paymentMethod=methodMap[window._addFundsMethod]||'WALLET';
+  var amountKobo=Math.round(naira*100);
+  closeProcedureModal();
+  if(window._addFundsCallback)window._addFundsCallback(amountKobo,paymentMethod);
 }
 
 // Non-destructive -- clears the price and approval so the shopper's
@@ -6495,10 +6835,19 @@ async function addShopItemMidCall() {
   var text=inp&&inp.value.trim();
   if(!text){showToast('Type an item first','warning');return;}
   try{
-    var res=await api('/shop-sessions/'+window._sfmSession.id+'/items/mid-call',{method:'POST',body:JSON.stringify({text:text})});
-    shopItems.push({id:res.item.id,text:res.item.text,approved:false,price:null});
+    // Deliberately doesn't push into shopItems here -- the server's own
+    // room broadcast (shop-session:item-added, bound in sfmSocketListeners)
+    // reaches this same customer's socket too, and that listener already
+    // has the real add-once guard. Pushing here AS WELL raced that
+    // broadcast: whichever arrived first "won", but if the socket message
+    // (near-instant) beat this fetch's own HTTP response back, the item
+    // got added twice -- once by each path, since this direct push had no
+    // existence check of its own. Every other item-state change (approve/
+    // reset/remove) already goes through the broadcast alone; this now
+    // matches that pattern.
+    await api('/shop-sessions/'+window._sfmSession.id+'/items/mid-call',{method:'POST',body:JSON.stringify({text:text})});
     if(inp)inp.value='';
-    renderApprovalItems(); showToast('Item added — waiting for '+sfmShopperName()+' to price it','success');
+    showToast('Item added — waiting for '+sfmShopperName()+' to price it','success');
   }catch(err){showToast(err.message||'Could not add item','warning');}
 }
 
@@ -6604,6 +6953,7 @@ function showBottomSheet(title,content){
 function closeBottomSheet(){
   var el=document.getElementById('sfm-bottom-sheet');
   if(el)el.remove();
+  window._openBookingDetailId=null;window._openBookingDetailViewer=null;
 }
 function openShopReportIssueModal(){
   var issues=[['Wrong/Missing Items','#E8392E'],['Damaged Items','#E8392E'],
@@ -7381,6 +7731,46 @@ function _showPaymentMethods(){
 
 
 window._riderActiveSession=null;
+function riderChatWithShopper(){
+  var s=window._riderActiveSession; var u=s&&s.shopper&&s.shopper.user;
+  if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
+  var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
+  openChat({name:u.name||'Shopper',em:'🧑‍🦱',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id});
+}
+function riderCallShopper(){
+  var s=window._riderActiveSession; var u=s&&s.shopper&&s.shopper.user;
+  if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
+  openCallModal(u.name||'Shopper',u.phone||'','Shopper','🧑‍🦱');
+}
+function riderChatWithCustomer(){
+  var s=window._riderActiveSession; var u=s&&s.customer;
+  if(!u){showToast&&showToast('Customer not available yet','warning');return;}
+  var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
+  openChat({name:u.name||'Customer',em:'🏠',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id});
+}
+function riderCallCustomer(){
+  var s=window._riderActiveSession; var u=s&&s.customer;
+  if(!u){showToast&&showToast('Customer not available yet','warning');return;}
+  openCallModal(u.name||'Customer',u.phone||'','Customer','🏠');
+}
+async function riderMarkArrivedAtShopper(){
+  if(!window._riderActiveSession){return;}
+  try{
+    var res=await api('/shop-sessions/'+window._riderActiveSession.id+'/rider-arrived-shopper',{method:'POST'});
+    window._riderActiveSession=res.session;
+    riderMapPhase1();
+    showToast&&showToast('Marked arrived — shopper and customer notified.','success');
+  }catch(err){showToast&&showToast(err.message||'Could not mark arrival','warning');}
+}
+async function riderMarkArrivedAtCustomer(){
+  if(!window._riderActiveSession){return;}
+  try{
+    var res=await api('/shop-sessions/'+window._riderActiveSession.id+'/rider-arrived-customer',{method:'POST'});
+    window._riderActiveSession=res.session;
+    riderMapPhase2();
+    showToast&&showToast('Marked arrived — shopper and customer notified.','success');
+  }catch(err){showToast&&showToast(err.message||'Could not mark arrival','warning');}
+}
 async function acceptRiderDelivery(sessionId){
   try{
     var res=await api('/shop-sessions/'+sessionId+'/accept-delivery',{method:'POST'});
@@ -7399,8 +7789,13 @@ function riderMapPhase1(){
   if(!body)return;
   var s=window._riderActiveSession;
   var customerName=(s&&s.customer&&s.customer.name)||'the customer';
+  var shopperName=(s&&s.shopper&&s.shopper.user&&s.shopper.user.name)||'the shopper';
+  var shopperPhone=(s&&s.shopper&&s.shopper.user&&s.shopper.user.phone)||'';
+  var shopperUserId=(s&&s.shopper&&s.shopper.user&&s.shopper.user.id)||'';
+  var shopperLoc=(s&&s.shopper&&(s.shopper.market||(s.shopper.user&&s.shopper.user.address)))||'';
   var pickupLabel='Shopper';
-  var pickupHeading='Picking Up From Shopper';
+  var arrived=s&&s.riderArrivedShopperAt;
+  var pickupHeading=arrived?'Waiting to Collect From '+shopperName:'Heading to '+shopperName+'’s Location';
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
@@ -7416,8 +7811,22 @@ function riderMapPhase1(){
     +'</div>'
     +'<div style="padding:0 16px;">'
     +'<div style="background:#1C1C1C;border:1.5px solid rgba(245,166,35,.4);border-radius:14px;padding:14px;margin-bottom:12px;">'
+    +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Pick up from</div>'
+    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:8px;">'+shopperName+(shopperLoc?' &mdash; '+shopperLoc:'')+'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;font-size:12px;" onclick="riderChatWithShopper()">💬 Chat</button>'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;font-size:12px;" onclick="riderCallShopper()">📞 Call</button>'
+    +'</div>'
+    +'</div>'
+    +(arrived?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ You marked arrival — waiting for handover</div>'
+      :'<button onclick="riderMarkArrivedAtShopper()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F5A623;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
+    +'<div style="background:#1C1C1C;border:1.5px solid rgba(245,166,35,.4);border-radius:14px;padding:14px;margin-bottom:12px;">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Deliver to</div>'
-    +'<div style="font-weight:700;color:#F2EDE8;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
+    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:8px;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;font-size:12px;" onclick="riderChatWithCustomer()">💬 Chat</button>'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;font-size:12px;" onclick="riderCallCustomer()">📞 Call</button>'
+    +'</div>'
     +'</div>'
     +'<button onclick="riderConfirmPickup()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Items Collected — Head to Customer</button>'
     +'<button onclick="openRiderReportChooser()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">&#x26A0;&#xFE0F; Report an Issue</button>'
@@ -7430,8 +7839,8 @@ function riderMapPhase1(){
 function openRiderReportChooser(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Report an Issue</div></div>'
-    +'<button onclick="closeProcedureModal();setTimeout(function(){showReportIssue(\'customer\');},150)" style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:10px;">&#x26A0;&#xFE0F; Report Customer</button>'
-    +'<button onclick="closeProcedureModal();setTimeout(function(){showReportIssue(\'vendor_shopper\');},150)" style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">&#x26A0;&#xFE0F; Report Vendor/Shopper</button>'
+    +'<button onclick="closeProcedureModal();setTimeout(function(){showReportIssue(\'shopper_session\');},150)" style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:10px;">&#x26A0;&#xFE0F; Report Shopper</button>'
+    +'<button onclick="closeProcedureModal();setTimeout(function(){showReportIssue(\'customer\');},150)" style="width:100%;padding:14px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button>'
     +'</div>');
 }
 
@@ -7456,8 +7865,14 @@ function riderMapPhase2(){
     +'<div style="padding:0 16px;">'
     +'<div style="background:#1C1C1C;border:1.5px solid rgba(46,204,113,.4);border-radius:14px;padding:14px;margin-bottom:12px;">'
     +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Delivering to</div>'
-    +'<div style="font-weight:700;color:#F2EDE8;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
+    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:8px;">'+customerName+' &mdash; '+((s&&s.deliveryAddress)||'Address pending')+'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;font-size:12px;" onclick="riderChatWithCustomer()">💬 Chat</button>'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;font-size:12px;" onclick="riderCallCustomer()">📞 Call</button>'
     +'</div>'
+    +'</div>'
+    +(s&&s.riderArrivedCustomerAt?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Arrival marked — enter the code below to confirm</div>'
+      :'<button onclick="riderMarkArrivedAtCustomer()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(46,204,113,.4);background:rgba(46,204,113,.08);color:#2ECC71;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
     +'<button onclick="finishDelivery()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Confirm Delivery Complete</button>'
     +'<button onclick="openRiderReportChooser()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">&#x26A0;&#xFE0F; Report an Issue</button>'
     +'</div>';
@@ -7862,11 +8277,22 @@ async function tryRestoreSession(attempt){
     connectSocket();
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
     var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
-    if(_eRole==='shopper'){S.role='shopper';S.curScreen='shopper';afterShopperAuth();var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}}
+    if(_eRole==='shopper'){
+      S.role='shopper';S.curScreen='shopper';
+      var resumedShopper=await restoreActiveShopSession('shopper');
+      if(!resumedShopper)afterShopperAuth();
+      var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}
+    }
     else if(_eRole==='cook'){eGo('cook');}
     else if(_eRole==='event_planner'){eGo('event_planner');}
-    else if(_eRole==='rider'){if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
-    else{eGo('home');}
+    else if(_eRole==='rider'){
+      var resumedRider=await restoreActiveShopSession('rider');
+      if(!resumedRider){if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
+    }
+    else{
+      var resumedCustomer=await restoreActiveShopSession('customer');
+      if(!resumedCustomer)eGo('home');
+    }
     scheduleProactiveRefresh();
     return true;
   }catch(err){
@@ -8120,7 +8546,24 @@ async function renderVendorDashboard(kind){
     if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load bookings')+'</div>';
   }
 }
+// Keeps an already-open booking detail sheet live: the other party taking
+// action (accept/decline/start job/complete/edit response) re-fetches and
+// re-renders in place instead of requiring the viewer to close and reopen
+// it to see the change. bookings.controller.js emits booking:updated to
+// room booking:{id} on every state-changing action.
+function bindBookingLiveUpdateListener(){
+  if(!_socket||_socket._bookingLiveBound)return;
+  _socket._bookingLiveBound=true;
+  _socket.on('booking:updated',function(p){
+    if(!p||!p.bookingId||window._openBookingDetailId!==p.bookingId)return;
+    if(window._openBookingDetailViewer==='vendor')openVendorBookingDetail(p.bookingId);
+    else if(window._openBookingDetailViewer==='customer')openCustomerHistoryDetail('booking',p.bookingId);
+  });
+}
 async function openVendorBookingDetail(id){
+  window._openBookingDetailId=id;window._openBookingDetailViewer='vendor';
+  bindBookingLiveUpdateListener();
+  if(_socket)_socket.emit('booking:join',{bookingId:id});
   showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
   try{
     var res=await api('/bookings/'+id);
@@ -8347,6 +8790,11 @@ async function vendorMarkBookingComplete(id,isEP){
 // into one list. Bookings still in a live pre-completion status and whose
 // event date hasn't passed yet get a real "Edit Booking" action.
 async function openCustomerHistoryDetail(kind,id){
+  if(kind==='booking'){
+    window._openBookingDetailId=id;window._openBookingDetailViewer='customer';
+    bindBookingLiveUpdateListener();
+    if(_socket)_socket.emit('booking:join',{bookingId:id});
+  }
   showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
   if(kind==='session'){
     try{
@@ -8360,7 +8808,10 @@ async function openCustomerHistoryDetail(kind,id){
       var scontent='<div style="background:#242424;border-radius:13px;padding:14px;">'
         +srows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
         +'</div>'
-        +'<button onclick="showReportIssue(\'shopper_session\',\''+id+'\')" style="width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report an Issue</button>';
+        +'<div style="display:flex;gap:10px;margin-top:14px;">'
+        +'<button onclick="showReportIssue(\'shopper_session\',\''+id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report Shopper</button>'
+        +'<button onclick="showReportIssue(\'rider\',\''+id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report Rider</button>'
+        +'</div>';
       showBottomSheet('Session Details',scontent);
     }catch(err){
       showBottomSheet('Session Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load session')+'</div>');
@@ -9537,8 +9988,28 @@ function filterCooks(cat,btn){
 }
 
 
-function openSOSModal(){showToast&&showToast('SOS alert sent!','info');}
-function openShareTripModal(){showToast&&showToast('Trip link copied!','info');}
+async function openSOSModal(){
+  var s=window._sfmSession;
+  if(!s){showToast&&showToast('No active session to send an SOS on.','warning');return;}
+  if(!confirm('Send an emergency SOS? This immediately alerts Handa admins to your active session.'))return;
+  try{
+    await api('/shop-sessions/'+s.id+'/sos',{method:'POST',body:JSON.stringify({message:'Emergency SOS triggered from the live tracking screen.'})});
+    showToast&&showToast('🆘 SOS sent — Handa support has been alerted','warning');
+  }catch(err){
+    showToast&&showToast(err.message||'Could not send SOS','warning');
+  }
+}
+function openShareTripModal(){
+  var s=window._sfmSession;
+  if(!s){showToast&&showToast('No active session to share.','warning');return;}
+  var text='Tracking my Handa delivery — session #'+s.id.slice(-8).toUpperCase()+(s.deliveryCode?' — delivery code '+s.deliveryCode:'');
+  try{
+    navigator.clipboard.writeText(text);
+    showToast&&showToast('📋 Trip details copied — share with someone you trust','success');
+  }catch(err){
+    showToast&&showToast('Session ref: '+text,'info');
+  }
+}
 function openShopChatModal(){
   var s=window._sfmSession;
   if(!s||!s.rider||!s.rider.userId){showToast&&showToast('Rider not assigned yet.','warning');return;}
