@@ -358,6 +358,24 @@ function switchTab(tab) {
 const STATUS_PILL = { ACTIVE: 'green', ONLINE: 'green', OPEN: 'red', PENDING: 'amber', PROCESSING: 'amber', SUSPENDED: 'red', DELETED: 'grey', RESOLVED: 'green', CLOSED: 'grey', IN_PROGRESS: 'amber', COMPLETED: 'green', FAILED: 'red', EXPIRED: 'grey', PAID: 'amber', REQUESTED: 'grey', ACCEPTED: 'amber', CONFIRMED: 'green', DECLINED: 'red' };
 function pill(status) { return '<span class="pill ' + (STATUS_PILL[status] || 'grey') + '">' + status + '</span>'; }
 
+// Every uploaded-file link in this panel (KYC doc, dispute evidence) used
+// to be a plain <a target="_blank"> straight to /uploads/<file> — fine
+// when the file is actually there, but Render's free-tier disk is
+// ephemeral (wiped on every deploy/restart), so a file uploaded before an
+// old deploy is simply gone. Clicking used to open a new tab showing a
+// raw {"error":"Route not found..."} JSON blob with zero explanation,
+// which read as "the app is broken" rather than "this specific old file
+// didn't survive a redeploy." This checks first and explains the real
+// cause instead of link-navigating blind.
+async function openUploadedFile(url) {
+  if (!url) return;
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    if (res.ok) { window.open(url, '_blank'); return; }
+  } catch (e) {}
+  alert('This file is no longer on the server.\n\nHanda\'s current hosting (Render\'s free tier) doesn\'t keep uploaded files across every deploy/restart — this one was uploaded before a later deploy wiped it. Once real cloud file storage (e.g. Cloudinary) is connected, this will stop happening for new uploads. The person may need to re-submit the file if it\'s still needed.');
+}
+
 async function renderDashboard() {
   const main = document.getElementById('main');
   main.innerHTML = '<h2>Dashboard</h2><div class="empty">Loading...</div>';
@@ -708,19 +726,27 @@ async function renderTickets(status) {
     const data = await api('/support/tickets/all' + (_ticketsStatusFilter ? '?status=' + _ticketsStatusFilter : ''));
     const rows = data.tickets.map(t => {
       const disputeInfo = t.isDispute
-        ? (t.evidenceUrl ? '<a href="' + t.evidenceUrl + '" target="_blank">Evidence</a> · ' : '')
-          + (t.requestedRefundKobo ? 'Requested: ' + money(t.requestedRefundKobo) : '')
+        ? (t.requestedRefundKobo ? 'Requested: ' + money(t.requestedRefundKobo) : '')
           + (t.refundAmountKobo ? ' · Refunded: ' + money(t.refundAmountKobo) : '')
         : '';
+      // A real, visible button for any submitted file -- gated purely on
+      // the file actually being there, not on isDispute (a plain report
+      // with an attached photo already flips isDispute true when it's
+      // created, but this stays correct even if that ever changes). The
+      // old version was a small inline <a> buried inside the Description
+      // cell's text, easy to miss entirely.
+      const evidenceButtons = (t.evidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.evidenceUrl + '\')">&#128206; View Evidence</button> ' : '')
+        + (t.secondPartyEvidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.secondPartyEvidenceUrl + '\')">&#128206; Their Evidence</button>' : '');
       const actions = (t.status !== 'RESOLVED'
         ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">' + (t.isDispute ? 'Resolve For Vendor' : 'Resolve') + '</button>'
           + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\',' + (t.heldAmountKobo || 0) + ')">Resolve with Refund</button>' : '')
           + (t.isDispute && t.status === 'OPEN' ? ' <button class="action-btn" onclick="investigateTicket(\'' + t.id + '\')">Investigate</button>' : '')
         : '')
         + '<br><button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.id + '\',\'filer\')">&#128172; Chat Filer</button>'
-        + (t.isDispute ? ' <button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.id + '\',\'vendor\')">&#128172; Chat Vendor</button>' : '');
+        + (t.isDispute ? ' <button class="action-btn" style="margin-top:6px" onclick="openTicketPartyChat(\'' + t.id + '\',\'vendor\')">&#128172; Chat Vendor</button>' : '')
+        + (evidenceButtons ? '<br><span style="display:inline-block;margin-top:6px">' + evidenceButtons + '</span>' : '');
       const secondSide = t.secondPartyResponse
-        ? '<br><small onclick="alert(' + JSON.stringify(t.secondPartyResponse) + ')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="Click to read the full message"><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + (t.secondPartyEvidenceUrl ? ' · <a href="' + t.secondPartyEvidenceUrl + '" target="_blank" onclick="event.stopPropagation()">Their evidence</a>' : '') + '</small>'
+        ? '<br><small onclick="alert(' + JSON.stringify(t.secondPartyResponse) + ')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="Click to read the full message"><b>Other side:</b> ' + t.secondPartyResponse.slice(0, 150) + '</small>'
         : '';
       const description = t.description || '';
       const descHtml = description
@@ -808,7 +834,7 @@ async function renderKycDocuments(status) {
         ? '<button class="action-btn" onclick="reviewKycDoc(\'' + d.id + '\',\'APPROVED\')">Approve</button> '
           + '<button class="action-btn" onclick="reviewKycDoc(\'' + d.id + '\',\'REJECTED\')">Reject</button>'
         : (d.rejectionReason || '');
-      return '<tr><td><a href="' + d.fileUrl + '" target="_blank">View</a></td><td>' + who + '</td><td>' + d.docType + '</td>'
+      return '<tr><td><button class="action-btn" onclick="openUploadedFile(\'' + d.fileUrl + '\')">View</button></td><td>' + who + '</td><td>' + d.docType + '</td>'
         + '<td>' + pill(d.status) + '</td><td>' + new Date(d.createdAt).toLocaleString() + '</td><td>' + actions + '</td></tr>';
     }).join('');
     document.getElementById('kyc-table').outerHTML = data.documents.length
