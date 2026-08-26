@@ -3982,7 +3982,15 @@ function onSfmStatus(status){
   // screen the customer (or an earlier event) already advanced past. A
   // same-phase re-push is allowed through — PACKAGING and FINDING_RIDER
   // both map to 'packaging' but have different on-screen copy, so the
-  // second push still needs to re-render.
+  // second push still needs to re-render. liveCall is the one exception:
+  // there's no alternate copy for it, and re-rendering it destroys and
+  // recreates the <video> element, silently losing whatever stream
+  // ontrack had already attached (ontrack only fires once, it doesn't
+  // re-fire just because the element was replaced) -- a real way the
+  // customer could end up connected internally but staring at a blank
+  // video. A genuine same-session re-push of LIVE_CALL has nothing new to
+  // show, so it's a pure no-op here.
+  if(nextPhase==='liveCall'&&window._sfmPhase==='liveCall')return;
   var curIdx=SFM_PHASE_ORDER.indexOf(window._sfmPhase);
   var nextIdx=SFM_PHASE_ORDER.indexOf(nextPhase);
   if(curIdx>=0&&nextIdx>=0&&nextIdx<curIdx)return;
@@ -4113,7 +4121,17 @@ async function sfmFetchIceServers(){
 }
 
 async function sfmStartCall(sessionId, role, localVideoElId, remoteVideoElId){
-  if(window._rtc && window._rtc.sessionId===sessionId && window._rtc.pc) return;
+  // Guarded on sessionId alone -- requiring .pc to already exist left a
+  // real gap: a concurrent second call for the SAME session arriving
+  // while the first is still awaiting the real camera/mic permission
+  // prompt (.pc isn't created until after that resolves, and a real
+  // device prompt can take several seconds, unlike an instant grant/deny)
+  // sailed straight past the old guard, tore down the still-in-progress
+  // attempt via sfmEndCall(), and restarted from scratch. A duplicate
+  // trigger is easy to hit (a same-phase re-render, a stray duplicate
+  // status push) and this was a real way the call could end up never
+  // actually connecting.
+  if(window._rtc && window._rtc.sessionId===sessionId) return;
   if(window._rtc) sfmEndCall();
   if(typeof RTCPeerConnection==='undefined'||!navigator.mediaDevices){
     showToast&&showToast('Video calls are not supported in this browser','warning');
