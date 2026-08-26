@@ -6872,17 +6872,21 @@ async function addShopItemMidCall() {
   var text=inp&&inp.value.trim();
   if(!text){showToast('Type an item first','warning');return;}
   try{
-    // Deliberately doesn't push into shopItems here -- the server's own
-    // room broadcast (shop-session:item-added, bound in sfmSocketListeners)
-    // reaches this same customer's socket too, and that listener already
-    // has the real add-once guard. Pushing here AS WELL raced that
-    // broadcast: whichever arrived first "won", but if the socket message
-    // (near-instant) beat this fetch's own HTTP response back, the item
-    // got added twice -- once by each path, since this direct push had no
-    // existence check of its own. Every other item-state change (approve/
-    // reset/remove) already goes through the broadcast alone; this now
-    // matches that pattern.
-    await api('/shop-sessions/'+window._sfmSession.id+'/items/mid-call',{method:'POST',body:JSON.stringify({text:text})});
+    // Push the real item (with its real backend id) straight from this
+    // request's own response, guarded by the same existence check the
+    // shop-session:item-added socket listener already uses -- so this is
+    // safe to run alongside that broadcast rather than needing to choose
+    // one path exclusively. Relying on the broadcast ALONE previously left
+    // the customer's own screen never showing what they just added
+    // whenever their socket wasn't currently a member of the session's
+    // room at that exact moment (e.g. right after a reconnect) -- the
+    // shopper, a separate socket, still got it fine, which is exactly what
+    // "only shows on the shopper side" looks like from the customer's end.
+    var res=await api('/shop-sessions/'+window._sfmSession.id+'/items/mid-call',{method:'POST',body:JSON.stringify({text:text})});
+    if(res&&res.item&&!shopItems.find(function(i){return i.id===res.item.id;})){
+      shopItems.push({id:res.item.id,text:res.item.text,approved:res.item.approved,price:res.item.priceKobo?Math.round(res.item.priceKobo/100):null});
+      if(document.getElementById('approval-items'))renderApprovalItems();
+    }
     if(inp)inp.value='';
     showToast('Item added — waiting for '+sfmShopperName()+' to price it','success');
   }catch(err){showToast(err.message||'Could not add item','warning');}
