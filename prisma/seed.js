@@ -105,13 +105,17 @@ async function main() {
             // screen offers (see _epPackages in public/app/index.html) —
             // every event planner needs one row per key or booking a type
             // this vendor doesn't have a row for fails with "not offered".
+            // guestCount matches the number implied by each package's own
+            // name/description in the frontend's _epPackages template
+            // (public/app/index.html) -- left null where the description
+            // names no specific number (Wedding/Corporate/Burial/Naming).
             create: [
-              { key: "BASIC", label: "Basic Event Package", priceKobo: 15000000, includes: ["Event coordination", "Basic decor setup", "Guest management"] },
-              { key: "STANDARD", label: "Standard Package", priceKobo: 35000000, includes: ["Full event coordination", "Premium decor", "Catering liaison", "MC/Host"] },
-              { key: "PREMIUM", label: "Premium Package", priceKobo: 75000000, includes: ["End-to-end planning", "Luxury decor", "MC & entertainment", "Full photography"] },
+              { key: "BASIC", label: "Basic Event Package", priceKobo: 15000000, guestCount: 100, includes: ["Event coordination", "Basic decor setup", "Guest management"] },
+              { key: "STANDARD", label: "Standard Package", priceKobo: 35000000, guestCount: 200, includes: ["Full event coordination", "Premium decor", "Catering liaison", "MC/Host"] },
+              { key: "PREMIUM", label: "Premium Package", priceKobo: 75000000, guestCount: 500, includes: ["End-to-end planning", "Luxury decor", "MC & entertainment", "Full photography"] },
               { key: "WEDDING", label: "Wedding Package", priceKobo: 120000000, includes: ["Full planning", "Decor", "Photography", "Coordination"] },
               { key: "CORPORATE", label: "Corporate Event", priceKobo: 50000000, includes: ["Corporate planning", "AV & tech setup", "Branding coordination"] },
-              { key: "BIRTHDAY", label: "Birthday Package", priceKobo: 20000000, includes: ["Decor", "MC", "Photography"] },
+              { key: "BIRTHDAY", label: "Birthday Package", priceKobo: 20000000, guestCount: 150, includes: ["Decor", "MC", "Photography"] },
               { key: "BURIAL", label: "Funeral / Memorial", priceKobo: 18000000, includes: ["Funeral coordination", "Venue arrangement", "Floral arrangements"] },
               { key: "NAMING", label: "Naming Ceremony", priceKobo: 12000000, includes: ["Ceremony coordination", "Decor setup", "Catering liaison"] },
             ],

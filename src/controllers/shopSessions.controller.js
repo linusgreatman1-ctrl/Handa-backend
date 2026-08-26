@@ -197,6 +197,10 @@ async function getSession(req, res, next) {
         shopper: { include: { user: { select: { id: true, name: true, phone: true } } } },
         rider: { include: { user: { select: { id: true, name: true, phone: true } } } },
         sellerPayouts: { include: { seller: true } },
+        // Lets the frontend's 'done' screen know if the customer already
+        // rated the shopper/rider on THIS session, so it can hide that
+        // rating form and show the given score instead of re-offering it.
+        ratings: true,
       },
     });
     if (!session) return res.status(404).json({ error: "Shop session not found." });

@@ -1850,15 +1850,23 @@ function onCatalogLoaded(){
 
 var _cb={cookId:null,cook:null,selected:{},selectedPkg:null,total:0,payMethod:'',details:{},phase:'packages',cancelReason:''};
 var _epb={epId:null,ep:null,selected:{},selectedPkg:null,total:0,payMethod:'',details:{},phase:'packages',cancelReason:''};
+// guests: the numeric cap implied by each template's own "Up to N guests"
+// description -- previously only lived in that display text, never sent to
+// the backend when a vendor added the package (addDefaultPackage), so
+// ServicePackage.guestCount stayed null and the customer's booking flow
+// never actually auto-filled or capped the guest field despite the
+// package's own name/description promising a specific number. Templates
+// with no specific guest count in their description (Wedding, Corporate,
+// Funeral, Naming) stay uncapped (null) -- nothing was ever implied there.
 var _epPackages=[
-  {id:'basic',nm:'Basic Event Package',em:'🎊',pr:150000,desc:'Up to 100 guests',includes:['Event coordination','Basic decor setup','Guest management','Timeline planning','1 site visit']},
-  {id:'standard',nm:'Standard Package',em:'🎉',pr:350000,desc:'Up to 200 guests',includes:['Full event coordination','Premium decor','Catering liaison','MC/Host','Photography brief','3 consultations']},
-  {id:'premium',nm:'Premium Package',em:'👑',pr:750000,desc:'Up to 500 guests',includes:['End-to-end planning','Luxury decor','Catering management','MC & entertainment','Full photography & video','All vendor management']},
-  {id:'wedding',nm:'Wedding Package',em:'💍',pr:1200000,desc:'Full wedding planning',includes:['Complete wedding planning','All vendor coordination','Decor & flowers','Catering supervision','Photography & video','Guest management']},
-  {id:'corporate',nm:'Corporate Event',em:'🏢',pr:500000,desc:'Corporate events & launches',includes:['Corporate event planning','AV & tech setup','Branding coordination','Catering management','Guest & RSVP management']},
-  {id:'birthday',nm:'Birthday Celebration',em:'🎂',pr:200000,desc:'Up to 150 guests',includes:['Party planning','Decor & balloons','Cake liaison','Entertainment','Guest invitations']},
-  {id:'burial',nm:'Funeral / Memorial',em:'🕊️',pr:180000,desc:'Dignified service',includes:['Funeral coordination','Venue arrangement','Floral arrangements','Guest management']},
-  {id:'naming',nm:'Naming Ceremony',em:'👶',pr:120000,desc:'Traditional & modern',includes:['Ceremony coordination','Decor setup','Catering liaison','Guest management']}
+  {id:'basic',nm:'Basic Event Package',em:'🎊',pr:150000,desc:'Up to 100 guests',guests:100,includes:['Event coordination','Basic decor setup','Guest management','Timeline planning','1 site visit']},
+  {id:'standard',nm:'Standard Package',em:'🎉',pr:350000,desc:'Up to 200 guests',guests:200,includes:['Full event coordination','Premium decor','Catering liaison','MC/Host','Photography brief','3 consultations']},
+  {id:'premium',nm:'Premium Package',em:'👑',pr:750000,desc:'Up to 500 guests',guests:500,includes:['End-to-end planning','Luxury decor','Catering management','MC & entertainment','Full photography & video','All vendor management']},
+  {id:'wedding',nm:'Wedding Package',em:'💍',pr:1200000,desc:'Full wedding planning',guests:null,includes:['Complete wedding planning','All vendor coordination','Decor & flowers','Catering supervision','Photography & video','Guest management']},
+  {id:'corporate',nm:'Corporate Event',em:'🏢',pr:500000,desc:'Corporate events & launches',guests:null,includes:['Corporate event planning','AV & tech setup','Branding coordination','Catering management','Guest & RSVP management']},
+  {id:'birthday',nm:'Birthday Celebration',em:'🎂',pr:200000,desc:'Up to 150 guests',guests:150,includes:['Party planning','Decor & balloons','Cake liaison','Entertainment','Guest invitations']},
+  {id:'burial',nm:'Funeral / Memorial',em:'🕊️',pr:180000,desc:'Dignified service',guests:null,includes:['Funeral coordination','Venue arrangement','Floral arrangements','Guest management']},
+  {id:'naming',nm:'Naming Ceremony',em:'👶',pr:120000,desc:'Traditional & modern',guests:null,includes:['Ceremony coordination','Decor setup','Catering liaison','Guest management']}
 ];
 
 // mealCount: exact number of meals the customer must pick to fill this
@@ -3417,6 +3425,15 @@ function renderShopPhase(phase) {
     var done=window._sfmSession||{};
     var shopperName=sfmShopperName();
     var riderName=(done.rider&&done.rider.user&&done.rider.user.name)||'your rider';
+    // Already-rated check, scoped to THIS session's own ratings (see
+    // getSession's ratings:true include) -- a revisit shows the given
+    // score in place instead of re-offering the form, matching every
+    // other completed-transaction rating screen in the app.
+    var doneShopperRating=(done.ratings||[]).find(function(r){return r.rateeRole==='SHOPPER';});
+    var doneRiderRating=(done.ratings||[]).find(function(r){return r.rateeRole==='RIDER';});
+    function _doneGivenBlock(nm,r){
+      return '<div style="padding:12px 0;text-align:left;"><p style="font-weight:700;font-size:14px;margin-bottom:6px;">'+nm+'</p><div style="color:#F5A623;font-size:20px;letter-spacing:2px;">'+'★'.repeat(r.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-r.score)+'</span></div>'+(r.comment?'<div style="color:#9A9390;font-size:12px;margin-top:4px;">'+r.comment+'</div>':'')+'</div>';
+    }
     body.innerHTML = `<div class="fi" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:65vh;text-align:center;padding:20px;">
       <div style="font-size:80px;margin-bottom:16px;">🎉</div>
       <div class="h2">Shopping Complete!</div>
@@ -3427,20 +3444,24 @@ function renderShopPhase(phase) {
         <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;">Items delivered</span><span style="font-weight:700;">${shopItems.length}</span></div>
         <div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;">Escrow</span><span class="badge b-green">🔓 Released</span></div>
       </div>
-      <div id="rate-shopper-block">
+      ${doneShopperRating ? _doneGivenBlock('Rated '+shopperName+' (Shopper)',doneShopperRating) : `<div id="rate-shopper-block">
         <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${shopperName} (Shopper):</p>
         <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-shopper-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSelectRatingStar('SHOPPER',${s},'rate-shopper-stars')">⭐</span>`).join('')}</div>
         <textarea id="rate-shopper-comment" placeholder="Leave a review for ${shopperName} (optional)..." style="width:100%;min-height:60px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:10px 12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:8px;font-family:'DM Sans',sans-serif;"></textarea>
         <button onclick="sfmSubmitRating('SHOPPER','rate-shopper-stars','rate-shopper-comment')" style="background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:10px;font-family:'DM Sans',sans-serif;">Submit Review</button>
         ${(done.shopper&&done.shopper.id) ? `<button data-label="${shopperName}" onclick="toggleFavourite('SHOPPER','${done.shopper.id}',this)" style="background:transparent;border:1.5px solid #2A2850;border-radius:20px;padding:6px 14px;color:#9A9390;font-size:12px;cursor:pointer;margin-bottom:18px;font-family:'DM Sans',sans-serif;">☆ Favourite ${shopperName}</button>` : ''}
-      </div>
-      <div id="rate-rider-block">
+      </div>`}
+      ${doneRiderRating ? _doneGivenBlock('Rated '+riderName+' (Rider)',doneRiderRating) : `<div id="rate-rider-block">
         <p style="font-weight:700;font-size:14px;margin-bottom:9px;">Rate ${riderName} (Rider):</p>
         <div style="display:flex;gap:6px;margin-bottom:10px;" id="rate-rider-stars">${[1,2,3,4,5].map(s=>`<span data-s="${s}" style="font-size:32px;cursor:pointer;opacity:.3;transition:all .18s;" onclick="sfmSelectRatingStar('RIDER',${s},'rate-rider-stars')">⭐</span>`).join('')}</div>
         <textarea id="rate-rider-comment" placeholder="Leave a review for ${riderName} (optional)..." style="width:100%;min-height:60px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:10px 12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:8px;font-family:'DM Sans',sans-serif;"></textarea>
         <button onclick="sfmSubmitRating('RIDER','rate-rider-stars','rate-rider-comment')" style="background:#242424;border:1px solid #2A2850;border-radius:10px;padding:8px 16px;color:#F2EDE8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:22px;font-family:'DM Sans',sans-serif;">Submit Review</button>
+      </div>`}
+      <div style="display:flex;gap:10px;width:100%;margin-bottom:10px;">
+        <button onclick="showReportIssue('shopper_session','${done.id||''}')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">⚠️ Report Shopper</button>
+        <button onclick="showReportIssue('rider','${done.id||''}')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">⚠️ Report Rider</button>
       </div>
-      <button class="btn btn-primary" onclick="go('home')">Back to Home 🏠</button>
+      <button class="btn btn-primary" style="width:100%;" onclick="go('home')">Back to Home 🏠</button>
     </div>`;
     startScreenIdleAutoHome('shop-body',120000);
   }
@@ -3552,6 +3573,32 @@ async function openRatingsModal(userId, role, profileId){
 }
 function closeRatingsModal(){var d=document.getElementById('ratings-modal-wrap');if(d)d.remove();}
 
+// A clean, submission-only rating form scoped to ONE specific just-
+// completed booking/session -- unlike openRatingsModal (which shows every
+// past review for that vendor/rider/shopper, then separately re-derives
+// "some completed booking with them" to decide eligibility, which could
+// land on a DIFFERENT older booking than the one actually being rated).
+// This is what "Rate/Review" on a booking's Thank-You screen should open:
+// no old reviews, exactly the booking already in view.
+function openSubmitRatingModal(rateeUserId, rateeRole, contextType, contextId, name, onSubmitted){
+  var existing=document.getElementById('ratings-modal-wrap');if(existing)existing.remove();
+  var html='<div id="ratings-modal-ov" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:400px;width:100%;padding:20px;font-family:\'DM Sans\',sans-serif;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+    +'<div style="font-weight:800;font-size:16px;color:#F2EDE8;">Rate '+(name||'this')+'</div>'
+    +'<button onclick="closeRatingsModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">&#x2715;</button>'
+    +'</div>'
+    +'<div id="ratings-modal-stars" style="display:flex;gap:8px;justify-content:center;margin-bottom:14px;">'
+    +[1,2,3,4,5].map(function(s){return '<span data-s="'+s+'" onclick="_rmSelectStar('+s+')" style="font-size:30px;cursor:pointer;opacity:.35;">⭐</span>';}).join('')
+    +'</div>'
+    +'<textarea id="ratings-modal-comment" placeholder="Optional comment" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:10px;padding:10px;color:#F2EDE8;font-size:13px;box-sizing:border-box;min-height:70px;margin-bottom:14px;"></textarea>'
+    +'<button onclick="_rmSubmit(\''+rateeRole+'\',\''+contextType+'\',\''+contextId+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Submit Review</button>'
+    +'</div></div>';
+  var d=document.createElement('div');d.id='ratings-modal-wrap';d.innerHTML=html;document.body.appendChild(d);
+  window._rmScore=0;
+  window._rmOnSubmitted=onSubmitted||null;
+}
+
 // The reverse of openRatingsModal -- ratings the CUSTOMER has given (as
 // rater), not ratings about them. Reachable from the customer's own
 // "Reviews" stat box on their profile screen.
@@ -3621,6 +3668,11 @@ async function _rmSubmit(role,contextType,contextId){
     await api('/ratings',{method:'POST',body:JSON.stringify({contextType:contextType,contextId:contextId,rateeRole:role,score:window._rmScore,comment:(document.getElementById('ratings-modal-comment')||{}).value||undefined})});
     toast('Review submitted!');
     closeRatingsModal();
+    // openSubmitRatingModal's caller (the booking/session detail screen)
+    // passes this so it can re-render right away and hide the Rate/Review
+    // button, matching every other completed-booking flow -- otherwise the
+    // button would still show until the detail sheet was closed and reopened.
+    if(window._rmOnSubmitted){var cb=window._rmOnSubmitted;window._rmOnSubmitted=null;cb();}
   }catch(err){showToast&&showToast(err.message||'Could not submit review','warning');}
 }
 
@@ -6023,7 +6075,7 @@ async function addDefaultPackage(key){
   var tpl=vendorPackageTemplates().find(function(p){return p.id.toUpperCase()===key;});
   if(!tpl)return;
   try{
-    await api('/vendors/me/packages',{method:'POST',body:JSON.stringify({key:key,label:tpl.nm,priceKobo:tpl.pr*100,includes:tpl.includes})});
+    await api('/vendors/me/packages',{method:'POST',body:JSON.stringify({key:key,label:tpl.nm,priceKobo:tpl.pr*100,includes:tpl.includes,guestCount:tpl.guests||null})});
     showToast&&showToast(tpl.nm+' added!','success');
     refreshVendorPackagesScreen();
   }catch(err){showToast&&showToast(err.message||'Could not add package','warning');}
@@ -6950,6 +7002,10 @@ async function shopConfirmAllPayments(auto){
   }
   try{
     await api('/shop-sessions/'+window._sfmSession.id+'/confirm',{method:'POST'});
+    // Re-fetch full detail (the confirm endpoint's own response has no
+    // relations) so the 'done' screen's ratings check below has real data
+    // -- matters on a later revisit, not this first pass through.
+    try{ var freshDone=await api('/shop-sessions/'+window._sfmSession.id); window._sfmSession=freshDone.session; }catch(e){}
     if(window._shopAutoIv)clearInterval(window._shopAutoIv);
     if(btn){btn.disabled=true;btn.textContent=auto?'Auto-released':'All Confirmed';btn.style.background='#2ECC71';btn.style.color='#111';}
     toast(auto?'All payments auto-released!':'All payments confirmed!');
@@ -8669,7 +8725,7 @@ async function openVendorBookingDetail(id){
         +'</div>';
     }else if(b.status==='COMPLETED'){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
-        +'<div style="font-weight:800;font-size:14px;color:#2ECC71;">&#x2705; This Session Is Completed</div>'
+        +'<div style="font-weight:800;font-size:14px;color:#2ECC71;">&#x2705; This Booking Is Completed</div>'
         +'</div>';
     }else if(b.status==='CANCELLED'&&vendorDisputeResolved){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
@@ -9008,7 +9064,7 @@ async function openCustomerHistoryDetail(kind,id){
           ? '<div style="background:#1C1C1C;border:1px solid #2A2850;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;"><div style="color:#F5A623;font-size:13px;letter-spacing:1px;margin-bottom:4px;">'+'★'.repeat(existingRating.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-existingRating.score)+'</span></div>'+(existingRating.comment?'<div style="color:#9A9390;font-size:12px;">'+existingRating.comment+'</div>':'')+'</div>'
           : '')
         +'<div style="display:flex;gap:10px;">'
-        +(existingRating?'':'<button onclick="openRatingsModal(\''+vu.id+'\',\'VENDOR\',\''+v.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2B50; Rate/Review</button>')
+        +(existingRating?'':'<button onclick="openSubmitRatingModal(\''+vu.id+'\',\'VENDOR\',\'BOOKING\',\''+b.id+'\',\''+(v.bizName||'this vendor').replace(/'/g,"\\'")+'\',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="flex:1;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2B50; Rate/Review</button>')
         +'<button onclick="showReportIssue(\'vendor\',\''+v.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x26A0;&#xFE0F; Report Issues</button>'
         +'</div></div>';
     }else if(isCancelledFromDispute){
