@@ -2891,6 +2891,22 @@ function buildShop() {
 // a reload/logout/reconnect, instead of dropping them on the home screen
 // while money/a live session is still in flight. Returns true if an active
 // session was found and restored.
+// Awaits the server's own join ack (rather than firing the socket event
+// and immediately moving on) so a real-time push meant for this session
+// can't race the join and get missed in the moment right after a resume --
+// falls back to a short timeout so a slow/dropped ack never blocks resume
+// entirely.
+function _joinShopSessionRoom(sessionId){
+  return new Promise(function(resolve){
+    if(!_socket){resolve(false);return;}
+    var settled=false;
+    var t=setTimeout(function(){if(!settled){settled=true;resolve(false);}},1500);
+    _socket.emit('shop-session:join',{sessionId:sessionId},function(ack){
+      if(settled)return;
+      settled=true;clearTimeout(t);resolve(!!(ack&&ack.joined));
+    });
+  });
+}
 async function restoreActiveShopSession(role) {
   try {
     if (role === 'shopper') {
@@ -2901,7 +2917,7 @@ async function restoreActiveShopSession(role) {
       var sPhase = {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound'}[activeS.status]||'accepted';
       afterShopperAuth();
       shopperBindItemSocketListeners();
-      if (_socket) _socket.emit('shop-session:join', {sessionId: activeS.id});
+      await _joinShopSessionRoom(activeS.id);
       renderShopperPhase(sPhase);
       return true;
     }
@@ -2911,7 +2927,7 @@ async function restoreActiveShopSession(role) {
       if (!activeR) return false;
       window._riderActiveSession = activeR;
       eGo('rider');
-      if (_socket) _socket.emit('shop-session:join', {sessionId: activeR.id});
+      await _joinShopSessionRoom(activeR.id);
       if (activeR.status === 'OUT_FOR_DELIVERY') riderMapPhase2(); else riderMapPhase1();
       return true;
     }
@@ -2922,6 +2938,7 @@ async function restoreActiveShopSession(role) {
     window._sfmSession = activeC;
     var cPhase = activeC.status==='SEARCHING'?'finding':(activeC.status==='MATCHED'?'shopperProfile':(SFM_STATUS_PHASE[activeC.status]||'liveCall'));
     window._sfmResumePhase = cPhase;
+    await _joinShopSessionRoom(activeC.id);
     eGo('sfm');
     return true;
   } catch (err) {
