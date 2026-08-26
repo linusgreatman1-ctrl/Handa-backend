@@ -31,7 +31,18 @@ async function issueSession(res, user) {
     },
   });
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
-  return accessToken;
+  // Also returned in the JSON body (not just the cookie) so the frontend can
+  // store it per-tab (sessionStorage) instead of relying solely on the
+  // cookie, which is domain-scoped and shared across every tab of the same
+  // browser -- with only the cookie, two tabs logged into two different
+  // accounts collide on refresh (whichever tab refreshes second silently
+  // adopts -- or, with last session's sub-mismatch guard, gets force-logged-
+  // out by -- the OTHER tab's account). Each RefreshToken DB row already
+  // rotates independently by its own token hash, so handing the raw value
+  // back per-response is all that's needed for genuinely independent
+  // per-tab sessions; the cookie stays as a fallback for any caller that
+  // doesn't use the body-token path.
+  return { accessToken, refreshToken };
 }
 
 // Every account gets a Wallet + default NotificationPreference regardless
@@ -136,8 +147,8 @@ async function register(req, res, next) {
       include: { vendorProfile: true, riderProfile: true, shopperProfile: true, wallet: true },
     });
 
-    const accessToken = await issueSession(res, user);
-    res.status(201).json({ user: publicUser(user), accessToken });
+    const { accessToken, refreshToken } = await issueSession(res, user);
+    res.status(201).json({ user: publicUser(user), accessToken, refreshToken });
   } catch (err) {
     next(err);
   }
@@ -164,8 +175,8 @@ async function login(req, res, next) {
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
-    const accessToken = await issueSession(res, user);
-    res.json({ user: publicUser(user), accessToken });
+    const { accessToken, refreshToken } = await issueSession(res, user);
+    res.json({ user: publicUser(user), accessToken, refreshToken });
   } catch (err) {
     next(err);
   }
@@ -188,8 +199,8 @@ async function guestLogin(req, res, next) {
         notificationPref: { create: {} },
       },
     });
-    const accessToken = await issueSession(res, user);
-    res.status(201).json({ user: publicUser(user), accessToken, guestTag });
+    const { accessToken, refreshToken } = await issueSession(res, user);
+    res.status(201).json({ user: publicUser(user), accessToken, refreshToken, guestTag });
   } catch (err) {
     next(err);
   }
@@ -197,7 +208,14 @@ async function guestLogin(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    const token = req.cookies?.[REFRESH_COOKIE_NAME];
+    // Prefer a body-supplied token (this tab's own, from sessionStorage)
+    // over the shared cookie -- the cookie is domain-scoped and collides
+    // across every tab of the same browser, which is exactly what let one
+    // tab's login silently invalidate (or, with the sub-mismatch guard,
+    // force-logout) a completely unrelated tab logged into a different
+    // account. Still falls back to the cookie for any caller that never
+    // adopted the body-token path.
+    const token = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE_NAME];
     if (!token) return res.status(401).json({ error: "No refresh token." });
 
     let payload;
@@ -223,8 +241,8 @@ async function refresh(req, res, next) {
 
     // Rotate: revoke the used refresh token, issue a fresh pair.
     await prisma.refreshToken.update({ where: { id: stored.id }, data: { revoked: true } });
-    const accessToken = await issueSession(res, user);
-    res.json({ user: publicUser(user), accessToken });
+    const { accessToken, refreshToken } = await issueSession(res, user);
+    res.json({ user: publicUser(user), accessToken, refreshToken });
   } catch (err) {
     next(err);
   }
@@ -232,7 +250,9 @@ async function refresh(req, res, next) {
 
 async function logout(req, res, next) {
   try {
-    const token = req.cookies?.[REFRESH_COOKIE_NAME];
+    // Same body-first fallback as refresh() -- revokes THIS tab's own
+    // token, not whichever one the shared cookie currently happens to hold.
+    const token = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE_NAME];
     if (token) {
       await prisma.refreshToken.updateMany({ where: { tokenHash: hashToken(token) }, data: { revoked: true } });
     }

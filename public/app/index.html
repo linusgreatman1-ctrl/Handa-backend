@@ -963,6 +963,16 @@ var _socket = null;
 
 function setAccessToken(t){ _accessToken = t; if(t) sessionStorage.setItem('handa_token', t); else sessionStorage.removeItem('handa_token'); }
 
+// The refresh token used to live ONLY in an httpOnly cookie -- which is
+// domain-scoped, not tab-scoped, so two tabs of the same browser logged
+// into two different accounts shared (and kept overwriting) the exact
+// same cookie value. Storing it here too, per-tab, is what makes each
+// tab's own refresh cycle genuinely independent -- see scheduleProactiveRefresh
+// and api()'s reactive 401 path, both now send this explicitly instead of
+// relying solely on the shared cookie.
+var _refreshToken = sessionStorage.getItem('handa_refresh_token') || null;
+function setRefreshToken(t){ _refreshToken = t; if(t) sessionStorage.setItem('handa_refresh_token', t); else sessionStorage.removeItem('handa_refresh_token'); }
+
 // Reads a JWT's payload without verifying the signature — only ever used
 // to compare "which user does this token claim to be," never trusted for
 // actual authentication (the server always re-verifies).
@@ -999,26 +1009,34 @@ var _proactiveRefreshRetries = 0;
 function scheduleProactiveRefresh(delayMs){
   if(_proactiveRefreshTimer)clearTimeout(_proactiveRefreshTimer);
   _proactiveRefreshTimer=setTimeout(async function(){
+    // Cleared the moment this actually fires, not only when the NEXT
+    // schedule call reassigns it -- otherwise this handle stays truthy
+    // (stale, already-consumed) for the whole duration of the async work
+    // below, and the visibilitychange re-armer's `!_proactiveRefreshTimer`
+    // check silently skips re-arming if the tab is backgrounded/foregrounded
+    // during a slow in-flight refresh (e.g. a Render cold-start).
+    _proactiveRefreshTimer=null;
     if(!_accessToken)return;
     var expectedSub=decodeJwtSub(_accessToken);
     try{
       if(!_refreshInFlight){
-        _refreshInFlight=api('/auth/refresh',{method:'POST'}).catch(function(){return null;}).finally(function(){_refreshInFlight=null;});
+        _refreshInFlight=api('/auth/refresh',{method:'POST',body:JSON.stringify({refreshToken:_refreshToken})}).catch(function(){return null;}).finally(function(){_refreshInFlight=null;});
       }
       var refreshed=await _refreshInFlight;
       if(refreshed&&refreshed.accessToken){
-        // The refresh cookie is shared across every same-origin tab -- if a
-        // DIFFERENT account logged in from another tab since this token was
-        // issued, that shared cookie now belongs to THAT account, and this
-        // refresh would silently hand back a token for them instead. Same
-        // guard as the reactive 401 path in api() -- never adopt it.
+        // Per-tab refresh tokens (see _refreshToken above) make this
+        // mismatch far rarer now -- kept as defense-in-depth for a
+        // genuinely stolen/reused token, not the routine multi-tab
+        // collision it used to catch.
         if(expectedSub && decodeJwtSub(refreshed.accessToken)!==expectedSub){
           setAccessToken(null);
+          setRefreshToken(null);
           showToast&&showToast('Your session changed in another tab. Please sign in again.','warning');
           setTimeout(function(){ location.reload(); }, 1200);
           return;
         }
         setAccessToken(refreshed.accessToken);
+        if(refreshed.refreshToken)setRefreshToken(refreshed.refreshToken);
         _proactiveRefreshRetries=0;
         scheduleProactiveRefresh();
       } else {
@@ -1067,17 +1085,19 @@ async function api(path, opts){
     // the wrong user.
     var expectedSub = decodeJwtSub(_accessToken);
     if (!_refreshInFlight) {
-      _refreshInFlight = api('/auth/refresh', { method: 'POST' }).catch(function(){ return null; }).finally(function(){ _refreshInFlight = null; });
+      _refreshInFlight = api('/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshToken: _refreshToken }) }).catch(function(){ return null; }).finally(function(){ _refreshInFlight = null; });
     }
     var refreshed = await _refreshInFlight;
     if (refreshed && refreshed.accessToken && expectedSub && decodeJwtSub(refreshed.accessToken)!==expectedSub){
       setAccessToken(null);
+      setRefreshToken(null);
       showToast&&showToast('Your session changed in another tab. Please sign in again.','warning');
       setTimeout(function(){ location.reload(); }, 1200);
       throw new Error('Session changed in another tab.');
     }
     if (refreshed && refreshed.accessToken) {
       setAccessToken(refreshed.accessToken);
+      if (refreshed.refreshToken) setRefreshToken(refreshed.refreshToken);
       scheduleProactiveRefresh();
       headers['Authorization'] = 'Bearer ' + refreshed.accessToken;
       res = await fetch(API_BASE + path, Object.assign({}, opts, { headers: headers, credentials: 'include' }));
@@ -1910,8 +1930,11 @@ function afterRider(){
 }
 
 function logout(){
-  api('/auth/logout',{method:'POST'}).catch(function(){});
+  // Revokes THIS tab's own refresh token specifically (sent explicitly),
+  // not whichever token the shared cookie happens to hold right now.
+  api('/auth/logout',{method:'POST',body:JSON.stringify({refreshToken:_refreshToken})}).catch(function(){});
   setAccessToken(null);
+  setRefreshToken(null);
   clearProactiveRefresh();
   if(_socket){_socket.disconnect();_socket=null;}
   S.user=null;S.myAddr='';S.cart=[];
@@ -7754,10 +7777,12 @@ async function doAuth(){
   // token via tryRestoreSession() and silently logs the page back in as
   // whoever was last signed in on this browser, not the account just typed.
   setAccessToken(null);
+  setRefreshToken(null);
   try{
     var loginBody=idf.indexOf('@')>-1?{email:idf,password:pw}:{phone:idf,password:pw};
     var data=await api('/auth/login',{method:'POST',body:JSON.stringify(loginBody)});
     setAccessToken(data.accessToken);
+    setRefreshToken(data.refreshToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
     _finishLogin(S.user.name);
   }catch(err){
@@ -7785,10 +7810,11 @@ async function doRegister(){
   else if(_eRole==='shopper'){body.role='SHOPPER';}
   else{body.role='CUSTOMER';}
   var btn=document.getElementById('auth-btn');if(btn)btn.disabled=true;
-  setAccessToken(null); // same reasoning as doAuth() — don't let a mid-request refresh restore a stale prior session
+  setAccessToken(null); setRefreshToken(null); // same reasoning as doAuth() — don't let a mid-request refresh restore a stale prior session
   try{
     var data=await api('/auth/register',{method:'POST',body:JSON.stringify(body)});
     setAccessToken(data.accessToken);
+    setRefreshToken(data.refreshToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;
     _finishLogin(S.user.name);
   }catch(err){
@@ -7802,6 +7828,7 @@ async function guestLogin(){
   try{
     var data=await api('/auth/guest',{method:'POST'});
     setAccessToken(data.accessToken);
+    setRefreshToken(data.refreshToken);
     S.role='customer';_eRole='customer';S.user=mapApiUser(data.user);
     _finishLogin('Guest');
   }catch(err){
