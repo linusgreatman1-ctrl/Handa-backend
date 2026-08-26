@@ -5936,7 +5936,7 @@ function vendorTrackRider(orderId){toast('Tracking rider for '+orderId);showVend
 // currently-open one plus every one they've ever proposed on, regardless of
 // outcome (accepted/not-selected/declined/waiting), badged by outcome.
 async function openAllEventRequestsModal(){
-  showProcedureModal('<div style="padding:0 0 10px;"><div style="font-size:18px;font-weight:900;color:#F2EDE8;margin-bottom:14px;">📢 Event Requests</div><div id="all-evreq-list"><div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div></div></div>');
+  showProcedureModal('<div style="padding:0 0 10px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">📢 Event Requests</div></div><div id="all-evreq-list"><div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div></div></div>');
   var list=document.getElementById('all-evreq-list');
   try{
     var res=await api('/event-requests?as=vendor');
