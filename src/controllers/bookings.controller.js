@@ -398,7 +398,7 @@ async function payBooking(req, res, next) {
     }
 
     if (paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "BOOKING_PAYMENT", booking.id, booking.totalKobo);
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "BOOKING_PAYMENT", booking.id, booking.totalKobo, req.app.get("io"));
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 

@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { notifyAllAdmins } = require("../services/notifications.service");
 
 const DOC_TYPES = ["GOVERNMENT_ID", "PROOF_OF_ADDRESS", "VEHICLE_DOCUMENT"];
 
@@ -11,6 +12,7 @@ async function uploadKycDocument(req, res, next) {
     const doc = await prisma.kycDocument.create({
       data: { userId: req.user.id, docType, fileUrl: `/uploads/${req.file.filename}` },
     });
+    notifyAllAdmins(req.app.get("io"), "🪪 New KYC document", `${req.user.name || "A user"} submitted a ${docType.replace(/_/g, " ").toLowerCase()} for review.`, { kycDocumentId: doc.id }).catch(() => {});
     res.status(201).json({ document: doc });
   } catch (err) {
     next(err);

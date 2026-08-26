@@ -26,4 +26,16 @@ async function notify(io, userId, type, title, body, data) {
   return notification;
 }
 
-module.exports = { notify };
+// Fans a SYSTEM notification out to every active admin -- same real
+// Notification rows + socket push as notify() above (SYSTEM has no pref
+// toggle, so it's never muted), just resolving "every admin" once instead
+// of every call site re-writing that same findMany + loop. Mirrors the
+// pattern already proven for SOS alerts (shopSessions.controller.js).
+async function notifyAllAdmins(io, title, body, data) {
+  const admins = await prisma.user.findMany({ where: { role: "ADMIN", status: "ACTIVE" }, select: { id: true } });
+  for (const admin of admins) {
+    await notify(io, admin.id, "SYSTEM", title, body, data).catch(() => {});
+  }
+}
+
+module.exports = { notify, notifyAllAdmins };

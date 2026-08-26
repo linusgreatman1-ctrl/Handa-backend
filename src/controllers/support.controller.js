@@ -3,7 +3,7 @@ const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
 const commissionSvc = require("../services/commission.service");
 const { logAdminAction } = require("../services/auditLog.service");
-const { notify } = require("../services/notifications.service");
+const { notify, notifyAllAdmins } = require("../services/notifications.service");
 const { closeSupportThreadForContext } = require("./chat.controller");
 
 async function createTicket(req, res, next) {
@@ -22,6 +22,9 @@ async function createTicket(req, res, next) {
         requestedRefundKobo: requestedRefundKobo != null ? Number(requestedRefundKobo) : null,
       },
     });
+    if (isDispute) {
+      notifyAllAdmins(req.app.get("io"), "⚠️ New dispute", `${req.user.name || "A user"} opened a dispute: ${category}.`, { ticketId: ticket.id }).catch(() => {});
+    }
     res.status(201).json({ ticket });
   } catch (err) {
     next(err);

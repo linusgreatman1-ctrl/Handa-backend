@@ -115,6 +115,10 @@
   <main id="main"></main>
 </div>
 
+<button id="admin-notif-bell" onclick="openAdminNotificationsModal()" style="display:none;position:fixed;top:16px;right:16px;z-index:1005;width:42px;height:42px;border-radius:50%;background:#1C1C1C;border:1.5px solid #2a2a2a;color:#F2EDE8;font-size:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);">
+  🔔<span id="admin-notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;min-width:17px;height:17px;border-radius:9px;background:#E8392E;color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;padding:0 4px;line-height:17px;">0</span>
+</button>
+
 <div id="admin-toast" style="display:none;position:fixed;top:16px;right:16px;z-index:99999;background:#1C1C1C;color:#F2EDE8;border:1.5px solid #3B9FE8;border-radius:12px;padding:12px 16px;max-width:320px;font-family:inherit;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer;"></div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -133,6 +137,13 @@ let currentUser = null;
 // specific thread open. ──
 let adminChatSocket = null;
 let chatUnreadCount = 0;
+// General-purpose admin notifications (KYC submitted, dispute opened,
+// manual bank transfer awaiting confirmation, SOS) -- the exact same
+// Notification/notify() system the customer/vendor app already has a real
+// bell for; this admin panel had zero UI for it. Every admin (not just
+// super/content tiers, unlike the chat-specific listeners below) gets
+// these, since every admin can act on KYC/Tickets/Manual Bank Transfers.
+let sysNotifUnread = 0;
 function connectAdminNotifSocket() {
   if (adminChatSocket || typeof io === 'undefined' || !accessToken) return;
   adminChatSocket = io({ path: '/socket.io', auth: { token: accessToken }, transports: ['websocket', 'polling'] });
@@ -143,6 +154,84 @@ function connectAdminNotifSocket() {
   adminChatSocket.on('chat:new-message-for-admins', () => {
     bumpChatBadge();
   });
+  adminChatSocket.on('notification:new', (n) => {
+    bumpSysNotifBadge();
+    showAdminToast(n.title + ': ' + n.body, null, () => { document.getElementById('admin-toast').style.display = 'none'; openAdminNotificationsModal(); });
+  });
+}
+function setSysNotifBadge(n) {
+  sysNotifUnread = Math.max(0, n);
+  const el = document.getElementById('admin-notif-badge');
+  if (!el) return;
+  if (sysNotifUnread > 0) { el.textContent = sysNotifUnread > 99 ? '99+' : String(sysNotifUnread); el.style.display = 'flex'; }
+  else { el.style.display = 'none'; }
+}
+function bumpSysNotifBadge() { setSysNotifBadge(sysNotifUnread + 1); }
+async function refreshSysNotifBadge() {
+  try { const res = await api('/notifications?pageSize=1'); setSysNotifBadge(res.unreadCount || 0); } catch (e) {}
+}
+function _adminNotifIcon(type) { return { ORDER_UPDATE: '📦', PROMOTION: '🎉', RIDER_ALERT: '🏍️', NEW_FEATURE: '✨', CHAT: '💬', SYSTEM: '🔔', ANNOUNCEMENT: '📢' }[type] || '🔔'; }
+function _adminNotifTimeAgo(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  return Math.floor(hrs / 24) + 'd ago';
+}
+async function openAdminNotificationsModal() {
+  const existing = document.getElementById('admin-notif-modal'); if (existing) existing.remove();
+  const html = '<div id="admin-notif-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1px solid #2a2a2a;border-radius:16px;max-width:440px;width:100%;margin-top:60px;padding:18px;max-height:78vh;overflow-y:auto;font-family:inherit;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">🔔 Notifications</div>'
+    + '<div style="display:flex;gap:10px;align-items:center;"><span onclick="markAllAdminNotificationsRead()" style="color:#3B9FE8;font-size:12px;font-weight:700;cursor:pointer;">Mark all read</span><button onclick="closeAdminNotificationsModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">✕</button></div></div>'
+    + '<div id="admin-notif-list" style="font-size:13px;color:#9A9390;">Loading…</div>'
+    + '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  try {
+    const res = await api('/notifications');
+    setSysNotifBadge(res.unreadCount || 0);
+    const list = document.getElementById('admin-notif-list');
+    if (!res.notifications.length) { list.innerHTML = '<div style="text-align:center;padding:24px;">No notifications yet.</div>'; return; }
+    list.innerHTML = res.notifications.map(n =>
+      '<div id="admin-notif-row-' + n.id + '" onclick="openAdminNotification(\'' + n.id + '\')" style="background:' + (n.read ? '#1C1C1C' : '#242424') + ';border:1px solid ' + (n.read ? '#2a2a2a' : 'rgba(59,159,232,.35)') + ';border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;">'
+      + '<span style="font-size:18px;flex-shrink:0;">' + _adminNotifIcon(n.type) + '</span>'
+      + '<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">' + n.title + (n.read ? '' : ' <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3B9FE8;margin-left:4px;"></span>') + '</div>'
+      + '<div style="font-size:12px;color:#9A9390;margin-top:2px;">' + n.body + '</div>'
+      + '<div style="font-size:10px;color:#666;margin-top:4px;">' + _adminNotifTimeAgo(n.createdAt) + '</div></div>'
+      + '</div>'
+    ).join('');
+  } catch (err) {
+    document.getElementById('admin-notif-list').textContent = err.message || 'Could not load notifications';
+  }
+}
+function closeAdminNotificationsModal() { const el = document.getElementById('admin-notif-modal'); if (el) el.remove(); }
+async function markAllAdminNotificationsRead() {
+  try { await api('/notifications/read-all', { method: 'PATCH' }); setSysNotifBadge(0); openAdminNotificationsModal(); } catch (e) {}
+}
+// Deep-links to whichever tab the notification's own data points at
+// (ticketId -> Support Tickets, manualPaymentRequestId -> Manual Bank
+// Transfers, kycDocumentId -> KYC Documents) -- same "route to what it's
+// actually about" pattern already proven on the customer app's bell.
+async function openAdminNotification(id) {
+  try {
+    const res = await api('/notifications');
+    const n = (res.notifications || []).find(x => x.id === id);
+    if (!n) return;
+    if (!n.read) {
+      await api('/notifications/' + id + '/read', { method: 'PATCH' });
+      setSysNotifBadge(Math.max(0, sysNotifUnread - 1));
+      const row = document.getElementById('admin-notif-row-' + id);
+      if (row) { row.style.background = '#1C1C1C'; row.style.borderColor = '#2a2a2a'; }
+    }
+    closeAdminNotificationsModal();
+    const data = n.data || {};
+    if (data.ticketId) switchTab('tickets');
+    else if (data.manualPaymentRequestId) switchTab('manualpayments');
+    else if (data.kycDocumentId) switchTab('kyc');
+    else if (data.sessionId) switchTab('shopsessions');
+  } catch (e) {}
 }
 function bumpChatBadge() {
   chatUnreadCount++;
@@ -157,12 +246,12 @@ function clearChatBadge() {
   if (el) el.style.display = 'none';
 }
 let _adminToastTimer = null;
-function showAdminToast(text, threadId) {
+function showAdminToast(text, threadId, onClick) {
   const el = document.getElementById('admin-toast');
   if (!el) return;
   el.textContent = text;
   el.style.display = 'block';
-  el.onclick = () => { switchTab('chatthreads'); if (threadId) renderChatThreadDetail(threadId); el.style.display = 'none'; };
+  el.onclick = onClick || (() => { switchTab('chatthreads'); if (threadId) renderChatThreadDetail(threadId); el.style.display = 'none'; });
   clearTimeout(_adminToastTimer);
   _adminToastTimer = setTimeout(() => { el.style.display = 'none'; }, 8000);
 }
@@ -221,7 +310,9 @@ async function doLogin() {
     document.getElementById('who-email').textContent = currentUser.email || currentUser.phone || '';
     document.querySelectorAll('.nav-item[data-super]').forEach(b => b.classList.toggle('hidden', !currentUser.isSuperAdmin));
     document.querySelectorAll('.nav-item[data-elevated]').forEach(b => b.classList.toggle('hidden', !(currentUser.isSuperAdmin || currentUser.isContentAdmin)));
-    if (currentUser.isSuperAdmin || currentUser.isContentAdmin) connectAdminNotifSocket();
+    document.getElementById('admin-notif-bell').style.display = 'flex';
+    connectAdminNotifSocket();
+    refreshSysNotifBadge();
     switchTab('dashboard');
   } catch (e) {
     err.textContent = e.message;
@@ -235,6 +326,9 @@ function logout() {
   document.getElementById('app-screen').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('login-password').value = '';
+  document.getElementById('admin-notif-bell').style.display = 'none';
+  if (adminChatSocket) { adminChatSocket.disconnect(); adminChatSocket = null; }
+  chatUnreadCount = 0; sysNotifUnread = 0;
 }
 
 function switchTab(tab) {

@@ -1,6 +1,7 @@
 const prisma = require("../config/db");
 const { generateReference } = require("../utils/reference");
 const companyBank = require("../config/companyBank");
+const { notifyAllAdmins } = require("./notifications.service");
 
 // Bank Transfer is the one payment method that never touches Paystack —
 // every other method (Card/USSD/Wallet) keeps using it unchanged. The
@@ -10,11 +11,17 @@ const companyBank = require("../config/companyBank");
 // (confirmManualPaymentRequest) — see PassNow's own manual-transfer
 // pattern, which this mirrors, plus the admin-confirmation step PassNow
 // itself never built.
-async function createManualPaymentRequest(userId, purpose, targetId, amountKobo) {
+async function createManualPaymentRequest(userId, purpose, targetId, amountKobo, io) {
   const reference = generateReference("MAN");
   const request = await prisma.manualPaymentRequest.create({
     data: { userId, purpose, targetId: targetId != null ? String(targetId) : null, amountKobo, reference },
   });
+  // io is optional -- a call site that omits it just skips the real-time
+  // admin ping; the pending request is still there next time an admin
+  // opens the Manual Bank Transfers tab either way.
+  if (io) {
+    notifyAllAdmins(io, "🏦 New manual bank transfer", `A user submitted a bank transfer for ₦${Math.round(amountKobo / 100).toLocaleString()} — confirm it once received.`, { manualPaymentRequestId: request.id }).catch(() => {});
+  }
   return { request, bankDetails: companyBank };
 }
 
