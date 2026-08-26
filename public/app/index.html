@@ -1134,6 +1134,14 @@ function connectSocket(){
   _socket.on('notification:new', function(n){
     if(typeof toast==='function') toast(n.title + ': ' + n.body);
     bumpNotifBadge();
+    // A new/updated booking notification landing while the vendor is
+    // already sitting on their own Orders dashboard used to require
+    // leaving and coming back (or opening the notification itself) before
+    // it showed up -- the list was only ever fetched once, on render. Now
+    // it live-refreshes right here instead of waiting for a manual nav.
+    if(n.data&&n.data.bookingId&&document.getElementById('vendor-bookings-list')){
+      loadVendorBookingsList(window._vendorDashKind==='cook');
+    }
   });
   // Socket.IO rooms don't survive a reconnect (network blip, idle timeout,
   // Render sleep/wake) -- without this, a client silently drops out of
@@ -2927,7 +2935,13 @@ async function restoreActiveShopSession(role) {
       var rs = await api('/shop-sessions?as=shopper');
       var activeS = (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED'].indexOf(s.status)>-1;});
       if (!activeS) return false;
-      window._shopperSession = activeS;
+      // GET /shop-sessions?as=... (list) uses a deliberately narrow include
+      // (no user.id/phone on shopper, no rider at all) -- fine for a list
+      // row, but every chat/call button reads exactly those missing fields
+      // off window._shopperSession. Re-fetch the single-session detail
+      // (getSession's full include) before using it for anything real.
+      var fullS = await api('/shop-sessions/'+activeS.id);
+      window._shopperSession = fullS.session;
       var sPhase = {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound'}[activeS.status]||'accepted';
       afterShopperAuth();
       shopperBindItemSocketListeners();
@@ -2939,7 +2953,8 @@ async function restoreActiveShopSession(role) {
       var rr = await api('/shop-sessions?as=rider');
       var activeR = (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
       if (!activeR) return false;
-      window._riderActiveSession = activeR;
+      var fullR = await api('/shop-sessions/'+activeR.id);
+      window._riderActiveSession = fullR.session;
       eGo('rider');
       await _joinShopSessionRoom(activeR.id);
       if (activeR.status === 'OUT_FOR_DELIVERY') riderMapPhase2(); else riderMapPhase1();
@@ -2949,7 +2964,8 @@ async function restoreActiveShopSession(role) {
     var rc = await api('/shop-sessions?as=customer');
     var activeC = (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1;});
     if (!activeC) return false;
-    window._sfmSession = activeC;
+    var fullC = await api('/shop-sessions/'+activeC.id);
+    window._sfmSession = fullC.session;
     var cPhase = activeC.status==='SEARCHING'?'finding':(activeC.status==='MATCHED'?'shopperProfile':(SFM_STATUS_PHASE[activeC.status]||'liveCall'));
     window._sfmResumePhase = cPhase;
     await _joinShopSessionRoom(activeC.id);
@@ -8552,6 +8568,10 @@ async function renderVendorDashboard(kind){
   h+='<div id="vendor-bookings-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>';
   h+='</div>';el.innerHTML=h;
   if(!isCook) loadOpenEventRequests();
+  // Tracked so the global notification:new listener (connectSocket) knows
+  // whether -- and as which kind -- to live-refresh this list when a new
+  // booking notification arrives while the vendor is sitting right here.
+  window._vendorDashKind=kind;
 
   try{
     var period=await api('/vendors/me/commission-period');
@@ -8559,6 +8579,16 @@ async function renderVendorDashboard(kind){
     if(amtEl)amtEl.textContent='₦'+Number(Math.round(period.period.amountDueKobo/100)).toLocaleString();
   }catch(err){/* not HOME_COOK/EVENT_PLANNER, or not yet onboarded — leave the placeholder */}
 
+  loadVendorBookingsList(isCook);
+}
+// Split out of renderVendorDashboard so it can also be called on its own
+// to live-refresh just the list -- see the notification:new listener in
+// connectSocket(), which is what actually fixes "a new booking doesn't
+// show up until you click the notification": that notification already
+// arrives in real time (notify() fires it from confirmBookingPayment for
+// Home Cook and createBooking for Event Planner), the dashboard just never
+// used to react to it, only to a full page/screen reload.
+async function loadVendorBookingsList(isCook){
   try{
     var res=await api('/bookings?as=vendor');
     var listEl=document.getElementById('vendor-bookings-list');
@@ -8929,8 +8959,16 @@ async function openCustomerHistoryDetail(kind,id){
     var needsCompletionResponse=!isTerminal&&b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
     var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined;
     var hasPendingEdit=!!b.pendingEditSnapshot;
-    var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed && !b.vendorJobStartedAt;
-    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && _jobNotPassed && !b.vendorJobStartedAt;
+    // Home Cook: visible from the moment the booking is sent (REQUESTED/
+    // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
+    // the vendor taps Job Started -- the event date/time passing is NOT a
+    // gate for Cook (a job that's simply running late shouldn't silently
+    // lose its edit/cancel buttons before the vendor has even started it).
+    // Event Planner: visible from REQUESTED through CONFIRMED, and
+    // disappears once the scheduled date/time passes (there's no Job
+    // Started concept for EP) or the customer cancels.
+    var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (isCookB ? !b.vendorJobStartedAt : _jobNotPassed);
+    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (isCookB ? !b.vendorJobStartedAt : _jobNotPassed);
     var awaitingVendor=!isTerminal&&!awaitingJobStart&&b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     // Two genuinely different waiting states, easy to conflate: the vendor
     // hasn't even accepted yet (Event Planner: still REQUESTED, no payment
