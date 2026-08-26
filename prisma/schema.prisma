@@ -535,6 +535,13 @@ model EventProposal {
   status    EventProposalStatus @default(PENDING)
   createdAt DateTime            @default(now())
 
+  // Set once, the moment this proposal is accepted -- the real Booking
+  // created for it (acceptProposal, eventRequests.controller.js). Lets the
+  // planner's own "Your Proposal" view link straight into that booking
+  // (e.g. a Mark Job Completed action) instead of having no way back to it
+  // except a one-time notification.
+  bookingId String?
+
   @@index([eventRequestId])
   @@index([vendorId])
 }

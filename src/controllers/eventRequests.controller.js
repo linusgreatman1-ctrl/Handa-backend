@@ -191,7 +191,7 @@ async function acceptProposal(req, res, next) {
         },
       });
 
-      await tx.eventProposal.update({ where: { id: proposal.id }, data: { status: "ACCEPTED" } });
+      await tx.eventProposal.update({ where: { id: proposal.id }, data: { status: "ACCEPTED", bookingId: newBooking.id } });
       await tx.eventProposal.updateMany({
         where: { eventRequestId: request.id, id: { not: proposal.id }, status: "PENDING" },
         data: { status: "DECLINED" },

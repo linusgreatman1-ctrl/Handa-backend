@@ -1758,7 +1758,13 @@ async function openEventRequestForVendor(requestId){
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
         +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">"'+mine.notes+'"</div>':'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
+        +'<div id="erv-job-action"></div>'
         +'</div>';
+      // The real Booking this acceptance created (see acceptProposal
+      // stamping EventProposal.bookingId) -- gives the planner a direct
+      // Mark Job Completed action right here, instead of the notification
+      // they got at accept time being the only way back to this booking.
+      if(mine.status==='ACCEPTED'&&mine.bookingId)_loadEventRequestJobAction(mine.bookingId);
     }else{
       var svcOpts = ['Decoration','Catering','Photography','Planning','Music/DJ','Venue'];
       body.innerHTML=header+details
@@ -1777,6 +1783,22 @@ async function openEventRequestForVendor(requestId){
     var body2=document.getElementById('erv-body');
     if(body2)body2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load request')+'</div>';
   }
+}
+// Fetches the real current status of the booking an accepted proposal
+// became, and swaps in either a real Mark Job Completed action or a
+// plain "already completed" note -- separate async call (rather than
+// blocking openEventRequestForVendor's own render) since the booking
+// detail isn't otherwise needed for anything else on this screen.
+async function _loadEventRequestJobAction(bookingId){
+  var el=document.getElementById('erv-job-action');
+  if(!el)return;
+  try{
+    var res=await api('/bookings/'+bookingId);
+    var status=res.booking&&res.booking.status;
+    el.innerHTML=(status==='COMPLETED')
+      ?'<div style="margin-top:10px;text-align:center;padding:10px;border-radius:9px;background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.3);color:#2ECC71;font-weight:700;font-size:12px;">&#x2705; Job Completed</div>'
+      :'<button onclick="vendorMarkBookingComplete(\''+bookingId+'\',true)" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x2705; Mark Job Completed</button>';
+  }catch(err){ /* silently leave the status label alone if this fails */ }
 }
 async function submitProposalForRequest(requestId){
   var price=(document.getElementById('sp-price')||{}).value||'';
@@ -9244,6 +9266,12 @@ async function vendorMarkBookingComplete(id,isEP){
   try{
     await api('/bookings/'+id+'/complete',{method:'POST'});
     showToast&&showToast(isEP?'Booking completed.':'Marked complete — waiting on the customer to confirm.','success');
+    // Harmless no-op when this wasn't reached from inside a procedure
+    // modal (the normal Orders-list entry point) -- but when it WAS (e.g.
+    // the "Your Proposal" event-request view), the booking-detail bottom
+    // sheet below sits at a lower z-index than an still-open procedure
+    // modal and would otherwise render invisibly behind it.
+    closeProcedureModal&&closeProcedureModal();
     openVendorBookingDetail(id);
   }catch(err){
     showToast&&showToast(err.message||'Could not mark this booking complete','warning');
