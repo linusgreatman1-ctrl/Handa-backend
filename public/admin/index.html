@@ -367,13 +367,92 @@ function pill(status) { return '<span class="pill ' + (STATUS_PILL[status] || 'g
 // which read as "the app is broken" rather than "this specific old file
 // didn't survive a redeploy." This checks first and explains the real
 // cause instead of link-navigating blind.
-async function openUploadedFile(url) {
+// opts (optional): { ticketId } -- when present (a dispute's evidence,
+// which always has two named parties), the viewer also offers "Send to
+// Filer"/"Send to Vendor" so the admin can forward the file into either
+// party's real chat thread. KYC documents have only one party (the
+// submitter), so callers there omit opts and just get Back + Download.
+async function openUploadedFile(url, opts) {
   if (!url) return;
   try {
     const res = await fetch(url, { method: 'HEAD' });
-    if (res.ok) { window.open(url, '_blank'); return; }
+    if (res.ok) { showEvidenceViewerModal(url, opts || {}); return; }
   } catch (e) {}
   alert('This file is no longer on the server.\n\nHanda\'s current hosting (Render\'s free tier) doesn\'t keep uploaded files across every deploy/restart — this one was uploaded before a later deploy wiped it. Once real cloud file storage (e.g. Cloudinary) is connected, this will stop happening for new uploads. The person may need to re-submit the file if it\'s still needed.');
+}
+// Was a plain window.open(url,'_blank') straight to the raw file --
+// jumped the admin out of the panel's own flow with no way back except
+// closing the tab, and no way to download or forward the file to either
+// party. This is a real in-panel viewer instead: a "Back to Admin" close
+// action, a real same-origin download, and (for dispute evidence, which
+// has two named parties) buttons to forward the file into either party's
+// real chat thread.
+function showEvidenceViewerModal(url, opts) {
+  var existing = document.getElementById('evidence-viewer-modal'); if (existing) existing.remove();
+  var isImage = /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url);
+  var filename = url.split('/').pop().split('?')[0];
+  var sendButtons = opts.ticketId
+    ? '<button class="action-btn" onclick="sendEvidenceToParty(\'' + url + '\',\'' + opts.ticketId + '\',\'filer\')">&#128172; Send to Filer</button> '
+      + '<button class="action-btn" onclick="sendEvidenceToParty(\'' + url + '\',\'' + opts.ticketId + '\',\'vendor\')">&#128172; Send to Vendor</button>'
+    : '';
+  var html = '<div id="evidence-viewer-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10500;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1px solid #2a2a2a;border-radius:16px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;padding:18px;font-family:inherit;">'
+    + '<div style="margin-bottom:14px;"><button class="action-btn" onclick="closeEvidenceViewerModal()">&larr; Back to Admin</button></div>'
+    + '<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:10px;word-break:break-all;">' + filename + '</div>'
+    + (isImage
+        ? '<img src="' + url + '" style="width:100%;border-radius:10px;margin-bottom:14px;display:block;">'
+        : '<div style="padding:30px;text-align:center;color:#9A9390;border:1px dashed #2a2a2a;border-radius:10px;margin-bottom:14px;">No inline preview for this file type -- use Download to view it.</div>')
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    + '<button class="action-btn" onclick="downloadEvidenceFile(\'' + url + '\')">&#8595; Download</button>'
+    + sendButtons
+    + '</div>'
+    + '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function closeEvidenceViewerModal() {
+  var el = document.getElementById('evidence-viewer-modal'); if (el) el.remove();
+}
+// download attribute forces a real browser save (not a navigation) for a
+// same-origin URL like /uploads/<file> -- no fetch/blob dance needed.
+function downloadEvidenceFile(url) {
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = url.split('/').pop().split('?')[0];
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+async function sendEvidenceToParty(url, ticketId, party) {
+  try {
+    const data = await api('/admin/tickets/' + ticketId + '/chat/' + party, { method: 'POST' });
+    await api('/admin/chat-threads/' + data.thread.id + '/messages', { method: 'POST', body: JSON.stringify({ attachmentUrl: url, body: 'Evidence from this dispute' }) });
+    alert('Evidence sent to the ' + (party === 'vendor' ? 'vendor' : 'filer') + '.');
+  } catch (e) {
+    alert(e.message || 'Could not send the evidence.');
+  }
+}
+
+// The filer's real role is always reliably known (t.user.role, straight
+// off the ticket's own owner) -- used for "Resolved In {Role}'s Favor"
+// when a refund means the filer won.
+function _ticketFilerRoleLabel(t) {
+  var role = t.user && t.user.role;
+  return { CUSTOMER: 'Customer', VENDOR: 'Vendor', RIDER: 'Rider', SHOPPER: 'Shopper' }[role] || 'Filer';
+}
+// The OTHER party's role when there's no refund (the payee/second party
+// won). Reliable for BOOKING context (always the vendor). SHOP_SESSION
+// disputes can be against either a shopper or a rider, and the ticket has
+// no separate field recording which -- best-effort from the report
+// category's own wording (matches the real category lists this app
+// actually uses for shopper-session vs. rider reports), falling back to
+// whichever of the two SFM counterpart roles isn't the filer.
+function _ticketPayeeRoleLabel(t) {
+  if (t.context === 'BOOKING') return 'Vendor';
+  var cat = (t.category || '').toLowerCase();
+  if (cat.includes('driving') || cat.includes('rude') || cat.includes('damaged') || cat.includes('rider')) return 'Rider';
+  if (cat.includes('behaviour') || cat.includes('described') || cat.includes('discrepancy') || cat.includes('shopper')) return 'Shopper';
+  var filerRole = t.user && t.user.role;
+  return filerRole === 'RIDER' ? 'Shopper' : filerRole === 'SHOPPER' ? 'Rider' : 'Vendor';
 }
 
 async function renderDashboard() {
@@ -735,8 +814,8 @@ async function renderTickets(status) {
       // created, but this stays correct even if that ever changes). The
       // old version was a small inline <a> buried inside the Description
       // cell's text, easy to miss entirely.
-      const evidenceButtons = (t.evidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.evidenceUrl + '\')">&#128206; Filer\'s Evidence</button> ' : '')
-        + (t.secondPartyEvidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.secondPartyEvidenceUrl + '\')">&#128206; Vendor\'s Evidence</button>' : '');
+      const evidenceButtons = (t.evidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.evidenceUrl + '\',{ticketId:\'' + t.id + '\'})">&#128206; Filer\'s Evidence</button> ' : '')
+        + (t.secondPartyEvidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.secondPartyEvidenceUrl + '\',{ticketId:\'' + t.id + '\'})">&#128206; Vendor\'s Evidence</button>' : '');
       const actions = (t.status !== 'RESOLVED'
         ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">' + (t.isDispute ? 'Resolve For Vendor' : 'Resolve') + '</button>'
           + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\',' + (t.heldAmountKobo || 0) + ')">Resolve with Refund</button>' : '')
@@ -752,8 +831,16 @@ async function renderTickets(status) {
       const descHtml = description
         ? '<span onclick="alert(' + JSON.stringify(description) + ')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="Click to read the full message">' + description.slice(0, 60) + (description.length > 60 ? '…' : '') + '</span>'
         : '—';
+      // A bare "RESOLVED" pill didn't say which side actually won -- the
+      // refund flag already tells us that (a refund means the filer won;
+      // no refund means the payee/other party won), just needs a real
+      // role label instead of a fixed status word. Class comes from
+      // STATUS_PILL[t.status] as normal (still green); only the text changes.
+      const statusLabel = (t.status === 'RESOLVED' && t.isDispute)
+        ? 'Resolved In ' + (t.refundAmountKobo ? _ticketFilerRoleLabel(t) : _ticketPayeeRoleLabel(t)) + "'s Favor"
+        : t.status;
       return '<tr><td>' + t.category + (t.isDispute ? ' <span class="pill amber">DISPUTE</span>' : '') + '</td><td>' + t.context + '</td><td>' + (t.user ? t.user.name : '—') + '</td><td>' + descHtml + '<br><small>' + disputeInfo + '</small>' + secondSide + '</td>' +
-        '<td>' + pill(t.status) + '</td>' +
+        '<td><span class="pill ' + (STATUS_PILL[t.status] || 'grey') + '">' + statusLabel + '</span></td>' +
         '<td>' + actions + '</td></tr>';
     }).join('');
     document.getElementById('tickets-table').outerHTML = data.tickets.length

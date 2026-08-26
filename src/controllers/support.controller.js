@@ -158,7 +158,10 @@ async function listAllTickets(req, res, next) {
     const { status } = req.query;
     const tickets = await prisma.supportTicket.findMany({
       where: { ...(status && { status }) },
-      include: { user: { select: { name: true, phone: true, email: true } } },
+      // role added -- lets the admin panel label a resolved dispute
+      // "Resolved In {Role}'s Favor" using the filer's real role instead
+      // of a bare "RESOLVED" with no indication of which side won.
+      include: { user: { select: { name: true, phone: true, email: true, role: true } } },
       orderBy: { createdAt: "desc" },
     });
     const withAmounts = await Promise.all(

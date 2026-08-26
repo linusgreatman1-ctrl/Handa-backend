@@ -1250,7 +1250,12 @@ async function sendAdminChatMessage(req, res, next) {
     const notifyText = body || "📎 Sent a photo";
     const others = await prisma.chatParticipant.findMany({ where: { threadId: thread.id, userId: { not: req.user.id } } });
     for (const p of others) {
-      await notify(io, p.userId, "CHAT", "Support replied", notifyText.slice(0, 120), { threadId: thread.id });
+      // senderName/senderRole added -- same enrichment as the regular
+      // user-facing sendMessage (chat.controller.js), which the frontend's
+      // global "X is chatting with you" banner relies on to label an
+      // admin-initiated message "Handa Support" instead of falling back
+      // to a blank "Someone."
+      await notify(io, p.userId, "CHAT", "Support replied", notifyText.slice(0, 120), { threadId: thread.id, senderName: "Handa Support", senderRole: "ADMIN" });
     }
 
     res.status(201).json({ message });
