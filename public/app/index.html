@@ -9353,9 +9353,7 @@ function openBookingWhatsApp(){
 }
 // A cancellation must always carry a reason -- both for the vendor/admin's
 // own visibility into why, and because the backend now requires it
-// (cancelBooking 400s without one). Same reason list already proven on
-// the pre-booking cancel flow (cookBkRender's 'cancel_reasons' phase),
-// reused here for the real History-based cancel action.
+// (cancelBooking 400s without one).
 var CANCEL_BOOKING_REASONS=['Schedule conflict — I need to reschedule','Found another vendor','Budget issues — cannot afford anymore','Vendor did not respond to my messages','I made a mistake in the booking details','Emergency / Unforeseen circumstances','Other reason'];
 // Multi-select (checkboxes, not single-choice) plus a free-text "Other"
 // field -- a customer cancelling often has more than one real reason, and
@@ -9674,29 +9672,11 @@ function cookBkRender(phase){
           +'<span style="font-size:20px;flex-shrink:0">&#x1F4DD;</span>'
           +'<p style="color:#F5A623;font-size:13px;line-height:1.5;margin:0"><b>Note:</b> You are the one to provide the cooking items, ingredients, and space for this service. The cook provides only the labour and expertise.</p>'
         +'</div>'
-        +'<button onclick="cookBkRender(\'cancel_reasons\')" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:10px">Cancel Booking</button>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+          +'<button onclick="openEditBookingModal(_cb.booking)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(59,159,232,.3);background:transparent;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">&#x270F;&#xFE0F; Edit Booking</button>'
+          +'<button onclick="openCancelBookingReasonModal(_cb.booking.id)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">Cancel Booking</button>'
+        +'</div>'
         +'<button onclick="closeCookBooking()" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer">&#x1F3E0; Back Home</button>'
-      +'</div>';
-
-  }else if(phase==='cancel_reasons'){
-    var reasons=['Schedule conflict — I need to reschedule','Found another cook','Budget issues — cannot afford anymore','Cook did not respond to my messages','I made a mistake in the booking details','Emergency / Unforeseen circumstances','Other reason'];
-    h='<div style="background:linear-gradient(160deg,#2d0900,#111);padding:44px 20px 20px">'
-      +'<button onclick="cookBkRender(\'confirmed\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
-      +'<p style="color:#E8392E;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cancel Booking</p>'
-      +'<h2 style="font-size:20px;font-weight:900;margin:0 0 4px">Reason for Cancellation</h2>'
-      +'<p style="color:#9A9390;font-size:13px;margin:0">Your escrowed funds will remain in your wallet for future use.</p></div>'
-      +'<div style="padding:16px 16px 80px">'
-        +'<p style="color:#9A9390;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select a reason</p>'
-        +'<div id="cancel-reasons-list">'
-        +reasons.map(function(r,i){
-          return '<div onclick="selectCancelReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:12px">'
-            +'<div id="cr-dot-'+i+'" style="width:18px;height:18px;border-radius:50%;border:2px solid #555;flex-shrink:0"></div>'
-            +'<span style="color:#F2EDE8;font-size:14px">'+r+'</span></div>';
-        }).join('')
-        +'</div>'
-        +'<div id="cancel-confirm-btn" style="display:none;margin-top:16px">'
-          +'<button onclick="confirmCookCancellation()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:14px;cursor:pointer">Confirm Cancellation</button>'
-        +'</div>'
       +'</div>';
 
   }else if(phase==='service_done'){
@@ -10011,61 +9991,19 @@ async function cookBkConfirmBooking(){
     })});
     _cb.bookingNumber=res.booking.bookingNumber;
     _cb.total=Math.round(res.booking.totalKobo/100);
+    _cb.booking=res.booking;
     // Payment now happens immediately when the request is sent, before the
     // vendor decides -- not after acceptance. The confirmation screen only
     // shows once payment actually succeeds; if the customer backs out of
     // the escrow modal, the booking sits unpaid (REQUESTED) and can still
     // be paid later via the "Pay Now" retry button in History.
-    //
-    // Used to open this overlay's own local 'confirmed' phase -- a
-    // separate, partly-fake screen (its own "Cancel Booking" never called
-    // the real API at all, just faked the UI) that also had no Edit
-    // button. The real booking-detail screen (openCustomerHistoryDetail)
-    // already shows the booking immediately, stays live-synced, and
-    // already has real Edit + Cancel side by side -- opening that instead
-    // is both what was asked for and strictly more correct than
-    // maintaining a second, drifting copy of the same information.
     payForBooking(res.booking.id, res.booking.totalKobo, function(){
-      closeCookBooking();
-      openCustomerHistoryDetail('booking', res.booking.id);
+      cookBkRender('confirmed');
     });
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
   }
 }
-
-function selectCancelReason(el){
-  document.querySelectorAll('#cancel-reasons-list [data-reason]').forEach(function(d){
-    var dot=d.querySelector('[id^="cr-dot"]');
-    if(dot){dot.style.borderColor='#555';dot.style.background='transparent';}
-    d.style.borderColor='#2A2850';d.style.background='#1C1C1C';
-  });
-  el.style.borderColor='#E8392E';el.style.background='rgba(232,57,46,.08)';
-  var dot=el.querySelector('[id^="cr-dot"]');
-  if(dot){dot.style.borderColor='#E8392E';dot.style.background='#E8392E';}
-  _cb.cancelReason=el.getAttribute('data-reason');
-  var btn=document.getElementById('cancel-confirm-btn');if(btn)btn.style.display='block';
-}
-
-function confirmCookCancellation(){
-  if(!_cb.cancelReason){showToast&&showToast('Please select a reason','warning');return;}
-  // Update booking status
-  if(window._cookBookings&&window._cookBookings[_cb.cookId]&&window._cookBookings[_cb.cookId].length){
-    window._cookBookings[_cb.cookId][window._cookBookings[_cb.cookId].length-1].status='Cancelled';
-  }
-  var ov=document.getElementById('__cook_bk_ov');
-  if(ov)ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 24px;text-align:center">'
-    +'<div style="font-size:54px;margin-bottom:20px">&#x274C;</div>'
-    +'<h2 style="font-size:20px;font-weight:900;margin:0 0 10px">Booking Cancelled</h2>'
-    +'<p style="color:#9A9390;font-size:14px;line-height:1.6;margin:0 0 8px">Your booking has been cancelled. <b style="color:#2ECC71">&#x20a6;'+Number(_cb.total).toLocaleString()+'</b> has been credited to your escrow wallet for future use.</p>'
-    +'<p style="color:#9A9390;font-size:13px;margin:0 0 30px">A notification has been sent to '+_cb.cook.nm+'.</p>'
-    +'<button onclick="closeCookBooking()" style="padding:14px 32px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">&#x1F3E0; Back Home</button>'
-    +'</div>';
-  showToast&&showToast('Booking cancelled. Funds in your escrow wallet.','info');
-}
-
-
-
 
 
 
@@ -10251,26 +10189,12 @@ function epBkRender(phase){
           +'<button onclick="callEP()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4DE;</span>Call</button>'
           +'<button onclick="waEP()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4AC;</span>WhatsApp</button>'
         +'</div>'
-        +'<button onclick="epBkRender(\'cancel_reasons\')" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:10px">Cancel Booking</button>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+          +'<button onclick="openEditBookingModal(_epb.booking)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(59,159,232,.3);background:transparent;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">&#x270F;&#xFE0F; Edit Booking</button>'
+          +'<button onclick="openCancelBookingReasonModal(_epb.booking.id)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">Cancel Booking</button>'
+        +'</div>'
         +'<button onclick="closeEPBooking()" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer">&#x1F3E0; Back Home</button>'
       +'</div>';
-
-  }else if(phase==='cancel_reasons'){
-    var reasons=['Schedule conflict - event date changed','Found another planner','Budget issues - cannot afford anymore','Planner did not respond','Made a mistake in booking','Event has been called off','Other reason'];
-    h='<div style="background:linear-gradient(160deg,#2d0900,#111);padding:44px 20px 20px">'
-      +'<button onclick="epBkRender(\'confirmed\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
-      +'<p style="color:#E8392E;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cancel Booking</p>'
-      +'<h2 style="font-size:20px;font-weight:900;margin:0 0 4px">Reason for Cancellation</h2>'
-      +'<p style="color:#9A9390;font-size:13px;margin:0">Event planning bookings are paid directly with your planner, so there\'s nothing held in escrow to worry about.</p></div>'
-      +'<div style="padding:16px 16px 80px">'
-      +reasons.map(function(r,i){
-        return '<div onclick="selectEPCancelReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:12px">'
-          +'<div id="epcr-dot-'+i+'" style="width:18px;height:18px;border-radius:50%;border:2px solid #555;flex-shrink:0"></div>'
-          +'<span style="color:#F2EDE8;font-size:14px">'+r+'</span></div>';
-      }).join('')
-      +'<div id="ep-cancel-confirm-btn" style="display:none;margin-top:16px">'
-        +'<button onclick="confirmEPCancellation()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:14px;cursor:pointer">Confirm Cancellation</button>'
-      +'</div></div>';
   }
 
   ov.innerHTML=h;
@@ -10376,19 +10300,6 @@ function openShopChatModal(){
 }
 function submitBankDetailsUpdate(){showToast&&showToast('Bank details updated!','success');}
 
-function selectEPCancelReason(el){
-  document.querySelectorAll('[data-reason]').forEach(function(d){
-    var dot=d.querySelector('[id^="epcr-dot"]');
-    if(dot){dot.style.borderColor='#555';dot.style.background='transparent';}
-    d.style.borderColor='#2A2850';d.style.background='#1C1C1C';
-  });
-  el.style.borderColor='#E8392E';el.style.background='rgba(232,57,46,.08)';
-  var dot=el.querySelector('[id^="epcr-dot"]');
-  if(dot){dot.style.borderColor='#E8392E';dot.style.background='#E8392E';}
-  _epb.cancelReason=el.getAttribute('data-reason');
-  var btn=document.getElementById('ep-cancel-confirm-btn');if(btn)btn.style.display='block';
-}
-
 async function epBkConfirmBooking(){
   var nm=(document.getElementById('epb-name')||{}).value||'';
   var dt=(document.getElementById('epb-date')||{}).value||'';
@@ -10419,23 +10330,12 @@ async function epBkConfirmBooking(){
       paymentMethod:PAY_METHOD_MAP[_epb.payMethod]||'CARD',
     })});
     _epb.bookingNumber=res.booking.bookingNumber;
-    // Same reasoning as the Cook flow's confirmBooking -- the real,
-    // live-synced booking-detail screen (with real Edit + Cancel side by
-    // side) replaces this overlay's own separate, drifting 'confirmed'
-    // copy instead of stacking a second one on top of it.
-    closeEPBooking();
-    openCustomerHistoryDetail('booking', res.booking.id);
+    _epb.booking=res.booking;
+    epBkRender('confirmed');
     showToast&&showToast('Booking sent to '+(_epb.ep?_epb.ep.nm:'planner')+'! Ref '+res.booking.bookingNumber,'success');
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
   }
-}
-
-function confirmEPCancellation(){
-  if(!_epb.cancelReason){showToast&&showToast('Please select a reason','warning');return;}
-  var ov=document.getElementById('__ep_bk_ov');
-  if(ov)ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 24px;text-align:center"><div style="font-size:54px;margin-bottom:20px">&#x274C;</div><h2 style="font-size:20px;font-weight:900;margin:0 0 10px">Booking Cancelled</h2><p style="color:#9A9390;font-size:14px;margin:0 0 30px">A notification has been sent to '+(_epb.ep?_epb.ep.nm:'the planner')+'.</p><button onclick="closeEPBooking()" style="padding:14px 32px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer">&#x1F3E0; Back Home</button></div>';
-  showToast&&showToast('Booking cancelled.','info');
 }
 
 function openCookChat(){if(!_cb||!_cb.cook)return;var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';openChat({name:_cb.cook.nm,em:_cb.cook.em||'👤',phone:_cb.cook.ph||'',otherUserId:_cb.cook.userId,contextType:'BOOKING',contextId:_cb.cook.id});}
