@@ -6524,7 +6524,15 @@ function closeReportIssue(){
 
 function reportDeliveryIssue(){document.getElementById('delivery-confirm-modal').style.display='none';clearTimeout(window._escrowTimer);clearTimeout(window._codTimer);showReportIssue('order');}
 
-function showProcedureModal(html){var ov=document.getElementById('procedure-ov');if(!ov){ov=document.createElement('div');ov.id='procedure-ov';ov.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9500;align-items:flex-end;justify-content:center;';ov.innerHTML='<div style="background:#1C1C1C;border-radius:22px 22px 0 0;width:100%;max-width:430px;max-height:80vh;overflow-y:auto;border-top:1px solid #2A2850;" id="procedure-body"></div>';document.body.appendChild(ov);}document.getElementById('procedure-body').innerHTML=html;ov.style.display='flex';}
+// z-index:9600, one level above #sfm-bottom-sheet's 9500 (same reasoning
+// as #chat-ov being bumped to 9600 elsewhere) -- #procedure-ov is a reused
+// singleton created once and left in the DOM, while the bottom sheet gets
+// freshly re-appended to <body> every time it opens, so at equal z-index
+// the bottom sheet's later DOM position made it paint OVER this modal --
+// e.g. the Cancel Booking reason picker rendering invisibly behind the
+// booking detail sheet that opened it, only visible after closing that
+// sheet. Explicit z-index removes the DOM-order dependency entirely.
+function showProcedureModal(html){var ov=document.getElementById('procedure-ov');if(!ov){ov=document.createElement('div');ov.id='procedure-ov';ov.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9600;align-items:flex-end;justify-content:center;';ov.innerHTML='<div style="background:#1C1C1C;border-radius:22px 22px 0 0;width:100%;max-width:430px;max-height:80vh;overflow-y:auto;border-top:1px solid #2A2850;" id="procedure-body"></div>';document.body.appendChild(ov);}document.getElementById('procedure-body').innerHTML=html;ov.style.display='flex';}
 function closeProcedureModal(){var ov=document.getElementById('procedure-ov');if(ov)ov.style.display='none';}
 function showSOSProcedure(){showProcedureModal('<div style="padding:20px;"><div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#E8392E;margin-bottom:14px;">&#x1F198; Emergency SOS</div><div style="background:rgba(232,57,46,.1);border:1.5px solid rgba(232,57,46,.3);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:#F2EDE8;line-height:1.8;">When you tap SOS:<br>1. Your live location is sent to emergency contacts<br>2. CityChef support is notified immediately<br>3. Nigerian emergency services (199) are alerted<br>4. Your shopper and rider are notified<br>5. All session activity is recorded for safety</div><button onclick="closeProcedureModal();toast(\'SOS sent! Help is on the way.\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">&#x1F198; Send SOS Now</button><button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button></div>');}
 function showShareProcedure(){showProcedureModal('<div style="padding:20px;"><div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#3B9FE8;margin-bottom:14px;">&#x1F4CD; Share Location</div><div style="font-size:13px;color:#9A9390;line-height:1.8;margin-bottom:14px;">Your live location will be shared with your emergency contacts, shopper, and rider. Only visible during the active session.</div><button onclick="closeProcedureModal();toast(\'Location shared with shopper and rider!\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#3B9FE8,#1a6fbf);color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">&#x1F4CD; Share My Location</button><button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button></div>');}
@@ -9167,32 +9175,54 @@ function openBookingWhatsApp(){
 // the pre-booking cancel flow (cookBkRender's 'cancel_reasons' phase),
 // reused here for the real History-based cancel action.
 var CANCEL_BOOKING_REASONS=['Schedule conflict — I need to reschedule','Found another vendor','Budget issues — cannot afford anymore','Vendor did not respond to my messages','I made a mistake in the booking details','Emergency / Unforeseen circumstances','Other reason'];
+// Multi-select (checkboxes, not single-choice) plus a free-text "Other"
+// field -- a customer cancelling often has more than one real reason, and
+// the fixed list can't cover everything. Reasons picked + any typed text
+// are joined into one string for the existing plain-text Booking.cancelReason
+// column (no schema change needed for this).
 function openCancelBookingReasonModal(id){
-  window._cancelBookingId=id; window._cancelBookingReason=null;
+  window._cancelBookingId=id; window._cancelBookingReasons=[];
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Cancel Booking</div></div>'
-    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Select a reason for cancelling.</p>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Select every reason that applies.</p>'
     +'<div id="cbr-reasons-list">'
-    +CANCEL_BOOKING_REASONS.map(function(r,i){return '<div onclick="selectCancelBookingReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;"><div id="cbr-dot-'+i+'" style="width:16px;height:16px;border-radius:50%;border:2px solid #555;flex-shrink:0;"></div><span style="color:#F2EDE8;font-size:13px;">'+r+'</span></div>';}).join('')
+    +CANCEL_BOOKING_REASONS.map(function(r,i){return '<div onclick="toggleCancelBookingReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;"><div id="cbr-box-'+i+'" style="width:18px;height:18px;border-radius:5px;border:2px solid #555;flex-shrink:0;"></div><span style="color:#F2EDE8;font-size:13px;">'+r+'</span></div>';}).join('')
     +'</div>'
+    +'<div id="cbr-other-wrap" style="display:none;margin:4px 0 4px;"><textarea id="cbr-other-text" placeholder="Type your reason…" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;min-height:60px;font-family:\'DM Sans\',sans-serif;"></textarea></div>'
     +'<button id="cbr-confirm-btn" onclick="confirmCancelBookingWithReason()" style="display:none;width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Confirm Cancellation</button>'
     +'</div>');
 }
-function selectCancelBookingReason(el){
-  document.querySelectorAll('#cbr-reasons-list [data-reason]').forEach(function(d){
-    var dot=d.querySelector('[id^="cbr-dot"]');if(dot){dot.style.borderColor='#555';dot.style.background='transparent';}
-    d.style.borderColor='#2A2850';d.style.background='#1C1C1C';
-  });
-  el.style.borderColor='#E8392E';el.style.background='rgba(232,57,46,.08)';
-  var dot=el.querySelector('[id^="cbr-dot"]');if(dot){dot.style.borderColor='#E8392E';dot.style.background='#E8392E';}
-  window._cancelBookingReason=el.getAttribute('data-reason');
-  var btn=document.getElementById('cbr-confirm-btn');if(btn)btn.style.display='block';
+function toggleCancelBookingReason(el){
+  var reason=el.getAttribute('data-reason');
+  var list=window._cancelBookingReasons||(window._cancelBookingReasons=[]);
+  var idx=list.indexOf(reason);
+  var box=el.querySelector('[id^="cbr-box"]');
+  if(idx>-1){
+    list.splice(idx,1);
+    el.style.borderColor='#2A2850';el.style.background='#1C1C1C';
+    if(box){box.style.borderColor='#555';box.style.background='transparent';}
+  }else{
+    list.push(reason);
+    el.style.borderColor='#E8392E';el.style.background='rgba(232,57,46,.08)';
+    if(box){box.style.borderColor='#E8392E';box.style.background='#E8392E';}
+  }
+  var otherWrap=document.getElementById('cbr-other-wrap');
+  if(otherWrap)otherWrap.style.display=list.indexOf('Other reason')>-1?'block':'none';
+  var btn=document.getElementById('cbr-confirm-btn');
+  if(btn)btn.style.display=list.length?'block':'none';
 }
 async function confirmCancelBookingWithReason(){
-  if(!window._cancelBookingReason){showToast&&showToast('Please select a reason','warning');return;}
+  var list=window._cancelBookingReasons||[];
+  if(!list.length){showToast&&showToast('Please select at least one reason','warning');return;}
   var id=window._cancelBookingId;
+  var reasons=list.slice();
+  var otherIdx=reasons.indexOf('Other reason');
+  if(otherIdx>-1){
+    var otherText=(document.getElementById('cbr-other-text')||{}).value||'';
+    reasons.splice(otherIdx,1,otherText.trim()?('Other: '+otherText.trim()):'Other reason');
+  }
   try{
-    await api('/bookings/'+id+'/cancel',{method:'POST',body:JSON.stringify({reason:window._cancelBookingReason})});
+    await api('/bookings/'+id+'/cancel',{method:'POST',body:JSON.stringify({reason:reasons.join('; ')})});
     showToast&&showToast('Booking cancelled.','success');
     closeProcedureModal();
     closeBottomSheet&&closeBottomSheet();
