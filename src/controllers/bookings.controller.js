@@ -82,6 +82,7 @@ async function createBooking(req, res, next) {
         paymentMethod: paymentMethod || "CARD",
         totalKobo,
       },
+      include: { servicePackage: true },
     });
 
     // Home Cook bookings are unpaid at this exact moment (payment happens
