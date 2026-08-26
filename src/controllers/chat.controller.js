@@ -88,7 +88,7 @@ async function maybeSendAiReply(threadId, senderUserId, io) {
 
   const aiMessage = await prisma.chatMessage.create({ data: { threadId, senderId: aiUser.id, body: replyText } });
   io?.to(`chat:${threadId}`).emit("chat:message", aiMessage);
-  await notify(io, senderUserId, "CHAT", "Support replied", replyText.slice(0, 120), { threadId }).catch(() => {});
+  await notify(io, senderUserId, "CHAT", "Support replied", replyText.slice(0, 120), { threadId, senderName: "Handa Support", senderRole: "ADMIN" }).catch(() => {});
 
   // Real-time nudge to every connected admin (see live.js's "admins" room
   // join) the moment the AI actually replies -- not just when the user's
@@ -205,7 +205,16 @@ async function sendMessage(req, res, next) {
     const notifyText = body && body.trim() ? body.slice(0, 120) : "📎 Sent a photo";
     const others = await prisma.chatParticipant.findMany({ where: { threadId: req.params.id, userId: { not: req.user.id } } });
     for (const p of others) {
-      await notify(io, p.userId, "CHAT", "New message", notifyText, { threadId: req.params.id });
+      // senderName/senderRole ride along here (not just threadId) so the
+      // frontend's global "X wants to chat with you" on-screen banner can
+      // use this SAME already-reliable channel (every user's own
+      // notification:new push, always delivered regardless of chat-room
+      // membership) instead of chat:message -- which only reaches a
+      // socket that has already joined chat:{threadId}, something that
+      // never happens for a brand-new conversation the recipient hasn't
+      // opened yet. That gap is exactly why the banner previously only
+      // ever seemed to arrive "through notification" and nothing else.
+      await notify(io, p.userId, "CHAT", "New message", notifyText, { threadId: req.params.id, senderName: req.user.name, senderRole: req.user.role });
     }
 
     res.status(201).json({ message });

@@ -735,8 +735,8 @@ async function renderTickets(status) {
       // created, but this stays correct even if that ever changes). The
       // old version was a small inline <a> buried inside the Description
       // cell's text, easy to miss entirely.
-      const evidenceButtons = (t.evidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.evidenceUrl + '\')">&#128206; View Evidence</button> ' : '')
-        + (t.secondPartyEvidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.secondPartyEvidenceUrl + '\')">&#128206; Their Evidence</button>' : '');
+      const evidenceButtons = (t.evidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.evidenceUrl + '\')">&#128206; Filer\'s Evidence</button> ' : '')
+        + (t.secondPartyEvidenceUrl ? '<button class="action-btn" onclick="openUploadedFile(\'' + t.secondPartyEvidenceUrl + '\')">&#128206; Vendor\'s Evidence</button>' : '');
       const actions = (t.status !== 'RESOLVED'
         ? '<button class="action-btn" onclick="resolveTicket(\'' + t.id + '\')">' + (t.isDispute ? 'Resolve For Vendor' : 'Resolve') + '</button>'
           + (t.isDispute && !t.refundAmountKobo ? ' <button class="action-btn" onclick="resolveTicketWithRefund(\'' + t.id + '\',' + (t.heldAmountKobo || 0) + ')">Resolve with Refund</button>' : '')

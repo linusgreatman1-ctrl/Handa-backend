@@ -1142,6 +1142,21 @@ function connectSocket(){
     if(n.data&&n.data.bookingId&&document.getElementById('vendor-bookings-list')){
       loadVendorBookingsList(window._vendorDashKind==='cook');
     }
+    // A new chat message's own real-time push (chat:message) only ever
+    // reaches a socket that's already joined chat:{threadId} -- which
+    // never happens for a brand-new conversation the recipient hasn't
+    // opened yet, so the on-screen "X wants to chat with you" banner
+    // (bindGlobalChatRequestListener) silently never fired for exactly
+    // the case it matters most: a genuinely new chat, arriving instead
+    // ONLY as a background bell notification. This CHAT-type notification
+    // rides the same personal user:{id} room every push already uses
+    // (always delivered, no extra room-join needed), so trigger the same
+    // banner from here instead.
+    if(n.type==='CHAT'&&n.data&&n.data.threadId&&n.data.threadId!==window._activeChatThreadId){
+      var roleWord={CUSTOMER:'Customer',VENDOR:'Vendor',RIDER:'Rider',SHOPPER:'Shopper',ADMIN:'Support'}[n.data.senderRole]||'Someone';
+      var name=n.data.senderRole==='ADMIN'?'Handa Support':(n.data.senderName||roleWord);
+      showChatRequestBanner(name,roleWord,n.data.threadId);
+    }
   });
   // Socket.IO rooms don't survive a reconnect (network blip, idle timeout,
   // Render sleep/wake) -- without this, a client silently drops out of
@@ -1810,10 +1825,10 @@ async function loadRealCatalog(){
       return o;
     }
     var newEp = byType.EVENT_PLANNER.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
     var newCooks = byType.HOME_COOK.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         // Real menu items (id = actual backend MenuItem id) — cookBkRender's
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
@@ -2802,15 +2817,23 @@ function bindGlobalChatRequestListener(){
     if(!msg||msg.senderId===myId)return;
     if(msg.threadId===window._activeChatThreadId)return; // already looking at this exact chat
     var roleWord={CUSTOMER:'Customer',VENDOR:'Vendor',RIDER:'Rider',SHOPPER:'Shopper',ADMIN:'Support'}[msg.senderRole]||'Someone';
-    var name=msg.senderName||roleWord;
+    var name=msg.senderRole==='ADMIN'?'Handa Support':(msg.senderName||roleWord);
     showChatRequestBanner(name,roleWord,msg.threadId);
   });
 }
+// Harmless to call twice for the same message (this replaces any existing
+// banner in place rather than stacking) -- both the direct chat:message
+// push (fires when the recipient's socket already happens to be in
+// chat:{threadId}) and the notification:new CHAT push above (always
+// delivered, the one that actually covers a brand-new thread) can call
+// this for the same real message; whichever arrives first just gets
+// swapped for an identical second copy.
 function showChatRequestBanner(name,roleWord,threadId){
   var existing=document.getElementById('chat-request-banner');if(existing)existing.remove();
+  var label=roleWord==='Support'?(name+' is Chatting with you'):(name+' ('+roleWord+') is chatting with you');
   var html='<div id="chat-request-banner" style="position:fixed;left:12px;right:12px;top:12px;z-index:10001;background:#1C1C1C;border:1.5px solid #3B9FE8;border-radius:14px;padding:13px 15px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:\'DM Sans\',sans-serif;display:flex;align-items:center;gap:10px;">'
     +'<span style="font-size:22px;flex-shrink:0;">💬</span>'
-    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;">'+name+' ('+roleWord+') wants to chat with you</div></div>'
+    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;">'+label+'</div></div>'
     +'<button onclick="openChatByThreadId(\''+threadId+'\',\''+name.replace(/'/g,"\\'")+'\');var b=document.getElementById(\'chat-request-banner\');if(b)b.remove();" style="background:#3B9FE8;border:none;border-radius:9px;padding:8px 12px;color:#111;font-weight:800;font-size:12px;cursor:pointer;flex-shrink:0;font-family:\'DM Sans\',sans-serif;">Open Chat</button>'
     +'<button onclick="var b=document.getElementById(\'chat-request-banner\');if(b)b.remove();" style="background:none;border:none;color:#9A9390;font-size:18px;cursor:pointer;flex-shrink:0;">&#x2715;</button>'
     +'</div>';
@@ -8652,15 +8675,23 @@ function selectHomeSearchResult(type,id){
   var inp=document.getElementById('e-home-search-input'); if(inp)inp.value='';
   if(type==='cook')openCookBooking(id); else openEPBooking(id);
 }
+// Matches against the vendor's real registered state/lga (User.state/lga,
+// carried through from GET /vendors/:id into the catalog mapping's own
+// state/lga fields) instead of substring-searching the free-text address
+// string -- that never reliably matched (an address like "12 Adeola
+// Odeku, Victoria Island" doesn't contain the word "Lagos" at all, and
+// even when a state name did appear it could false-match an unrelated
+// LGA/street name), which is why state/LGA search never found any real
+// registered cooks or event planners.
 function filterByState(state,lga,screen){
   if(!state){showToast&&showToast('Please select a state first','warning');return;}
   var s=screen||S.curScreen||'';
   if(s==='cooks'||document.getElementById('screen-ecooks')&&document.getElementById('screen-ecooks').style.display!=='none'){
-    var list=(D.cooks||[]).filter(function(c){var m=c.addr&&c.addr.indexOf(state)>-1;if(lga)m=m&&c.addr.indexOf(lga)>-1;return m;});
+    var list=(D.cooks||[]).filter(function(c){var m=c.state&&c.state.toLowerCase()===state.toLowerCase();if(m&&lga)m=c.lga&&c.lga.toLowerCase()===lga.toLowerCase();return m;});
     renderCooks(list.length?list:D.cooks);
     if(!list.length)showToast&&showToast('No cooks in '+state+'. Showing all.','info');
   }else{
-    var list2=(D.ep||[]).filter(function(e){var m=e.loc&&e.loc.indexOf(state)>-1;if(lga)m=m&&e.loc.indexOf(lga)>-1;return m;});
+    var list2=(D.ep||[]).filter(function(e){var m=e.state&&e.state.toLowerCase()===state.toLowerCase();if(m&&lga)m=e.lga&&e.lga.toLowerCase()===lga.toLowerCase();return m;});
     renderEP(list2.length?list2:D.ep);
     if(!list2.length)showToast&&showToast('No planners in '+state+'. Showing all.','info');
   }
@@ -9167,7 +9198,12 @@ async function openCustomerHistoryDetail(kind,id){
     // turn for the Yes/No response -- that prompt is meant to stand alone,
     // nothing left to discuss through Chat/Call/WhatsApp at that stage.
     var needsCompletionResponse=!isTerminal&&b.status==='CONFIRMED'&&b.vendorConfirmedCompleteAt&&!b.customerConfirmedCompleteAt;
-    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined;
+    // hasOpenDispute already renders its own "Dispute Is Pending Resolve
+    // From Handa" banner further down -- Chat/Call/WhatsApp used to still
+    // show underneath it even though the dispute is what's supposed to be
+    // the only thing left to do at that point (an admin resolves it, not
+    // a chat message).
+    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute;
     var hasPendingEdit=!!b.pendingEditSnapshot;
     // Home Cook: visible from the moment the booking is sent (REQUESTED/
     // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
@@ -9980,7 +10016,19 @@ async function cookBkConfirmBooking(){
     // shows once payment actually succeeds; if the customer backs out of
     // the escrow modal, the booking sits unpaid (REQUESTED) and can still
     // be paid later via the "Pay Now" retry button in History.
-    payForBooking(res.booking.id, res.booking.totalKobo, function(){ cookBkRender('confirmed'); });
+    //
+    // Used to open this overlay's own local 'confirmed' phase -- a
+    // separate, partly-fake screen (its own "Cancel Booking" never called
+    // the real API at all, just faked the UI) that also had no Edit
+    // button. The real booking-detail screen (openCustomerHistoryDetail)
+    // already shows the booking immediately, stays live-synced, and
+    // already has real Edit + Cancel side by side -- opening that instead
+    // is both what was asked for and strictly more correct than
+    // maintaining a second, drifting copy of the same information.
+    payForBooking(res.booking.id, res.booking.totalKobo, function(){
+      closeCookBooking();
+      openCustomerHistoryDetail('booking', res.booking.id);
+    });
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
   }
@@ -10371,7 +10419,12 @@ async function epBkConfirmBooking(){
       paymentMethod:PAY_METHOD_MAP[_epb.payMethod]||'CARD',
     })});
     _epb.bookingNumber=res.booking.bookingNumber;
-    epBkRender('confirmed');
+    // Same reasoning as the Cook flow's confirmBooking -- the real,
+    // live-synced booking-detail screen (with real Edit + Cancel side by
+    // side) replaces this overlay's own separate, drifting 'confirmed'
+    // copy instead of stacking a second one on top of it.
+    closeEPBooking();
+    openCustomerHistoryDetail('booking', res.booking.id);
     showToast&&showToast('Booking sent to '+(_epb.ep?_epb.ep.nm:'planner')+'! Ref '+res.booking.bookingNumber,'success');
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
