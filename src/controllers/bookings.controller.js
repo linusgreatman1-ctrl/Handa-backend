@@ -222,7 +222,31 @@ async function buildBookingEditData(booking, body) {
   if (notes !== undefined) data.notes = notes;
 
   let newServicePackage = null;
-  if (servicePackageId !== undefined || items !== undefined) {
+  // Event Planning's own "Items Booked" edit fields (epItemsField) only
+  // ever rename an existing service label in place -- "its price stays
+  // the same" per that UI's own copy -- because these items are purely
+  // descriptive (what a won proposal's servicesRequested/servicesIncluded
+  // merged into, see eventRequests.controller.js's acceptProposal); the
+  // booking's real total is the proposal's own negotiated lump sum, never
+  // a sum of per-item prices. Routing this through resolveBookingItems
+  // (which requires every custom item to have a real priceKobo > 0, and
+  // resums the total from item prices) would both reject these zero-priced
+  // labels outright AND -- if that check were merely relaxed -- silently
+  // zero out the real total on any items-only edit. Renaming keeps each
+  // item's own already-carried-forward price (data-price on the frontend
+  // input, unchanged) and never touches totalKobo at all.
+  if (booking.type === "EVENT_PLANNING" && items !== undefined) {
+    const renamed = items
+      .map((it) => ({
+        name: (it.customName || "").trim(),
+        priceKobo: Math.max(0, Math.round(Number(it.customPriceKobo) || 0)),
+        qty: Math.max(1, parseInt(it.qty) || 1),
+        custom: true,
+      }))
+      .filter((it) => it.name);
+    if (!renamed.length) throw Object.assign(new Error("At least one item is required."), { status: 400 });
+    data.selectedItems = renamed;
+  } else if (servicePackageId !== undefined || items !== undefined) {
     let totalKobo = 0;
     const pkgId = servicePackageId !== undefined ? servicePackageId : booking.servicePackageId;
     if (pkgId) {
