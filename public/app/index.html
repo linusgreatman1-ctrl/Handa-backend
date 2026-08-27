@@ -9329,6 +9329,7 @@ async function openCustomerHistoryDetail(kind,id){
   try{
     var res=await api('/bookings/'+id);
     var b=res.booking;
+    b.reportTicket=res.reportTicket;
     var v=b.vendor||{};
     var vu=v.user||{};
     // Stashed for the zero-arg Chat/Call/WhatsApp buttons below -- avoids
