@@ -9677,7 +9677,12 @@ var VENDOR_CANCEL_BOOKING_REASONS=['Schedule conflict — I can\'t make it','Cus
 // (no schema change needed for this).
 function openCancelBookingReasonModal(id){
   window._cancelBookingId=id; window._cancelBookingReasons=[];
-  var reasons=(_eRole==='customer')?CANCEL_BOOKING_REASONS:VENDOR_CANCEL_BOOKING_REASONS;
+  // S.role, not _eRole -- _eRole doubles as the last-active-screen tracker
+  // for session-restore (eGo stores 'home'/'cook'/etc into it via
+  // sessionStorage), so it isn't reliably 'customer' for a customer
+  // account once they've navigated anywhere. S.role is the real account
+  // role ('customer'/'vendor'/'rider'/'shopper'), unaffected by navigation.
+  var reasons=(S.role==='customer')?CANCEL_BOOKING_REASONS:VENDOR_CANCEL_BOOKING_REASONS;
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Cancel Booking</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Select every reason that applies.</p>'
@@ -9732,8 +9737,10 @@ async function confirmCancelBookingWithReason(){
     if(typeof closeCookBooking==='function')closeCookBooking();
     if(typeof closeEPBooking==='function')closeEPBooking();
     // Reachable from either side now (the vendor can cancel too) -- land
-    // wherever "back to my bookings" actually means for whoever just did it.
-    if(_eRole==='customer')eGo('history'); else if(typeof vendorNav==='function')vendorNav('orders');
+    // wherever "back to my bookings" actually means for whoever just did
+    // it. S.role, not _eRole -- see openCancelBookingReasonModal's own
+    // comment on why _eRole isn't reliably 'customer' here.
+    if(S.role==='customer')eGo('history'); else if(typeof vendorNav==='function')vendorNav('orders');
   }catch(err){
     showToast&&showToast(err.message||'Could not cancel this booking','warning');
   }
