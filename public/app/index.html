@@ -8295,12 +8295,21 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
 function selectAfMethod(method){
   _afMethod=method;
   var isWallet=method==='WALLET';
-  var kobo=isWallet?window._afMinKobo:(window._afRawDiffKobo||window._afMinKobo);
-  var naira=kobo?Math.ceil(kobo/100):0;
-  var inp=document.getElementById('af-inp');
-  if(inp)inp.value=naira;
-  var btn=document.getElementById('af-confirm-btn');
-  if(btn){btn.style.opacity='1';btn.style.pointerEvents='auto';btn.textContent='Pay ₦'+Number(naira).toLocaleString();}
+  // window._afMinKobo is only ever set for the fixed-shortfall context (a
+  // booking edit that came back short) -- the generic "+ Add Funds" entry
+  // point (Profile/Wallet, free amount picker) never sets it, so this
+  // whole amount/confirm-button block must stay out of that path
+  // entirely: it used to unconditionally overwrite #af-inp with 0 (no
+  // minKobo to compute from), clobbering whatever the customer had
+  // already picked or typed and making every method there look broken.
+  if(window._afMinKobo){
+    var kobo=isWallet?window._afMinKobo:(window._afRawDiffKobo||window._afMinKobo);
+    var naira=kobo?Math.ceil(kobo/100):0;
+    var inp=document.getElementById('af-inp');
+    if(inp)inp.value=naira;
+    var btn=document.getElementById('af-confirm-btn');
+    if(btn){btn.style.opacity='1';btn.style.pointerEvents='auto';btn.textContent='Pay ₦'+Number(naira).toLocaleString();}
+  }
   var walletBtnEl=document.getElementById('af-wallet-btn');if(walletBtnEl)walletBtnEl.style.borderColor=isWallet?'#E8392E':'#2A2850';
   var cardBtnEl=document.getElementById('af-card-btn');if(cardBtnEl)cardBtnEl.style.borderColor=(method==='CARD')?'#E8392E':'#2A2850';
   var transferBtnEl=document.getElementById('af-transfer-btn');if(transferBtnEl)transferBtnEl.style.borderColor=(method==='BANK_TRANSFER')?'#E8392E':'#2A2850';
