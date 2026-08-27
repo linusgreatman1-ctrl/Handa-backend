@@ -1840,16 +1840,18 @@ async function openEventRequestForVendor(requestId){
 // plain "already completed" note -- separate async call (rather than
 // blocking openEventRequestForVendor's own render) since the booking
 // detail isn't otherwise needed for anything else on this screen.
-async function _loadEventRequestJobAction(bookingId){
+// Once accepted, this proposal's real Booking already lives in the
+// vendor's normal Bookings list/dashboard just like a directly-created
+// one -- so instead of a second, separate "Mark Job Completed" action
+// duplicated here (which skipped Chat/Call entirely and bypassed the
+// booking's own real status display), this just links straight into the
+// real openVendorBookingDetail sheet, where Chat/Call/Mark Job Completed
+// (or the completed/commission banner once it's done) already work
+// exactly like any other booking.
+function _loadEventRequestJobAction(bookingId){
   var el=document.getElementById('erv-job-action');
   if(!el)return;
-  try{
-    var res=await api('/bookings/'+bookingId);
-    var status=res.booking&&res.booking.status;
-    el.innerHTML=(status==='COMPLETED')
-      ?'<div style="margin-top:10px;text-align:center;padding:10px;border-radius:9px;background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.3);color:#2ECC71;font-weight:700;font-size:12px;">&#x2705; Job Completed</div>'
-      :'<button onclick="vendorMarkBookingComplete(\''+bookingId+'\',true)" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x2705; Mark Job Completed</button>';
-  }catch(err){ /* silently leave the status label alone if this fails */ }
+  el.innerHTML='<button onclick="closeProcedureModal();openVendorBookingDetail(\''+bookingId+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">📋 View Booking</button>';
 }
 async function submitProposalForRequest(requestId){
   var price=(document.getElementById('sp-price')||{}).value||'';
