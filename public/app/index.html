@@ -8129,17 +8129,27 @@ function showAddFundsModal(minKobo,onSuccess){
   _afMethod='CARD';
   window._addFundsOnSuccess=onSuccess||null;
   var prefill=minKobo?Math.ceil(minKobo/100):'';
-  var shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need at least &#x20a6;'+Number(prefill).toLocaleString()+' more to cover this. Add any amount you like.</div>'):'';
+  // minKobo means this was opened to cover a SPECIFIC shortfall (a booking
+  // edit's new total) -- that number is exact (the edit's own new total
+  // minus what's already held), not a suggestion, so this locks to it:
+  // no quick-pick amounts, no editable field, just that one figure and a
+  // "Pay ₦X" button. The generic "+ Add Funds" entry point (Profile/Wallet,
+  // no minKobo) keeps the free-amount picker -- there's no specific target
+  // to lock to there.
+  var shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need &#x20a6;'+Number(prefill).toLocaleString()+' to complete this booking.</div>'):'';
+  var amountBlock=minKobo
+    ?('<div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Amount to Add</label><input id="af-inp" type="number" value="'+prefill+'" readonly style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:16px;font-weight:800;box-sizing:border-box;cursor:not-allowed;"></div>')
+    :('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
+      +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
+      +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" value="" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>');
   showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div>'
     +shortfallNote
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
-    +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
-    +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(minKobo?'Amount to Add':'Custom Amount')+'</label><input id="af-inp" type="number" value="'+prefill+'" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
+    +amountBlock
     +'<div id="af-methods" style="display:flex;gap:8px;margin-bottom:16px;">'
     +'<button onclick="_afMethod=\'CARD\';document.getElementById(\'af-card-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';" id="af-card-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #E8392E;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">💳 Card/USSD</button>'
     +'<button onclick="_afMethod=\'BANK_TRANSFER\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
     +'</div>'
-    +'<button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Continue to Payment</button></div>');
+    +'<button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">'+(minKobo?('Pay &#x20a6;'+Number(prefill).toLocaleString()):'Continue to Payment')+'</button></div>');
 }
 // Card/USSD still go via real Paystack checkout. Bank Transfer shows the
 // real company bank details and waits for admin confirmation instead --
@@ -9107,6 +9117,18 @@ function bindBookingLiveUpdateListener(){
 // hasPendingEdit banner -- both need to actually show what's being
 // proposed (previously only a bare "awaiting approval" label with no
 // detail, on both sides), including the proposed items list.
+// EP bookings almost never carry selectedItems (nothing is picked at
+// booking time -- only a fixed package) -- their real equivalent of
+// "what you're getting" is the package's own .includes list, which
+// previously only ever showed during package BROWSING, never on the
+// booking's own detail screen afterward. Shared between both sides.
+function _packageIncludesHtml(b){
+  var inc=b.servicePackage&&b.servicePackage.includes;
+  if(!inc||!inc.length)return '';
+  return '<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Package Includes</div>'
+    +inc.map(function(i){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+i+'</div>';}).join('')
+    +'</div>';
+}
 function _pendingEditSummaryHtml(pe){
   var peRows=[];
   if(pe.eventDate!==undefined)peRows.push(['Date',pe.eventDate?new Date(pe.eventDate).toLocaleDateString():'TBD']);
@@ -9203,9 +9225,13 @@ async function openVendorBookingDetail(id){
     // screen -- Chat/Call don't make sense once the booking is done, dead,
     // or under a live dispute. Cancel additionally disappears the moment
     // the job has actually started (vendorJobStartedAt), matching the
-    // backend's own guard on this exact endpoint.
+    // backend's own guard on this exact endpoint. Home Cook only -- Event
+    // Planner cancellation stays a customer-only action, matching the
+    // backend's own real permission model (the vendor side never actually
+    // needs to back out of an EP booking the way a Home Cook vendor might
+    // need to before a physical job starts).
     var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorHasOpenDispute;
-    var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
+    var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var contactAndCancelBlock=(vendorHideContactButtons&&!vendorCancellable)?'':(
       '<div style="margin-top:14px;">'
       +(vendorHideContactButtons?'':(
@@ -9220,6 +9246,7 @@ async function openVendorBookingDetail(id){
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +vendorEditedBanner
+      +_packageIncludesHtml(b)
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
@@ -9608,6 +9635,7 @@ async function openCustomerHistoryDetail(kind,id){
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +editedBanner
+      +_packageIncludesHtml(b)
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
@@ -9792,6 +9820,18 @@ var _ebItemPicker=null;
 async function openEditBookingModal(b){
   _editingBooking=b;
   closeBottomSheet&&closeBottomSheet();
+  // Edit Booking is also reachable straight from the local "Booking
+  // Confirmed" overlay (its own "Edit Booking" button), which -- unlike
+  // the bottom sheet above -- was never actually closed here, just
+  // covered by this modal. Whatever happens next (cancel out of the
+  // insufficient-funds Add Funds/Bank Transfer flow, or a successful
+  // save), closing THIS modal used to reveal that stale overlay again,
+  // still showing the booking's OLD details as if nothing had happened --
+  // easy to mistake for "got bounced back to the start" (reported as
+  // "takes you back to homepage"). Closing it now, up front, means there's
+  // nothing stale left behind no matter how this flow eventually ends.
+  if(typeof closeCookBooking==='function')closeCookBooking();
+  if(typeof closeEPBooking==='function')closeEPBooking();
   var isEP=b.type==='EVENT_PLANNING';
   var isCook=b.type==='HOME_COOK';
   showProcedureModal('<div style="padding:30px;text-align:center;color:#9A9390;">Loading…</div>');
@@ -9975,7 +10015,15 @@ async function saveBookingEdit(){
     })});
     showToast&&showToast(res.pending?'Changes sent — waiting for the vendor to approve.':'Booking updated — vendor notified','success');
     closeProcedureModal();
-    if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
+    // Always land on History with the real, current booking open -- not
+    // just when already there. openEditBookingModal now closes the local
+    // "Booking Confirmed" overlay it's often reached from (see its own
+    // comment), so simply doing nothing here would leave the customer
+    // looking at the bare home screen with no confirmation of what
+    // actually changed; History showing the updated booking is a clear,
+    // consistent landing spot regardless of where the edit was opened from.
+    eGo('history');
+    if(typeof openCustomerHistoryDetail==='function')openCustomerHistoryDetail('booking',_editingBooking.id);
   }catch(err){
     var shortfallKobo=err.data&&err.data.shortfallKobo;
     if(shortfallKobo){
