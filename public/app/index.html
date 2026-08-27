@@ -1737,7 +1737,15 @@ async function openEventRequestDetailModal(id){
           +'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
           +'<button onclick="declineEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;">✕ Decline</button>'
           +'</div>'
-        ):'')
+        // The EP's own side of this same acceptance already gets a direct
+        // "View Booking" link back into the real Booking it created (see
+        // _loadEventRequestJobAction) -- the customer's side never had the
+        // same, so reopening this request later (after the initial
+        // acceptEventProposal redirect) showed the winning proposal with
+        // no way back into the booking it became.
+        ):(p.status==='ACCEPTED'&&p.bookingId?(
+          '<button onclick="closeEventDetailModal();closeMyEventRequestsModal();openCustomerHistoryDetail(\'booking\',\''+p.bookingId+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">📋 View Booking</button>'
+        ):''))
         + '</div>';
     }).join('');
   }catch(err){
@@ -6525,9 +6533,15 @@ async function loadOpenEventRequests(){
   el.innerHTML='<div style="font-size:12px;color:#9A9390;padding:8px 0;">Loading open event requests…</div>';
   try{
     var res=await api('/event-requests?as=vendor&status=OPEN');
-    var headerHtml='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-      +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;">📢 Event Requests</div>'
-      +'<button onclick="openAllEventRequestsModal()" style="background:transparent;border:1.5px solid #2A2850;border-radius:8px;padding:5px 10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:11px;cursor:pointer;">View Event Requests/Proposals</button>'
+    // Was a plain small uppercase label + a thin ghost-bordered pill --
+    // easy to miss next to the Weekly Commission/Get Featured banners
+    // right above it on the same dashboard. Given the same gradient-card
+    // visual weight as those, with the action as a real full-width button
+    // instead of a tiny outline pill, so it actually reads as a banner.
+    var headerHtml='<div style="background:linear-gradient(135deg,rgba(46,204,113,.15),rgba(59,159,232,.08));border:1.5px solid rgba(46,204,113,.4);border-radius:16px;padding:16px;margin-bottom:12px;">'
+      +'<p style="color:#2ECC71;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 4px;">📢 Event Requests</p>'
+      +'<p style="color:#9A9390;font-size:12px;margin:0;">New requests from customers looking for a planner</p>'
+      +'<button onclick="openAllEventRequestsModal()" style="width:100%;margin-top:12px;padding:11px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">View Event Requests/Proposals</button>'
       +'</div>';
     // The dashboard's own inline section is ONLY for genuinely new, never-
     // opened-and-proposed-on requests -- it's a "needs your attention" pop-
@@ -10566,7 +10580,16 @@ async function vendorBookingAction(id,action){
   try{
     await api('/bookings/'+id+'/'+action,{method:'POST'});
     showToast&&showToast(action==='accept'?'Booking accepted ✓':'Booking declined','success');
-    renderVendorDashboard(S.vtype==='event_planner'?'ep':'cook');
+    if(action==='accept'){
+      // Accepting shouldn't just drop the vendor back on the (now
+      // re-fetched) list -- that reads as the booking they just acted on
+      // vanishing. Open it directly so they land right on the real
+      // booking they now own, with Chat/Call/Start Job already available.
+      openVendorBookingDetail(id);
+      loadVendorBookingsList(S.vtype!=='event_planner');
+    }else{
+      renderVendorDashboard(S.vtype==='event_planner'?'ep':'cook');
+    }
   }catch(err){showToast&&showToast(err.message||'Could not update booking','warning');}
 }
 
