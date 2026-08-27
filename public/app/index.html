@@ -8187,13 +8187,14 @@ var _afMethod='CARD';
 // that came back short shows exactly how much more is needed, pre-fills
 // it, and resumes whatever it was doing (not just refreshing the wallet
 // card, the plain Profile "+ Add Funds" entry point's own default).
-function showAddFundsModal(minKobo,onSuccess){
+function showAddFundsModal(minKobo,onSuccess,priceContext){
   _afMethod='CARD';
   window._addFundsOnSuccess=onSuccess||null;
   // Stashed so a sub-flow (Bank Transfer) can reopen this exact screen,
   // with the same shortfall, if the customer backs out of it wanting a
   // different payment method instead.
   window._afMinKobo=minKobo||null;
+  window._afPriceContext=priceContext||null;
   var prefill=minKobo?Math.ceil(minKobo/100):'';
   // minKobo means this was opened to cover a SPECIFIC shortfall (a booking
   // edit's new total) -- that number is exact (the edit's own new total
@@ -8202,7 +8203,27 @@ function showAddFundsModal(minKobo,onSuccess){
   // "Pay ₦X" button. The generic "+ Add Funds" entry point (Profile/Wallet,
   // no minKobo) keeps the free-amount picker -- there's no specific target
   // to lock to there.
-  var shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need &#x20a6;'+Number(prefill).toLocaleString()+' to complete this booking.</div>'):'';
+  //
+  // priceContext (optional, {oldTotalKobo,newTotalKobo}) spells out WHY
+  // minKobo is smaller than the raw price difference -- without this, a
+  // customer editing ₦13,000 to ₦21,500 (a real +₦8,500 change) but who
+  // already has ₦7,000 free in their wallet sees only "You need ₦1,500"
+  // and reads that as a wrong/made-up number, since it doesn't match the
+  // price change they just saw on screen. Both figures are real: the
+  // price really changed by ₦8,500, and only ₦1,500 of that isn't already
+  // covered by the wallet's existing free balance -- showing both instead
+  // of just the netted one is what makes the smaller number make sense.
+  var shortfallNote;
+  if(priceContext&&priceContext.oldTotalKobo!=null&&priceContext.newTotalKobo!=null){
+    var rawDiff=priceContext.newTotalKobo-priceContext.oldTotalKobo;
+    var alreadyCovered=rawDiff-minKobo;
+    shortfallNote='<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">'
+      +'Booking total: &#x20a6;'+Number(Math.round(priceContext.oldTotalKobo/100)).toLocaleString()+' &#8594; &#x20a6;'+Number(Math.round(priceContext.newTotalKobo/100)).toLocaleString()+' (+&#x20a6;'+Number(Math.round(rawDiff/100)).toLocaleString()+').'
+      +(alreadyCovered>0?' &#x20a6;'+Number(Math.round(alreadyCovered/100)).toLocaleString()+' of that is already covered by your wallet balance — add &#x20a6;'+Number(prefill).toLocaleString()+' more to complete it.':' You need &#x20a6;'+Number(prefill).toLocaleString()+' more to complete this booking.')
+      +'</div>';
+  }else{
+    shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need &#x20a6;'+Number(prefill).toLocaleString()+' to complete this booking.</div>'):'';
+  }
   var amountBlock=minKobo
     ?('<div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Amount to Add</label><input id="af-inp" type="number" value="'+prefill+'" readonly style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:16px;font-weight:800;box-sizing:border-box;cursor:not-allowed;"></div>')
     :('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
@@ -8266,7 +8287,7 @@ async function submitAddFunds(){
     }
     if(res.manual){
       openManualBankTransferModal(res,function(){toast('Funds added!');afterFunded();},function(){
-        showAddFundsModal(window._afMinKobo,onSuccess);
+        showAddFundsModal(window._afMinKobo,onSuccess,window._afPriceContext);
       });
       return;
     }
@@ -10126,8 +10147,18 @@ async function saveBookingEdit(){
       // exactly how much, type in an amount to add" screen -- it already
       // shows the shortfall and pre-fills it; on success it retries this
       // exact save so the edit goes through automatically once funded.
+      // Also hand it the real old/new totals (new total computed the same
+      // way the edit modal's own "New Total" line already does) so the
+      // shortfall shown reads as "price went up by X, Y of that is
+      // already covered by your wallet, add Z more" instead of just the
+      // netted Z on its own, which otherwise looks like a made-up number
+      // next to the price change the customer just saw on screen.
+      var priceContext=null;
+      if(_editingBooking&&_editingBooking.type==='HOME_COOK'&&_ebItemPicker){
+        priceContext={oldTotalKobo:_editingBooking.totalKobo,newTotalKobo:_ebItemsTotal()};
+      }
       showToast&&showToast('Insufficient funds — you need ₦'+Number(Math.round(shortfallKobo/100)).toLocaleString()+' more to cover this.','warning');
-      showAddFundsModal(shortfallKobo,function(){ saveBookingEdit(); });
+      showAddFundsModal(shortfallKobo,function(){ saveBookingEdit(); },priceContext);
     }else{
       showToast&&showToast(err.message||'Could not update booking','warning');
     }
