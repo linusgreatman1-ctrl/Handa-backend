@@ -233,7 +233,11 @@ async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRu
   if (diff === 0) return null;
   if (diff > 0) {
     const w = await walletSvc.getOrCreateWallet(booking.customerId, tx);
-    if (w.balanceKobo < diff) {
+    // Same DEV_BYPASS_PAYMENTS escape hatch debitWallet itself already
+    // honors -- without this, this precheck would be the one payment path
+    // in the whole app that's stricter than every other, breaking that
+    // env's established "test without needing real funds" behavior.
+    if (w.balanceKobo < diff && !walletSvc.devBypassEnabled()) {
       throw Object.assign(new Error("Your escrow wallet does not have enough to cover the new total. Add funds to continue."), { status: 400, shortfallKobo: diff - w.balanceKobo });
     }
     if (!dryRun) {
