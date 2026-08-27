@@ -2842,8 +2842,11 @@ async function closeActiveChatThread(isAutoClose){
   if(!threadId)return;
   try{
     await api('/chat/threads/'+threadId+'/close',{method:'POST'});
-    _setChatComposerClosed(true);
     showToast&&showToast(isAutoClose?'Chat closed after 3 minutes of inactivity.':'Chat ended.','info');
+    // Ends and clears off screen for the closer too, not just a disabled
+    // composer left sitting open -- matches what chat:closed below does
+    // for the OTHER party in real time.
+    closeChat();
   }catch(err){
     if(!isAutoClose)showToast&&showToast(err.message||'Could not close chat','warning');
   }
@@ -2864,8 +2867,10 @@ function bindAppChatSocketListener(){
   // no reopen, no notification round-trip needed to find out it ended.
   _socket.on('chat:closed',function(p){
     if(!p||p.threadId!==window._activeChatThreadId)return;
-    _setChatComposerClosed(true);
-    showToast&&showToast('This chat has ended.','info');
+    showToast&&showToast('The other person ended this chat.','info');
+    // Whoever closes it ends it for BOTH sides -- clears off this
+    // screen too, in real time, not just a disabled composer left open.
+    closeChat();
   });
 }
 // A chat message landing on a thread the recipient ISN'T currently looking
