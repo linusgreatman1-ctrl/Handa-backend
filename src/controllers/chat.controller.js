@@ -30,7 +30,11 @@ async function ensureAiSupportUser() {
 async function openSupportThread(req, res, next) {
   try {
     const contextId = req.body?.contextId || req.user.id;
-    let thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId } });
+    // closedAt: null -- a closed thread must never be handed back out. Once
+    // ended, it stays ended for good; the next "Chat with Support" tap for
+    // this same context genuinely starts a brand new thread instead of
+    // silently resurrecting the old, already-finished conversation.
+    let thread = await prisma.chatThread.findFirst({ where: { contextType: "SUPPORT", contextId, closedAt: null } });
     if (!thread) {
       thread = await prisma.chatThread.create({
         data: { contextType: "SUPPORT", contextId, participants: { create: [{ userId: req.user.id }] } },
@@ -115,10 +119,13 @@ async function openThread(req, res, next) {
     // same for every customer who chats with them), so without this a
     // second customer's lookup would land on the first customer's thread
     // and then 404 on every message fetch (never actually added as a
-    // participant of it).
+    // participant of it). closedAt: null -- same as openSupportThread: a
+    // closed thread is never reused, so hitting the Chat button again
+    // after either side ended it genuinely starts a new conversation
+    // instead of reopening the dead one.
     let thread = contextId
       ? await prisma.chatThread.findFirst({
-          where: { contextType, contextId, participants: { some: { userId: req.user.id } } },
+          where: { contextType, contextId, closedAt: null, participants: { some: { userId: req.user.id } } },
           include: { participants: true },
         })
       : null;

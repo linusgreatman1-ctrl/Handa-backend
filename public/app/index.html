@@ -6136,6 +6136,17 @@ function skipRating(){document.getElementById('rating-modal').style.display='non
 // ══════════════════════════════════════════════════════
 // UNIVERSAL CALL MODAL
 // ══════════════════════════════════════════════════════
+// wa.me needs a real international number (country code, no leading 0,
+// no other punctuation) -- a raw Nigerian local-format number
+// (0801...11 digits) stripped of punctuation still starts with a 0
+// instead of 234, which wa.me treats as an invalid number and lands on
+// its own generic "get WhatsApp" page instead of actually opening a
+// chat. Every real wa.me link in the app goes through this first.
+function waPhoneDigits(raw){
+  var digits=String(raw||'').replace(/[^0-9]/g,'');
+  if(digits.length===11&&digits.charAt(0)==='0')digits='234'+digits.slice(1);
+  return digits;
+}
 function openCallModal(name,phone,role,avatar){
   _callPhone=phone;_callName=name;
   var av=document.getElementById('call-modal-avatar');var nm=document.getElementById('call-modal-name');var rl=document.getElementById('call-modal-role');
@@ -6146,7 +6157,7 @@ function doCallAction(type){
   document.getElementById('call-modal').style.display='none';
   if(type==='inapp')toast('Calling '+_callName+'...');
   else if(type==='phone'){window.location.href='tel:'+_callPhone;}
-  else{window.open('https://wa.me/'+_callPhone.replace(/[^0-9]/g,''),'_blank');}
+  else{window.open('https://wa.me/'+waPhoneDigits(_callPhone),'_blank');}
 }
 function callPhone(ph){openCallModal('Contact',ph,'','');}
 
@@ -9051,9 +9062,25 @@ function bindBookingLiveUpdateListener(){
   if(!_socket||_socket._bookingLiveBound)return;
   _socket._bookingLiveBound=true;
   _socket.on('booking:updated',function(p){
-    if(!p||!p.bookingId||window._openBookingDetailId!==p.bookingId)return;
-    if(window._openBookingDetailViewer==='vendor')openVendorBookingDetail(p.bookingId);
-    else if(window._openBookingDetailViewer==='customer')openCustomerHistoryDetail('booking',p.bookingId);
+    if(!p||!p.bookingId)return;
+    if(window._openBookingDetailId===p.bookingId){
+      if(window._openBookingDetailViewer==='vendor')openVendorBookingDetail(p.bookingId);
+      else if(window._openBookingDetailViewer==='customer')openCustomerHistoryDetail('booking',p.bookingId);
+    }
+    // The customer's own just-booked "confirmed" overlay (cookBkRender/
+    // epBkRender('confirmed')) is a separate screen from the History
+    // detail sheet above -- it never re-fetches on its own, so it used to
+    // just sit there frozen on its original REQUESTED-era contents even
+    // once the vendor accepted (or declined/cancelled) in the background.
+    // Any real change here means that screen is stale -- clear it off
+    // entirely and land on History instead, exactly as if it had never
+    // been open, unless the customer already navigated elsewhere.
+    if(window._openBookingConfirmedOverlayId===p.bookingId){
+      window._openBookingConfirmedOverlayId=null;
+      if(typeof closeCookBooking==='function')closeCookBooking();
+      if(typeof closeEPBooking==='function')closeEPBooking();
+      if(S.curScreen!=='login')eGo('history');
+    }
   });
 }
 async function openVendorBookingDetail(id){
@@ -9066,6 +9093,9 @@ async function openVendorBookingDetail(id){
     var b=res.booking;
     var dt=res.disputeTicket;
     var c=b.customer||{};
+    // Stashed for the zero-arg Chat/Call buttons below -- same pattern as
+    // window._bookingDetailVendor on the customer's own detail screen.
+    window._vendorBookingDetailCustomer={id:c.id,name:c.name||'Customer',phone:b.phone||c.phone||'',bookingId:b.id};
     var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
     var rows=[
       ['Booking #',b.bookingNumber||'—'],
@@ -9131,6 +9161,24 @@ async function openVendorBookingDetail(id){
         +'<button onclick="vendorAcceptEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">Accept &amp; Continue</button>'
         +'</div></div>';
     }
+    // Same "nothing left to do here" logic as the customer's own detail
+    // screen -- Chat/Call don't make sense once the booking is done, dead,
+    // or under a live dispute. Cancel additionally disappears the moment
+    // the job has actually started (vendorJobStartedAt), matching the
+    // backend's own guard on this exact endpoint.
+    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorHasOpenDispute;
+    var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
+    var contactAndCancelBlock=(vendorHideContactButtons&&!vendorCancellable)?'':(
+      '<div style="margin-top:14px;">'
+      +(vendorHideContactButtons?'':(
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:'+(vendorCancellable?'10px':'0')+';">'
+        +'<button onclick="openVendorBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
+        +'<button onclick="openVendorBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
+        +'</div>'
+      ))
+      +(vendorCancellable?'<button onclick="openCancelBookingReasonModal(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel Booking</button>':'')
+      +'</div>'
+    );
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
       +itemsHtml
@@ -9142,6 +9190,7 @@ async function openVendorBookingDetail(id){
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(b.phone||c.phone||'—')+'</span></div>'
       +'<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12px;color:#9A9390;">Address</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;max-width:60%;">'+(c.address||'—')+(c.state?', '+c.state:'')+'</span></div>'
       +'</div>'
+      +contactAndCancelBlock
       +pendingEditBlock
       +vendorStatusBlock;
     showBottomSheet('Booking Details',content);
@@ -9542,10 +9591,9 @@ async function openCustomerHistoryDetail(kind,id){
         +'</div></div>'
       ):'')
       +(hideContactButtons?'':(
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">'
           +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
           +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
-          +'<button onclick="openBookingWhatsApp()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>WhatsApp</button>'
         +'</div>'
       ))
       +((editable||cancellable)?(
@@ -9576,9 +9624,16 @@ function openBookingCall(){
   var v=window._bookingDetailVendor;if(!v)return;
   openCallModal(v.name,v.phone||'+234000',v.type==='EVENT_PLANNING'?'Event Planner':'Home Cook','👤');
 }
-function openBookingWhatsApp(){
-  var v=window._bookingDetailVendor;if(!v)return;
-  window.open('https://wa.me/'+(v.phone||'234000').replace(/[^0-9]/g,''),'_blank');
+// Vendor's own mirror of openBookingChat/openBookingCall above -- same
+// contextId:bookingId so both sides land in the exact same thread.
+function openVendorBookingChat(){
+  var c=window._vendorBookingDetailCustomer;if(!c||!c.id)return;
+  var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
+  openChat({name:c.name,em:'👤',phone:c.phone,otherUserId:c.id,contextType:'BOOKING',contextId:c.bookingId});
+}
+function openVendorBookingCall(){
+  var c=window._vendorBookingDetailCustomer;if(!c)return;
+  openCallModal(c.name,c.phone||'+234000','Customer','👤');
 }
 // A cancellation must always carry a reason -- both for the vendor/admin's
 // own visibility into why, and because the backend now requires it
@@ -9644,7 +9699,9 @@ async function confirmCancelBookingWithReason(){
     // never open.
     if(typeof closeCookBooking==='function')closeCookBooking();
     if(typeof closeEPBooking==='function')closeEPBooking();
-    eGo('history');
+    // Reachable from either side now (the vendor can cancel too) -- land
+    // wherever "back to my bookings" actually means for whoever just did it.
+    if(_eRole==='customer')eGo('history'); else if(typeof vendorNav==='function')vendorNav('orders');
   }catch(err){
     showToast&&showToast(err.message||'Could not cancel this booking','warning');
   }
@@ -9904,7 +9961,7 @@ function fillEAIPrompt(text){var el=document.getElementById('ai-prompt');if(el){
 function openEPBooking(id){var _id=isNaN(id)?id:+id;var ep=(window._EP_DATA||D.ep||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!ep){showToast&&showToast('Event planner not found','warning');return;}bookEP(id);}
 function bookCook(id){var _id=isNaN(id)?id:+id;var c=(window._HC_DATA||D.cooks||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!c){showToast&&showToast('Cook not found','warning');return;}_cb.cookId=id;_cb.cook=c;_cb.selected={};_cb.selectedPkg=null;_cb.total=0;_cb.details={};var ov=document.getElementById('__cook_bk_ov');if(!ov){ov=document.createElement('div');ov.id='__cook_bk_ov';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:#111;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;';document.body.appendChild(ov);}ov.style.display='block';ov.scrollTop=0;cookBkRender('packages');}
 function bookEP(id){var _id=isNaN(id)?id:+id;var ep=(window._EP_DATA||D.ep||[]).find(function(x){return x.id===_id||String(x.id)===String(id);});if(!ep){showToast&&showToast('EP not found','warning');return;}_epb.epId=id;_epb.ep=ep;_epb.selected={};_epb.selectedPkg=null;_epb.total=0;_epb.details={};var ov=document.getElementById('__ep_bk_ov');if(!ov){ov=document.createElement('div');ov.id='__ep_bk_ov';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:#111;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;';document.body.appendChild(ov);}ov.style.display='block';ov.scrollTop=0;epBkRender('packages');if(!window._favouriteIds)loadMyFavouriteIds().then(function(){if(_epb.phase==='packages')epBkRender('packages');});}
-function closeEPBooking(){var ov=document.getElementById('__ep_bk_ov');if(ov)ov.style.display='none';}
+function closeEPBooking(){var ov=document.getElementById('__ep_bk_ov');if(ov)ov.style.display='none';window._openBookingConfirmedOverlayId=null;}
 function addAIGroceries(){sendPlanToShopper();}
 function sendPlanToShopper(){
   if(!window._aiGroceries||!window._aiGroceries.length){showToast&&showToast('Generate a meal plan first','warning');return;}
@@ -9956,6 +10013,7 @@ function openCookBooking(id){
 function closeCookBooking(){
   var ov=document.getElementById('__cook_bk_ov');
   if(ov)ov.style.display='none';
+  window._openBookingConfirmedOverlayId=null;
 }
 
 function cookBkRender(phase){
@@ -10056,10 +10114,9 @@ function cookBkRender(phase){
             +'<div><div style="font-size:11px;color:#9A9390">Time</div><div style="font-weight:700;color:#F2EDE8;font-size:13px">'+(d.time||'TBD')+'</div></div>'
           +'</div>'
         +'</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'
           +'<button onclick="openCookChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4AC;</span>Chat</button>'
           +'<button onclick="callCook()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4DE;</span>Call</button>'
-          +'<button onclick="waCook()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4AC;</span>WhatsApp</button>'
         +'</div>'
         +'<div style="background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);border-radius:12px;padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start">'
           +'<span style="font-size:20px;flex-shrink:0">&#x1F4DD;</span>'
@@ -10387,6 +10444,14 @@ async function cookBkConfirmBooking(){
     // be paid later via the "Pay Now" retry button in History.
     payForBooking(res.booking.id, res.booking.totalKobo, function(){
       cookBkRender('confirmed');
+      // Live-tracked so bindBookingLiveUpdateListener's booking:updated
+      // handler can clear this screen the moment the vendor accepts/
+      // declines/cancels in the background, instead of it sitting frozen
+      // on its original just-submitted contents until the customer
+      // happens to navigate away and back through History themselves.
+      window._openBookingConfirmedOverlayId=res.booking.id;
+      bindBookingLiveUpdateListener();
+      if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
     });
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
@@ -10572,10 +10637,9 @@ function epBkRender(phase){
             +(d.guests?'<div style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:#9A9390;font-size:12px">Guests</span><span style="color:#F2EDE8;font-size:12px;font-weight:700">'+d.guests+' expected</span></div>':'')
           +'</div>'
         +'</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'
           +'<button onclick="openEPChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4AC;</span>Chat</button>'
           +'<button onclick="callEP()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4DE;</span>Call</button>'
-          +'<button onclick="waEP()" style="padding:12px 4px;border-radius:12px;border:none;background:#25D366;color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:22px">&#x1F4AC;</span>WhatsApp</button>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
           +'<button onclick="openEditBookingModal(_epb.booking)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(59,159,232,.3);background:transparent;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">&#x270F;&#xFE0F; Edit Booking</button>'
@@ -10720,6 +10784,12 @@ async function epBkConfirmBooking(){
     _epb.bookingNumber=res.booking.bookingNumber;
     _epb.booking=res.booking;
     epBkRender('confirmed');
+    // See the matching comment in cookBkConfirmBooking -- lets the vendor's
+    // accept/decline/cancel clear this screen live instead of it sitting
+    // frozen until the customer navigates away themselves.
+    window._openBookingConfirmedOverlayId=res.booking.id;
+    bindBookingLiveUpdateListener();
+    if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
     showToast&&showToast('Booking sent to '+(_epb.ep?_epb.ep.nm:'planner')+'! Ref '+res.booking.bookingNumber,'success');
   }catch(err){
     showToast&&showToast(err.message||'Could not create booking','warning');
@@ -10728,10 +10798,8 @@ async function epBkConfirmBooking(){
 
 function openCookChat(){if(!_cb||!_cb.cook)return;var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';openChat({name:_cb.cook.nm,em:_cb.cook.em||'👤',phone:_cb.cook.ph||'',otherUserId:_cb.cook.userId,contextType:'BOOKING',contextId:_cb.cook.id});}
 function callCook(){if(!_cb||!_cb.cook)return;openCallModal(_cb.cook.nm,_cb.cook.ph||'+234000',_cb.cook.sp||'',_cb.cook.em||'👤');}
-function waCook(){if(!_cb||!_cb.cook)return;window.open('https://wa.me/'+(_cb.cook.ph||'234000').replace(/[^0-9]/g,''),'_blank');}
 function openEPChat(){if(!_epb||!_epb.ep)return;var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';openChat({name:_epb.ep.nm,em:_epb.ep.em||'🎊',phone:_epb.ep.ph||'',otherUserId:_epb.ep.userId,contextType:'BOOKING',contextId:_epb.ep.id});}
 function callEP(){if(!_epb||!_epb.ep)return;openCallModal(_epb.ep.nm,_epb.ep.ph||'+234000','Event Planner',_epb.ep.em||'🎊');}
-function waEP(){if(!_epb||!_epb.ep)return;window.open('https://wa.me/'+(_epb.ep.ph||'234000').replace(/[^0-9]/g,''),'_blank');}
 
 var STATUS_COLORS={REQUESTED:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#E8392E',
   SEARCHING:'#F5A623',MATCHED:'#3B9FE8',BUILDING_LIST:'#3B9FE8',LIVE_CALL:'#3B9FE8',PACKAGING:'#3B9FE8',FINDING_RIDER:'#3B9FE8',RIDER_ASSIGNED:'#3B9FE8',OUT_FOR_DELIVERY:'#3B9FE8',DELIVERED:'#2ECC71'};

@@ -38,6 +38,19 @@ async function resolveBookingItems(items, vendorId) {
   return { selectedItemsSnapshot, itemsTotalKobo };
 }
 
+// Never let a stored guestCount exceed the package's own configured max --
+// authoritative server-side clamp. A client-side oninput clamp alone can't
+// be trusted as the sole enforcement (bypassable by any direct API call,
+// and belt-and-suspenders against whatever client-side quirk keeps making
+// this look broken to the user).
+function clampGuestCount(guestCount, servicePackage) {
+  if (guestCount == null || guestCount === "") return guestCount;
+  const n = parseInt(guestCount);
+  if (!Number.isFinite(n)) return guestCount;
+  if (servicePackage && servicePackage.guestCount) return Math.min(n, servicePackage.guestCount);
+  return n;
+}
+
 // Bookings cover catering, home-cook, and event-planning requests — custom
 // quoted engagements (a package + optional add-on items + an event date),
 // unlike Order's fixed-price catalog checkout. Vendor must accept before
@@ -76,7 +89,7 @@ async function createBooking(req, res, next) {
         eventDate: eventDate ? new Date(eventDate) : null,
         eventTime,
         venue,
-        guestCount,
+        guestCount: clampGuestCount(guestCount, servicePackage),
         phone,
         notes,
         paymentMethod: paymentMethod || "CARD",
@@ -143,7 +156,7 @@ async function getBooking(req, res, next) {
         vendor: { include: { user: { select: { id: true, name: true, phone: true, address: true } } } },
         servicePackage: true,
         ratings: true,
-        customer: { select: { name: true, phone: true, address: true, state: true } },
+        customer: { select: { id: true, name: true, phone: true, address: true, state: true } },
       },
     });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
@@ -185,12 +198,11 @@ async function buildBookingEditData(booking, body) {
   if (eventDate !== undefined) data.eventDate = eventDate ? new Date(eventDate) : null;
   if (eventTime !== undefined) data.eventTime = eventTime;
   if (venue !== undefined) data.venue = venue;
-  if (guestCount !== undefined) data.guestCount = guestCount;
   if (notes !== undefined) data.notes = notes;
 
+  let newServicePackage = null;
   if (servicePackageId !== undefined || items !== undefined) {
     let totalKobo = 0;
-    let newServicePackage = null;
     const pkgId = servicePackageId !== undefined ? servicePackageId : booking.servicePackageId;
     if (pkgId) {
       newServicePackage = await prisma.servicePackage.findUnique({ where: { id: pkgId } });
@@ -209,6 +221,14 @@ async function buildBookingEditData(booking, body) {
     data.servicePackageId = newServicePackage?.id || null;
     data.selectedItems = newSelectedItems;
     data.totalKobo = totalKobo;
+  }
+
+  if (guestCount !== undefined) {
+    // Clamp against whichever package actually governs this edit -- the
+    // newly-selected one if this same edit also changed it, otherwise the
+    // booking's existing package (fetched only if not already fetched above).
+    const relevantPackage = newServicePackage || (booking.servicePackageId ? await prisma.servicePackage.findUnique({ where: { id: booking.servicePackageId } }) : null);
+    data.guestCount = clampGuestCount(guestCount, relevantPackage);
   }
   return data;
 }
@@ -649,12 +669,15 @@ async function confirmBookingCompletion(req, res, next) {
 async function cancelBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
-    if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    const isCustomer = booking.customerId === req.user.id;
+    const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
+    if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
     if (["COMPLETED", "CANCELLED"].includes(booking.status)) return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
     if (booking.vendorJobStartedAt) return res.status(400).json({ error: "The vendor has already started this job — it can no longer be cancelled." });
 
-    // A reason is always required now -- both so the vendor/admin can see
-    // WHY, not just that it happened, and so the admin panel's booking
+    // A reason is always required now -- both so the other side/admin can
+    // see WHY, not just that it happened, and so the admin panel's booking
     // detail has something real to show instead of nothing at all.
     const reason = (req.body.reason || "").trim();
     if (!reason) return res.status(400).json({ error: "A cancellation reason is required." });
@@ -665,15 +688,19 @@ async function cancelBooking(req, res, next) {
     // Event Planner bookings never hold anything, so this is always a safe
     // no-op for them (refundAllHoldsForContext handles zero holds cleanly).
     if (["PAID", "CONFIRMED"].includes(booking.status)) {
-      await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking cancelled by customer" });
+      await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: `Booking cancelled by ${isCustomer ? "customer" : "vendor"}` });
     }
+    const cancelledBy = isCustomer ? "CUSTOMER" : "VENDOR";
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason, cancelledBy: "CUSTOMER" },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason, cancelledBy },
     });
     closeSupportThreadForContext(booking.id);
-    if (booking.vendor) {
+    // Notify whichever side didn't do the cancelling.
+    if (isCustomer && booking.vendor) {
       await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking cancelled", `The customer cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
+    } else if (isVendor) {
+      await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking cancelled", `The vendor cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
     }
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
