@@ -511,6 +511,10 @@ model EventRequest {
   budgetKobo        Int?
   servicesRequested String[] @default([])
   notes             String?
+  // Same concept as a proposal's own "Timeline" field (e.g. "Ready within
+  // 2 weeks") but from the customer's side -- when they need this sorted
+  // by, so a planner can judge fit before ever writing a proposal.
+  timeframe         String?
 
   status             EventRequestStatus @default(OPEN)
   acceptedProposalId String?

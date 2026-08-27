@@ -17,6 +17,7 @@ const bookingRemindersSvc = require("../services/bookingReminders.service");
 //   user:{userId}          — personal channel (notifications)
 //   dispatch:riders        — every ONLINE rider, for new-delivery broadcasts
 //   dispatch:shoppers      — every ONLINE shopper, for new-session broadcasts
+//   dispatch:eventplanners — every connected EVENT_PLANNER vendor, for real-time event-request/proposal updates
 //   vendor:{vendorProfileId} — a vendor's own dashboard (new booking alerts)
 //   booking:{bookingId}
 //   shop-session:{sessionId}
@@ -46,7 +47,7 @@ function attachLiveSocket(httpServer) {
           name: true,
           isSuperAdmin: true,
           isContentAdmin: true,
-          vendorProfile: { select: { id: true } },
+          vendorProfile: { select: { id: true, vtype: true } },
           riderProfile: { select: { id: true } },
           shopperProfile: { select: { id: true } },
         },
@@ -63,6 +64,7 @@ function attachLiveSocket(httpServer) {
     const user = socket.user;
     socket.join(`user:${user.id}`);
     if (user.vendorProfile) socket.join(`vendor:${user.vendorProfile.id}`);
+    if (user.vendorProfile && user.vendorProfile.vtype === "EVENT_PLANNER") socket.join(`dispatch:eventplanners`);
     if (user.riderProfile) socket.join(`dispatch:riders`);
     if (user.shopperProfile) socket.join(`dispatch:shoppers`);
     // Real-time Live Chat notifications (see chat.controller.js's

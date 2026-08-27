@@ -12,7 +12,7 @@ const { generateReference } = require("../utils/reference");
 
 async function createEventRequest(req, res, next) {
   try {
-    const { eventType, eventDate, venue, guestCount, budgetKobo, servicesRequested, notes, posterName, posterPhone } = req.body;
+    const { eventType, eventDate, venue, guestCount, budgetKobo, servicesRequested, notes, posterName, posterPhone, timeframe } = req.body;
     if (!eventType || !eventDate || !venue) {
       return res.status(400).json({ error: "eventType, eventDate, and venue are required." });
     }
@@ -32,8 +32,13 @@ async function createEventRequest(req, res, next) {
         budgetKobo: budgetKobo != null ? Number(budgetKobo) : null,
         servicesRequested: Array.isArray(servicesRequested) ? servicesRequested : [],
         notes: notes || null,
+        timeframe: timeframe || null,
       },
     });
+    // Every qualified (EVENT_PLANNER) vendor currently connected sees this
+    // the moment it's posted -- previously only ever appeared once a
+    // planner happened to reload/reopen their dashboard.
+    req.app.get("io")?.to("dispatch:eventplanners").emit("event-request:updated", { requestId: request.id, reason: "created" });
     res.status(201).json({ request });
   } catch (err) {
     next(err);
@@ -136,14 +141,18 @@ async function submitProposal(req, res, next) {
       },
     });
 
+    const io = req.app.get("io");
     await notify(
-      req.app.get("io"),
+      io,
       request.customerId,
       "ORDER_UPDATE",
       "New proposal received",
       `An event planner submitted a proposal for your ${request.eventType} request.`,
       { eventRequestId: request.id }
     );
+    // The customer's own open "My Requests"/detail view live-refreshes
+    // instead of only ever showing the new proposal after a manual reload.
+    io?.to(`user:${request.customerId}`).emit("event-request:updated", { requestId: request.id, reason: "proposal" });
 
     res.status(201).json({ proposal });
   } catch (err) {
@@ -163,6 +172,26 @@ async function acceptProposal(req, res, next) {
     if (proposal.status !== "PENDING") return res.status(400).json({ error: "This proposal is no longer pending." });
 
     const io = req.app.get("io");
+
+    // What the customer originally asked for (request.servicesRequested)
+    // merged with what the winning planner actually offered
+    // (proposal.servicesIncluded) -- neither ever carried through into the
+    // real Booking before, so the booking detail screen showed no items at
+    // all for a proposal-won booking, even though both sides had already
+    // agreed on a real list of services. Deduped case-insensitively;
+    // stored in the exact selectedItems shape the booking-detail screens
+    // already render (name + qty), zero-priced since these are descriptive
+    // service labels, not individually priced line items -- the real total
+    // is proposal.priceKobo as a whole.
+    const mergedServiceNames = [];
+    const seenLower = new Set();
+    for (const name of [...(request.servicesRequested || []), ...(proposal.servicesIncluded || [])]) {
+      const key = String(name).trim().toLowerCase();
+      if (!key || seenLower.has(key)) continue;
+      seenLower.add(key);
+      mergedServiceNames.push(String(name).trim());
+    }
+    const selectedItemsSnapshot = mergedServiceNames.map((name) => ({ name, qty: 1, priceKobo: 0, custom: true }));
 
     const booking = await prisma.$transaction(async (tx) => {
       // Event Planning bookings no longer go through escrow at all (see
@@ -185,6 +214,7 @@ async function acceptProposal(req, res, next) {
           eventDate: request.eventDate,
           venue: request.venue,
           guestCount: request.guestCount,
+          selectedItems: selectedItemsSnapshot,
           notes: [request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
           paymentMethod: "CASH_ON_DELIVERY",
           totalKobo: proposal.priceKobo,
@@ -216,6 +246,11 @@ async function acceptProposal(req, res, next) {
     if (winnerVendor) {
       await notify(io, winnerVendor.userId, "ORDER_UPDATE", "Proposal accepted!", "Your event proposal was accepted -- the customer has booked you.", { bookingId: booking.id });
     }
+    // The request is no longer OPEN -- every other planner's dashboard
+    // list live-drops it instead of only on their next reload; the
+    // customer's own view live-updates too.
+    io?.to("dispatch:eventplanners").emit("event-request:updated", { requestId: request.id, reason: "accepted" });
+    io?.to(`user:${request.customerId}`).emit("event-request:updated", { requestId: request.id, reason: "accepted" });
 
     res.json({ booking });
   } catch (err) {
@@ -240,16 +275,18 @@ async function declineProposal(req, res, next) {
 
     const updated = await prisma.eventProposal.update({ where: { id: proposal.id }, data: { status: "DECLINED" } });
 
+    const io = req.app.get("io");
     const vendorProfile = await prisma.vendorProfile.findUnique({ where: { id: proposal.vendorId }, select: { userId: true } });
     if (vendorProfile) {
       await notify(
-        req.app.get("io"),
+        io,
         vendorProfile.userId,
         "ORDER_UPDATE",
         "Proposal Declined",
         `Your proposal (₦${Math.round(proposal.priceKobo / 100).toLocaleString()}) for the ${request.eventType} request was declined by the customer.`,
         { eventRequestId: request.id }
       );
+      io?.to(`vendor:${proposal.vendorId}`).emit("event-request:updated", { requestId: request.id, reason: "proposal-declined" });
     }
     res.json({ proposal: updated });
   } catch (err) {
@@ -268,6 +305,7 @@ async function cancelEventRequest(req, res, next) {
       prisma.eventRequest.update({ where: { id: request.id }, data: { status: "CANCELLED" } }),
       prisma.eventProposal.updateMany({ where: { eventRequestId: request.id, status: "PENDING" }, data: { status: "WITHDRAWN" } }),
     ]);
+    req.app.get("io")?.to("dispatch:eventplanners").emit("event-request:updated", { requestId: request.id, reason: "cancelled" });
     res.json({ ok: true });
   } catch (err) {
     next(err);

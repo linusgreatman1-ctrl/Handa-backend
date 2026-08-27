@@ -1160,6 +1160,24 @@ function connectSocket(){
       showChatRequestBanner(name,roleWord,n.data.threadId);
     }
   });
+  // Event-request/proposal activity (posted, proposed on, accepted,
+  // declined, cancelled) -- previously only ever visible after a manual
+  // reload. Refreshes whichever of these views is actually open right now;
+  // a no-op for all the others (most of the time, nothing here is open at
+  // all). erv-body/my-requests-list/event-detail-body are real DOM ids
+  // already used by the (non-live) initial renders above.
+  _socket.on('event-request:updated', function(p){
+    if(!p||!p.requestId)return;
+    if(document.getElementById('event-requests-section')&&typeof loadOpenEventRequests==='function')loadOpenEventRequests();
+    if(document.getElementById('my-requests-list')&&typeof loadMyEventRequestsList==='function')loadMyEventRequestsList();
+    if(window._openEventRequestId===p.requestId){
+      var evOv=document.getElementById('event-detail-modal');
+      if(evOv&&typeof openEventRequestDetailModal==='function')openEventRequestDetailModal(p.requestId);
+      var ervEl=document.getElementById('erv-body');
+      var procOv=document.getElementById('procedure-ov');
+      if(ervEl&&procOv&&procOv.style.display!=='none'&&typeof openEventRequestForVendor==='function')openEventRequestForVendor(p.requestId);
+    }
+  });
   // Socket.IO rooms don't survive a reconnect (network blip, idle timeout,
   // Render sleep/wake) -- without this, a client silently drops out of
   // every shop-session/booking/chat room it had joined and never gets
@@ -1570,6 +1588,7 @@ function openPostEventRequestModal(){
     + _arField('Venue / Location','er-venue','e.g. Eko Hotel, Lagos','')
     + _arField('Expected Guests','er-guests','e.g. 200','number')
     + _arField('Budget (₦)','er-budget','e.g. 1500000','number')
+    + _arField('Timeframe','er-timeframe','e.g. Need this within 2 weeks','')
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Needed</label>'
     + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="er-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
     + '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" id="er-svc-other-cb" onchange="document.getElementById(\'er-svc-other-wrap\').style.display=this.checked?\'block\':\'none\'" style="margin:0;">Others</label>'
@@ -1594,6 +1613,7 @@ async function submitEventRequest(){
   var venue=(document.getElementById('er-venue')||{}).value||'';
   var guests=(document.getElementById('er-guests')||{}).value||'';
   var budget=(document.getElementById('er-budget')||{}).value||'';
+  var timeframe=(document.getElementById('er-timeframe')||{}).value||'';
   var notes=(document.getElementById('er-notes')||{}).value||'';
   var services=[].slice.call(document.querySelectorAll('.er-svc:checked')).map(function(c){return c.value;});
   var otherSvc=(document.getElementById('er-svc-other')||{}).value||'';
@@ -1605,7 +1625,7 @@ async function submitEventRequest(){
       posterName:posterName.trim()||undefined, posterPhone:posterPhone.trim()||undefined,
       eventType:eventType, eventDate:eventDate, venue:venue.trim(),
       guestCount: guests?parseInt(guests):null, budgetKobo: budget?Math.round(parseFloat(budget)*100):null,
-      servicesRequested: services, notes: notes.trim()||null,
+      servicesRequested: services, notes: notes.trim()||null, timeframe: timeframe.trim()||null,
     })});
     closeEventRequestModal();
     showToast&&showToast('Event request posted — planners can now send proposals','success');
@@ -1622,9 +1642,16 @@ async function openMyEventRequestsModal(){
     + '</div></div>';
   var existing=document.getElementById('my-requests-modal'); if(existing) existing.remove();
   document.body.insertAdjacentHTML('beforeend', html);
+  loadMyEventRequestsList();
+}
+// Split out so the real-time event-request:updated listener (connectSocket)
+// can re-run it whenever a proposal comes in on any of the customer's own
+// requests, instead of the list only ever refreshing on the next manual open.
+async function loadMyEventRequestsList(){
+  var list = document.getElementById('my-requests-list');
+  if(!list)return;
   try{
     var res = await api('/event-requests?as=customer');
-    var list = document.getElementById('my-requests-list');
     if(!res.requests.length){ list.innerHTML='<div style="text-align:center;padding:20px;">No event requests yet.</div>'; return; }
     var statusColors={OPEN:'#F5A623',PROPOSAL_ACCEPTED:'#2ECC71',CANCELLED:'#9A9390'};
     list.innerHTML = res.requests.map(function(r){
@@ -1636,7 +1663,7 @@ async function openMyEventRequestsModal(){
         + '</div>';
     }).join('');
   }catch(err){
-    document.getElementById('my-requests-list').textContent = err.message||'Could not load requests';
+    list.textContent = err.message||'Could not load requests';
   }
 }
 function closeMyEventRequestsModal(){
@@ -1644,6 +1671,7 @@ function closeMyEventRequestsModal(){
 }
 
 async function openEventRequestDetailModal(id){
+  window._openEventRequestId=id;
   var html = '<div id="event-detail-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;">'
     + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:480px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">Proposals</div><button onclick="closeEventDetailModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">✕</button></div>'
@@ -1662,6 +1690,7 @@ async function openEventRequestDetailModal(id){
       + (r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
       + '</div>'
       + (r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
+      + (r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
       + (r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">"'+r.notes+'"</div>':'')
       + '</div>';
     if(!r.proposals.length){
@@ -1692,6 +1721,7 @@ async function openEventRequestDetailModal(id){
 }
 function closeEventDetailModal(){
   var el=document.getElementById('event-detail-modal'); if(el) el.remove();
+  window._openEventRequestId=null;
 }
 async function acceptEventProposal(requestId, proposalId){
   if(!confirm('Accept this proposal? This creates a real booking and declines the others.')) return;
@@ -1729,6 +1759,7 @@ async function declineEventProposal(requestId, proposalId){
 // EP's own submitted proposal and a real waiting-for-feedback state,
 // instead of just an inline status pill on the list card.
 async function openEventRequestForVendor(requestId){
+  window._openEventRequestId=requestId;
   showProcedureModal('<div style="padding:0 0 20px;" id="erv-body"><div style="text-align:center;padding:30px;color:#9A9390;">Loading…</div></div>');
   try{
     var res=await api('/event-requests/'+requestId);
@@ -1742,6 +1773,7 @@ async function openEventRequestForVendor(requestId){
       +(r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
       +'</div>'
       +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
+      +(r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
       +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">"'+r.notes+'"</div>':'')
       +'<div style="border-top:1px solid #2A2850;margin-top:10px;padding-top:10px;font-size:12px;color:#9A9390;">Posted by <span style="color:#F2EDE8;font-weight:700;">'+(r.posterName||(r.customer&&r.customer.name)||'Customer')+'</span>'+((r.posterPhone||(r.customer&&r.customer.phone))?' • '+(r.posterPhone||r.customer.phone):'')+'</div>'
       +'</div>';
@@ -5983,7 +6015,7 @@ function confirmEscrowPayment(){
 // reference, bankDetails} instead of an authorizationUrl when
 // paymentMethod is BANK_TRANSFER \u2014 this shows the real company bank
 // details, then polls until an admin confirms the transfer was received.
-function openManualBankTransferModal(res,onConfirmed){
+function openManualBankTransferModal(res,onConfirmed,onCancel){
   var bd=res.bankDetails||{};
   showProcedureModal(
     '<div style="padding:0 0 20px;" id="mbt-modal">'
@@ -6000,10 +6032,24 @@ function openManualBankTransferModal(res,onConfirmed){
     +'</div>'
     +'<div id="mbt-status" style="text-align:center;font-size:12px;color:#9A9390;margin-bottom:14px;"></div>'
     +'<button id="mbt-confirm-btn" onclick="confirmManualBankTransfer(\''+res.requestId+'\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">\u2705 I\'ve Made the Transfer</button>'
-    +'<button onclick="closeProcedureModal();window._mbtStop&&window._mbtStop();" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
+    +'<button onclick="cancelManualBankTransferModal()" style="width:100%;margin-top:8px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
     +'</div>'
   );
   window._mbtOnConfirmed=onConfirmed;
+  window._mbtOnCancel=onCancel||null;
+}
+// Backing out of "pay by bank transfer" goes back to the payment-method
+// screen it was reached from (when one was given -- e.g. the insufficient-
+// funds Add Funds screen, so a different method can be picked) instead of
+// unconditionally closing everything and dropping the customer wherever
+// the underlying screen happens to be. Falls back to a plain close for
+// every other caller of openManualBankTransferModal that didn't provide one.
+function cancelManualBankTransferModal(){
+  window._mbtStop&&window._mbtStop();
+  var onCancel=window._mbtOnCancel;
+  window._mbtOnCancel=null;
+  if(onCancel){ onCancel(); }
+  else { closeProcedureModal(); }
 }
 function confirmManualBankTransfer(requestId){
   var btn=document.getElementById('mbt-confirm-btn');if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Waiting for confirmation\u2026';}
@@ -8128,6 +8174,10 @@ var _afMethod='CARD';
 function showAddFundsModal(minKobo,onSuccess){
   _afMethod='CARD';
   window._addFundsOnSuccess=onSuccess||null;
+  // Stashed so a sub-flow (Bank Transfer) can reopen this exact screen,
+  // with the same shortfall, if the customer backs out of it wanting a
+  // different payment method instead.
+  window._afMinKobo=minKobo||null;
   var prefill=minKobo?Math.ceil(minKobo/100):'';
   // minKobo means this was opened to cover a SPECIFIC shortfall (a booking
   // edit's new total) -- that number is exact (the edit's own new total
@@ -8190,7 +8240,9 @@ async function submitAddFunds(){
       else if(typeof loadEscrowWalletCard==='function')loadEscrowWalletCard();
     }
     if(res.manual){
-      openManualBankTransferModal(res,function(){toast('Funds added!');afterFunded();});
+      openManualBankTransferModal(res,function(){toast('Funds added!');afterFunded();},function(){
+        showAddFundsModal(window._afMinKobo,onSuccess);
+      });
       return;
     }
     closeProcedureModal();
