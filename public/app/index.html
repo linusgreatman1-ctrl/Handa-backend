@@ -11145,14 +11145,15 @@ function callCook(){if(!_cb||!_cb.cook)return;openCallModal(_cb.cook.nm,_cb.cook
 function openEPChat(){if(!_epb||!_epb.ep)return;var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';openChat({name:_epb.ep.nm,em:_epb.ep.em||'🎊',phone:_epb.ep.ph||'',otherUserId:_epb.ep.userId,contextType:'BOOKING',contextId:_epb.ep.id});}
 function callEP(){if(!_epb||!_epb.ep)return;openCallModal(_epb.ep.nm,_epb.ep.ph||'+234000','Event Planner',_epb.ep.em||'🎊');}
 
-var STATUS_COLORS={REQUESTED:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#E8392E',
+var STATUS_COLORS={REQUESTED:'#F5A623',OPEN:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#E8392E',
   SEARCHING:'#F5A623',MATCHED:'#3B9FE8',BUILDING_LIST:'#3B9FE8',LIVE_CALL:'#3B9FE8',PACKAGING:'#3B9FE8',FINDING_RIDER:'#3B9FE8',RIDER_ASSIGNED:'#3B9FE8',OUT_FOR_DELIVERY:'#3B9FE8',DELIVERED:'#2ECC71'};
 async function populateHistory(){
   _allOrders = [];
   try{
-    var [bRes,sRes]=await Promise.all([
+    var [bRes,sRes,erRes]=await Promise.all([
       api('/bookings?as=customer').catch(function(){return {bookings:[]};}),
       api('/shop-sessions?as=customer').catch(function(){return {sessions:[]};}),
+      api('/event-requests?as=customer').catch(function(){return {requests:[]};}),
     ]);
     (bRes.bookings||[]).forEach(function(b){
       var isEP=b.type==='EVENT_PLANNING';
@@ -11167,6 +11168,23 @@ async function populateHistory(){
         type: isEP?'Event':'Home Cook',
         ts: new Date(b.createdAt).getTime(),
         bookingId: b.id, totalKobo: b.totalKobo
+      });
+    });
+    // A posted event request isn't a real Booking until a proposal is
+    // accepted (see acceptEventProposal) -- until then it only ever
+    // showed up via "My Requests" or the one-off notification, never here.
+    // Once accepted (PROPOSAL_ACCEPTED), the real Booking created for it
+    // already appears via the bookings fetch above, so skip it here to
+    // avoid listing the same event twice.
+    (erRes.requests||[]).filter(function(r){return r.status!=='PROPOSAL_ACCEPTED';}).forEach(function(r){
+      _allOrders.push({
+        icon:'🎊',
+        title:r.eventType+' Request',
+        sub:r.venue+(r._count&&r._count.proposals?' • '+r._count.proposals+' proposal'+(r._count.proposals===1?'':'s'):''),
+        date:new Date(r.eventDate).toLocaleDateString(),
+        amount:Math.round((r.budgetKobo||0)/100),
+        status:r.status,statusColor:STATUS_COLORS[r.status]||'#9A9390',type:'Event',ts:new Date(r.createdAt).getTime(),
+        eventRequestId:r.id
       });
     });
     (sRes.sessions||[]).forEach(function(s){
@@ -11208,7 +11226,7 @@ function renderEHistoryItems(orders){
     // No "Pay Now" here -- payment happens immediately when the request is
     // sent (see cookBkConfirmBooking), before this list is ever reached, so
     // there's nothing left to pay by the time a booking shows up in History.
-    var detailClick=o.bookingId?"openCustomerHistoryDetail('booking','"+o.bookingId+"')":(o.sessionId?"openCustomerHistoryDetail('session','"+o.sessionId+"')":'');
+    var detailClick=o.bookingId?"openCustomerHistoryDetail('booking','"+o.bookingId+"')":(o.sessionId?"openCustomerHistoryDetail('session','"+o.sessionId+"')":(o.eventRequestId?"openEventRequestDetailModal('"+o.eventRequestId+"')":''));
     return '<div onclick="'+detailClick+'" style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;'+(detailClick?'cursor:pointer;':'')+'">'
       +'<div style="width:44px;height:44px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+o.icon+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px;color:#F2EDE8">'+o.title+'</div>'
