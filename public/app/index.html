@@ -876,7 +876,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <div style="font-weight:800;font-size:17px;color:#F2EDE8;" id="call-modal-name">Contact</div>
       <div style="font-size:12px;color:#9A9390;margin-top:3px;" id="call-modal-role"></div></div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
-      <button onclick="doCallAction('inapp')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;">
+      <button id="call-modal-inapp-btn" onclick="doCallAction('inapp')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;">
         <div style="width:42px;height:42px;background:rgba(46,204,113,.12);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">&#x1F4DE;</div>
         <div><div style="font-weight:700;font-size:14px;">In-App Call</div><div style="font-size:12px;color:#9A9390;">Free &#x2022; Encrypted</div></div></button>
       <button onclick="doCallAction('phone')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;">
@@ -888,6 +888,12 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
     <button onclick="document.getElementById('call-modal').style.display='none'" style="width:100%;padding:12px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:14px;cursor:pointer;">Cancel</button>
   </div></div>
+
+<!-- ═══ BOOKING CALL (real in-app audio call, customer ↔ vendor) ═══ -->
+<div id="bcall-ov" style="display:none;position:fixed;inset:0;background:rgba(10,10,14,.94);z-index:9970;align-items:center;justify-content:center;">
+  <div id="bcall-body" style="width:100%;max-width:380px;padding:28px 24px;text-align:center;font-family:'DM Sans',sans-serif;"></div>
+</div>
+<audio id="bcall-remote-audio" autoplay style="display:none;"></audio>
 
 
 
@@ -1194,6 +1200,7 @@ function connectSocket(){
   });
   confirmCallBindListeners();
   bindGlobalChatRequestListener();
+  bcallBindListeners();
   refreshNotifBadge();
 }
 
@@ -4546,6 +4553,237 @@ async function flipRtcCamera(){
   }
 }
 
+// ══════════════════════════════════════════════════════
+// BOOKING CALL — a real in-app audio call between a customer and a
+// vendor (Home Cook / Event Planner), reusing the exact same
+// RTCPeerConnection/ICE-server approach already proven above for the
+// Shop-For-Me live call. Unlike SFM, there's no live-call screen both
+// sides are already sitting on together, so this is a real ring
+// handshake first (bookingcall:invite/accept/decline/cancel/end over
+// each side's personal user:{id} room) and only once accepted does the
+// SDP/ICE exchange (bookingcall:offer/answer/ice-candidate) start —
+// same relay shape as webrtc:*/confirmcall:*, its own event namespace
+// so it can never collide with either.
+// ══════════════════════════════════════════════════════
+var _bcallRingTimer=null;
+function bcallStart(){
+  var otherUserId=window._callOtherUserId,bookingId=window._callBookingId||null;
+  var name=window._callName||'Contact',avatar=window._callAvatar||'👤',role=window._callRole||'';
+  if(!otherUserId){showToast&&showToast('In-app call is not available here yet.','warning');return;}
+  if(window._bcall||window._bcallIncoming){showToast&&showToast('You are already on a call.','warning');return;}
+  window._bcall={role:'caller',bookingId:bookingId,otherUserId:otherUserId,otherName:name,otherAvatar:avatar,otherRole:role,pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false};
+  renderBcallOverlay();
+  if(bookingId&&_socket)_socket.emit('booking:join',{bookingId:bookingId});
+  if(_socket)_socket.emit('bookingcall:invite',{toUserId:otherUserId,bookingId:bookingId,callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤',callerRole:S.role||''});
+  clearTimeout(_bcallRingTimer);
+  _bcallRingTimer=setTimeout(function(){
+    if(window._bcall&&window._bcall.status==='ringing'){
+      showToast&&showToast('No answer','warning');
+      bcallEnd();
+    }
+  },30000);
+}
+function bcallCancelOutgoing(){bcallEnd();}
+function bcallAccept(){
+  var inc=window._bcallIncoming;if(!inc)return;
+  window._bcallIncoming=null;
+  window._bcall={role:'callee',bookingId:inc.bookingId,otherUserId:inc.fromUserId,otherName:inc.callerName,otherAvatar:inc.callerAvatar,otherRole:inc.callerRole,pc:null,localStream:null,remoteSocketId:inc.fromSocketId,status:'connecting',startedAt:null,micMuted:false};
+  renderBcallOverlay();
+  if(inc.bookingId&&_socket)_socket.emit('booking:join',{bookingId:inc.bookingId});
+  bcallSetupPeer().then(function(){
+    if(_socket)_socket.emit('bookingcall:accept',{toSocketId:inc.fromSocketId,bookingId:inc.bookingId});
+  });
+}
+function bcallDecline(){
+  var inc=window._bcallIncoming;if(!inc)return;
+  if(_socket)_socket.emit('bookingcall:decline',{toSocketId:inc.fromSocketId,bookingId:inc.bookingId});
+  window._bcallIncoming=null;
+  renderBcallOverlay();
+}
+async function bcallSetupPeer(){
+  var c=window._bcall;if(!c)return;
+  if(typeof RTCPeerConnection==='undefined'||!navigator.mediaDevices){
+    showToast&&showToast('Calls are not supported in this browser','warning');
+    bcallTeardown();
+    return;
+  }
+  try{
+    c.localStream=await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(err){
+    c.localStream=null;
+  }
+  var iceServers=await sfmFetchIceServers();
+  var pc=new RTCPeerConnection({iceServers:iceServers});
+  if(window._bcall!==c)return; // torn down while awaiting getUserMedia/ICE config
+  c.pc=pc;
+  if(c.localStream){
+    c.localStream.getTracks().forEach(function(t){pc.addTrack(t,c.localStream);});
+  }else{
+    pc.addTransceiver('audio',{direction:'recvonly'});
+    showToast&&showToast('Mic unavailable — you can still listen','warning');
+  }
+  pc.onicecandidate=function(ev){
+    if(ev.candidate&&c.remoteSocketId&&_socket){
+      _socket.emit('bookingcall:ice-candidate',{toSocketId:c.remoteSocketId,candidate:ev.candidate,bookingId:c.bookingId});
+    }
+  };
+  pc.ontrack=function(ev){
+    var el=document.getElementById('bcall-remote-audio');
+    if(el)el.srcObject=ev.streams[0];
+  };
+  pc.onconnectionstatechange=function(){
+    if(window._bcall!==c)return;
+    if(pc.connectionState==='connected'&&c.status!=='connected'){
+      c.status='connected';c.startedAt=Date.now();
+      renderBcallOverlay();
+      clearInterval(window._bcallTickTimer);
+      window._bcallTickTimer=setInterval(function(){if(window._bcall&&window._bcall.status==='connected')renderBcallOverlay();},1000);
+    }
+  };
+}
+function bcallBindListeners(){
+  if(!_socket||_socket._bcallBound)return;
+  _socket._bcallBound=true;
+  _socket.on('bookingcall:incoming',function(p){
+    if(!p)return;
+    if(window._bcall||window._bcallIncoming){
+      if(_socket)_socket.emit('bookingcall:decline',{toSocketId:p.fromSocketId,bookingId:p.bookingId});
+      return;
+    }
+    window._bcallIncoming=p;
+    renderBcallOverlay();
+  });
+  _socket.on('bookingcall:accepted',function(p){
+    var c=window._bcall;
+    if(!c||c.role!=='caller'||c.otherUserId!==p.fromUserId)return;
+    clearTimeout(_bcallRingTimer);
+    c.remoteSocketId=p.fromSocketId;
+    c.status='connecting';
+    renderBcallOverlay();
+    bcallSetupPeer().then(function(){
+      if(window._bcall!==c||!c.pc)return;
+      c.pc.createOffer().then(function(offer){
+        return c.pc.setLocalDescription(offer).then(function(){
+          _socket.emit('bookingcall:offer',{toSocketId:c.remoteSocketId,sdp:offer,bookingId:c.bookingId});
+        });
+      }).catch(function(){});
+    });
+  });
+  _socket.on('bookingcall:declined',function(p){
+    var c=window._bcall;
+    if(!c||c.role!=='caller'||c.otherUserId!==p.fromUserId)return;
+    clearTimeout(_bcallRingTimer);
+    showToast&&showToast((c.otherName||'They')+' declined the call','warning');
+    bcallTeardown();
+  });
+  _socket.on('bookingcall:cancelled',function(p){
+    var inc=window._bcallIncoming;
+    if(inc&&inc.fromUserId===p.fromUserId){
+      window._bcallIncoming=null;
+      renderBcallOverlay();
+      showToast&&showToast('Missed call','info');
+    }
+  });
+  _socket.on('bookingcall:offer',function(p){
+    var c=window._bcall;
+    if(!c||c.role!=='callee'||!c.pc||p.fromSocketId!==c.remoteSocketId)return;
+    c.pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).then(function(){
+      return c.pc.createAnswer();
+    }).then(function(answer){
+      return c.pc.setLocalDescription(answer).then(function(){
+        _socket.emit('bookingcall:answer',{toSocketId:p.fromSocketId,sdp:answer,bookingId:c.bookingId});
+      });
+    }).catch(function(){});
+  });
+  _socket.on('bookingcall:answer',function(p){
+    var c=window._bcall;
+    if(!c||c.role!=='caller'||!c.pc||p.fromSocketId!==c.remoteSocketId)return;
+    c.pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).catch(function(){});
+  });
+  _socket.on('bookingcall:ice-candidate',function(p){
+    var c=window._bcall;
+    if(!c||!c.pc||p.fromSocketId!==c.remoteSocketId||!p.candidate)return;
+    c.pc.addIceCandidate(new RTCIceCandidate(p.candidate)).catch(function(){});
+  });
+  _socket.on('bookingcall:ended',function(p){
+    var c=window._bcall;
+    if(!c)return;
+    if(c.bookingId&&p.bookingId){ if(c.bookingId!==p.bookingId) return; }
+    else if(p.fromUserId!==c.otherUserId){ return; }
+    showToast&&showToast('Call ended','info');
+    bcallTeardown();
+  });
+}
+function bcallToggleMic(){
+  var c=window._bcall;if(!c||!c.localStream)return;
+  var t=c.localStream.getAudioTracks()[0];if(!t)return;
+  t.enabled=!t.enabled;c.micMuted=!t.enabled;
+  renderBcallOverlay();
+}
+function bcallToggleSpeaker(){
+  var el=document.getElementById('bcall-remote-audio');if(!el)return;
+  el.muted=!el.muted;
+  window._bcallSpeakerMuted=el.muted;
+  renderBcallOverlay();
+}
+function bcallEnd(){
+  var c=window._bcall;
+  if(c){
+    if(_socket&&c.remoteSocketId)_socket.emit('bookingcall:end',{toSocketId:c.remoteSocketId,bookingId:c.bookingId});
+    else if(_socket&&c.role==='caller')_socket.emit('bookingcall:cancel',{toUserId:c.otherUserId,bookingId:c.bookingId});
+  }
+  bcallTeardown();
+}
+function bcallTeardown(){
+  clearTimeout(_bcallRingTimer);
+  clearInterval(window._bcallTickTimer);
+  var c=window._bcall;
+  if(c){
+    if(c.pc){try{c.pc.close();}catch(e){}}
+    if(c.localStream){c.localStream.getTracks().forEach(function(t){try{t.stop();}catch(e){}});}
+  }
+  window._bcall=null;
+  var el=document.getElementById('bcall-remote-audio');if(el)el.srcObject=null;
+  renderBcallOverlay();
+}
+function bcallFmtDuration(ms){
+  var s=Math.floor(ms/1000);var m=Math.floor(s/60);s=s%60;
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+function renderBcallOverlay(){
+  var ov=document.getElementById('bcall-ov');var body=document.getElementById('bcall-body');
+  if(!ov||!body)return;
+  var inc=window._bcallIncoming,c=window._bcall;
+  if(!inc&&!c){ov.style.display='none';body.innerHTML='';return;}
+  ov.style.display='flex';
+  if(inc&&!c){
+    body.innerHTML=
+      '<div style="width:84px;height:84px;border-radius:50%;background:#242424;border:2px solid #2ECC71;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;">'+(inc.callerAvatar||'👤')+'</div>'
+      +'<div style="font-weight:800;font-size:19px;color:#F2EDE8;">'+(inc.callerName||'Someone')+'</div>'
+      +'<div style="font-size:13px;color:#9A9390;margin-top:4px;">Incoming call'+(inc.callerRole?' • '+inc.callerRole:'')+'</div>'
+      +'<div style="display:flex;gap:16px;margin-top:34px;justify-content:center;">'
+        +'<button onclick="bcallDecline()" style="width:60px;height:60px;border-radius:50%;border:none;background:#E8392E;color:#fff;font-size:24px;cursor:pointer;">&#x1F4DE;</button>'
+        +'<button onclick="bcallAccept()" style="width:60px;height:60px;border-radius:50%;border:none;background:#2ECC71;color:#111;font-size:24px;cursor:pointer;">&#x1F4DE;</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:16px;margin-top:10px;justify-content:center;font-size:11px;color:#9A9390;"><div style="width:60px;text-align:center;">Decline</div><div style="width:60px;text-align:center;">Accept</div></div>';
+    return;
+  }
+  if(c){
+    var statusText=c.status==='ringing'?'Calling…':(c.status==='connecting'?'Connecting…':bcallFmtDuration(Date.now()-(c.startedAt||Date.now())));
+    body.innerHTML=
+      '<div style="width:84px;height:84px;border-radius:50%;background:#242424;border:2px solid #3B9FE8;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;">'+(c.otherAvatar||'👤')+'</div>'
+      +'<div style="font-weight:800;font-size:19px;color:#F2EDE8;">'+(c.otherName||'Contact')+'</div>'
+      +'<div style="font-size:13px;color:#9A9390;margin-top:4px;">'+statusText+'</div>'
+      +(c.status==='ringing'?
+        '<button onclick="bcallCancelOutgoing()" style="margin-top:34px;width:60px;height:60px;border-radius:50%;border:none;background:#E8392E;color:#fff;font-size:24px;cursor:pointer;">&#x1F4DE;</button>'
+        :'<div style="display:flex;gap:14px;margin-top:34px;justify-content:center;">'
+          +'<button onclick="bcallToggleMic()" style="width:52px;height:52px;border-radius:50%;border:1.5px solid #2A2850;background:'+(c.micMuted?'#E8392E':'#242424')+';color:#F2EDE8;font-size:20px;cursor:pointer;">&#x1F3A4;</button>'
+          +'<button onclick="bcallEnd()" style="width:60px;height:60px;border-radius:50%;border:none;background:#E8392E;color:#fff;font-size:24px;cursor:pointer;">&#x1F4DE;</button>'
+          +'<button onclick="bcallToggleSpeaker()" style="width:52px;height:52px;border-radius:50%;border:1.5px solid #2A2850;background:'+(window._bcallSpeakerMuted?'#E8392E':'#242424')+';color:#F2EDE8;font-size:20px;cursor:pointer;">&#x1F50A;</button>'
+        +'</div>');
+  }
+}
+
 // Ends THIS side's peer connection but remembers enough (session id, role,
 // video element ids, the frame's original markup) to reconnect later --
 // stepping away from a call shouldn't force a full teardown+renavigate.
@@ -6228,15 +6466,24 @@ function waPhoneDigits(raw){
   if(digits.length===11&&digits.charAt(0)==='0')digits='234'+digits.slice(1);
   return digits;
 }
-function openCallModal(name,phone,role,avatar){
+function openCallModal(name,phone,role,avatar,otherUserId,bookingId){
   _callPhone=phone;_callName=name;
+  window._callOtherUserId=otherUserId||null;
+  window._callBookingId=bookingId||null;
+  window._callAvatar=avatar||'\ud83d\udc64';
+  window._callRole=role||'';
   var av=document.getElementById('call-modal-avatar');var nm=document.getElementById('call-modal-name');var rl=document.getElementById('call-modal-role');
   if(av)av.textContent=avatar||'\ud83d\udc64';if(nm)nm.textContent=name||'Contact';if(rl)rl.textContent=role||'';
+  // The in-app option only ever does something real when we actually
+  // know the other party's userId to ring -- without one, showing a
+  // button that just fakes a toast is exactly the bug this closes.
+  var inappBtn=document.getElementById('call-modal-inapp-btn');
+  if(inappBtn)inappBtn.style.display=otherUserId?'flex':'none';
   document.getElementById('call-modal').style.display='flex';
 }
 function doCallAction(type){
   document.getElementById('call-modal').style.display='none';
-  if(type==='inapp')toast('Calling '+_callName+'...');
+  if(type==='inapp')bcallStart();
   else if(type==='phone'){window.location.href='tel:'+_callPhone;}
   else{window.open('https://wa.me/'+waPhoneDigits(_callPhone),'_blank');}
 }
@@ -9889,7 +10136,7 @@ function openBookingChat(){
 }
 function openBookingCall(){
   var v=window._bookingDetailVendor;if(!v)return;
-  openCallModal(v.name,v.phone||'+234000',v.type==='EVENT_PLANNING'?'Event Planner':'Home Cook','👤');
+  openCallModal(v.name,v.phone||'+234000',v.type==='EVENT_PLANNING'?'Event Planner':'Home Cook','👤',v.id,v.bookingId);
 }
 // Vendor's own mirror of openBookingChat/openBookingCall above -- same
 // contextId:bookingId so both sides land in the exact same thread.
@@ -9900,7 +10147,7 @@ function openVendorBookingChat(){
 }
 function openVendorBookingCall(){
   var c=window._vendorBookingDetailCustomer;if(!c)return;
-  openCallModal(c.name,c.phone||'+234000','Customer','👤');
+  openCallModal(c.name,c.phone||'+234000','Customer','👤',c.id,c.bookingId);
 }
 // A cancellation must always carry a reason -- both for the vendor/admin's
 // own visibility into why, and because the backend now requires it
@@ -11228,9 +11475,9 @@ async function epBkConfirmBooking(){
 }
 
 function openCookChat(){if(!_cb||!_cb.cook)return;var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';openChat({name:_cb.cook.nm,em:_cb.cook.em||'👤',phone:_cb.cook.ph||'',otherUserId:_cb.cook.userId,contextType:'BOOKING',contextId:_cb.cook.id});}
-function callCook(){if(!_cb||!_cb.cook)return;openCallModal(_cb.cook.nm,_cb.cook.ph||'+234000',_cb.cook.sp||'',_cb.cook.em||'👤');}
+function callCook(){if(!_cb||!_cb.cook)return;openCallModal(_cb.cook.nm,_cb.cook.ph||'+234000',_cb.cook.sp||'',_cb.cook.em||'👤',_cb.cook.userId);}
 function openEPChat(){if(!_epb||!_epb.ep)return;var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';openChat({name:_epb.ep.nm,em:_epb.ep.em||'🎊',phone:_epb.ep.ph||'',otherUserId:_epb.ep.userId,contextType:'BOOKING',contextId:_epb.ep.id});}
-function callEP(){if(!_epb||!_epb.ep)return;openCallModal(_epb.ep.nm,_epb.ep.ph||'+234000','Event Planner',_epb.ep.em||'🎊');}
+function callEP(){if(!_epb||!_epb.ep)return;openCallModal(_epb.ep.nm,_epb.ep.ph||'+234000','Event Planner',_epb.ep.em||'🎊',_epb.ep.userId);}
 
 var STATUS_COLORS={REQUESTED:'#F5A623',OPEN:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#E8392E',
   SEARCHING:'#F5A623',MATCHED:'#3B9FE8',BUILDING_LIST:'#3B9FE8',LIVE_CALL:'#3B9FE8',PACKAGING:'#3B9FE8',FINDING_RIDER:'#3B9FE8',RIDER_ASSIGNED:'#3B9FE8',OUT_FOR_DELIVERY:'#3B9FE8',DELIVERED:'#2ECC71'};

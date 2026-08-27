@@ -78,12 +78,13 @@ function attachLiveSocket(httpServer) {
     // socket can't eavesdrop on someone else's booking/session/chat by
     // guessing an id. ──
 
-    socket.on("booking:join", async ({ bookingId }) => {
-      if (!bookingId) return;
+    socket.on("booking:join", async ({ bookingId }, ack) => {
+      if (!bookingId) return typeof ack === "function" && ack({ joined: false });
       const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-      if (!booking) return;
+      if (!booking) return typeof ack === "function" && ack({ joined: false });
       const allowed = booking.customerId === user.id || (user.vendorProfile && booking.vendorId === user.vendorProfile.id);
       if (allowed) socket.join(`booking:${bookingId}`);
+      if (typeof ack === "function") ack({ joined: !!allowed });
     });
 
     // Accepts an optional ack callback — callers that need to act
@@ -187,6 +188,56 @@ function attachLiveSocket(httpServer) {
       socket.to(`shop-session:${sessionId}`).emit("confirmcall:peer-left", { sessionId, fromSocketId: socket.id });
     });
 
+    // ── Ad-hoc 1:1 call between a customer and vendor (Home Cook / Event
+    // Planner) — e.g. from a booking detail screen's real "Call" button,
+    // or an inquiry call before a booking even exists. Unlike the
+    // Shop-For-Me call, there's no pre-existing shared room both sides
+    // are already sitting on, so this needs a real ring handshake: the
+    // caller rings the callee's personal user:{userId} room (always
+    // joined on connect), and only once the callee accepts do both sides
+    // learn each other's live socket id and start real SDP/ICE signaling.
+    // Kept on its own bookingcall:* namespace so it can never collide
+    // with an SFM/confirm call this same user might also have in flight.
+    socket.on("bookingcall:invite", async ({ toUserId, bookingId, callerName, callerAvatar, callerRole }) => {
+      if (!toUserId) return;
+      if (bookingId) {
+        const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: { select: { userId: true } } } });
+        if (!booking) return;
+        const allowed = booking.customerId === user.id || (booking.vendor && booking.vendor.userId === user.id);
+        if (!allowed) return;
+      }
+      io.to(`user:${toUserId}`).emit("bookingcall:incoming", {
+        fromUserId: user.id,
+        fromSocketId: socket.id,
+        bookingId: bookingId || null,
+        callerName: callerName || user.name,
+        callerAvatar: callerAvatar || "👤",
+        callerRole: callerRole || "",
+      });
+    });
+    socket.on("bookingcall:accept", ({ toSocketId, bookingId }) => {
+      if (!toSocketId) return;
+      io.to(toSocketId).emit("bookingcall:accepted", { fromUserId: user.id, fromSocketId: socket.id, bookingId: bookingId || null });
+    });
+    socket.on("bookingcall:decline", ({ toSocketId, bookingId }) => {
+      if (!toSocketId) return;
+      io.to(toSocketId).emit("bookingcall:declined", { fromUserId: user.id, bookingId: bookingId || null });
+    });
+    socket.on("bookingcall:cancel", ({ toUserId, bookingId }) => {
+      if (!toUserId) return;
+      io.to(`user:${toUserId}`).emit("bookingcall:cancelled", { fromUserId: user.id, bookingId: bookingId || null });
+    });
+    socket.on("bookingcall:end", ({ toSocketId, bookingId }) => {
+      if (!toSocketId) return;
+      io.to(toSocketId).emit("bookingcall:ended", { fromUserId: user.id, bookingId: bookingId || null });
+    });
+    ["bookingcall:offer", "bookingcall:answer", "bookingcall:ice-candidate"].forEach((evt) => {
+      socket.on(evt, (payload) => {
+        if (!payload || !payload.toSocketId) return;
+        io.to(payload.toSocketId).emit(evt, Object.assign({}, payload, { fromSocketId: socket.id }));
+      });
+    });
+
     // "disconnecting" (not "disconnect") fires while socket.rooms is still
     // populated, so a dropped tab/network still tells the other side of
     // any live call to tear down instead of hanging on a dead peer.
@@ -196,6 +247,9 @@ function attachLiveSocket(httpServer) {
           const sessionId = room.slice("shop-session:".length);
           socket.to(room).emit("webrtc:peer-left", { sessionId, fromSocketId: socket.id });
           socket.to(room).emit("confirmcall:peer-left", { sessionId, fromSocketId: socket.id });
+        } else if (room.startsWith("booking:")) {
+          const bookingId = room.slice("booking:".length);
+          socket.to(room).emit("bookingcall:ended", { bookingId, fromUserId: user.id });
         }
       }
     });
