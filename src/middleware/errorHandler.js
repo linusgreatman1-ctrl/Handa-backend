@@ -15,6 +15,14 @@ function errorHandler(err, req, res, next) {
       ? "An unexpected error occurred."
       : err.message || "An unexpected error occurred.";
 
+  // A thrown insufficient-funds error (e.g. reconcileBookingEditFinancials,
+  // bookings.controller.js) carries how much more is needed alongside the
+  // message -- forwarded through here so the frontend can tell the
+  // customer the exact top-up amount instead of just "insufficient funds."
+  if (err.shortfallKobo !== undefined) {
+    return res.status(status).json({ error: message, shortfallKobo: err.shortfallKobo });
+  }
+
   res.status(status).json({ error: message });
 }
 

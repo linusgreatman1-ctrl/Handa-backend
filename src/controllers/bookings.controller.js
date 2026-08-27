@@ -213,6 +213,40 @@ async function buildBookingEditData(booking, body) {
   return data;
 }
 
+// A booking already paid (REQUESTED has no hold yet -- payBooking will
+// simply collect whatever totalKobo is current whenever it happens) has a
+// real EscrowHold sized to the OLD total. Editing items/package can move
+// totalKobo without ever touching that hold unless this runs -- silently
+// leaving the vendor's eventual payout drifted from what the booking now
+// says it costs. Increases require the difference to actually be
+// collected from the customer's escrow wallet up front (dryRun just
+// checks the balance without charging, for a live preview/precheck before
+// the edit is even submitted, or before a CONFIRMED booking's edit is
+// merely proposed); decreases refund the difference back. Throws
+// {status:400, shortfallKobo} on insufficient balance -- the caller must
+// not apply/charge anything else in that case.
+async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRun = false } = {}) {
+  if (newTotalKobo === undefined) return null;
+  const hold = await tx.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR" } });
+  if (!hold) return null;
+  const diff = newTotalKobo - hold.amountKobo;
+  if (diff === 0) return null;
+  if (diff > 0) {
+    const w = await walletSvc.getOrCreateWallet(booking.customerId, tx);
+    if (w.balanceKobo < diff) {
+      throw Object.assign(new Error("Your escrow wallet does not have enough to cover the new total. Add funds to continue."), { status: 400, shortfallKobo: diff - w.balanceKobo });
+    }
+    if (!dryRun) {
+      await walletSvc.debitWallet(booking.customerId, diff, "ESCROW_HOLD", { contextType: "BOOKING", contextId: booking.id, description: "Booking edit — added items" }, tx);
+      await tx.escrowHold.update({ where: { id: hold.id }, data: { amountKobo: newTotalKobo } });
+    }
+  } else if (!dryRun) {
+    await walletSvc.creditWallet(booking.customerId, -diff, "ESCROW_REFUND", { contextType: "BOOKING", contextId: booking.id, description: "Booking edit — removed items" }, tx);
+    await tx.escrowHold.update({ where: { id: hold.id }, data: { amountKobo: newTotalKobo } });
+  }
+  return diff;
+}
+
 // Lets the customer amend a booking's date/time/venue/guests/notes/package/
 // items any time before the event's own scheduled date — only while it's
 // still in a live pre-completion status. Before the vendor has committed
@@ -246,12 +280,24 @@ async function updateBooking(req, res, next) {
 
     if (booking.status !== "CONFIRMED") {
       // Vendor hasn't committed yet -- apply immediately, same as before.
-      const updated = await prisma.booking.update({ where: { id: booking.id }, data });
+      // A real hold may already exist (PAID/ACCEPTED) -- reconcile it for
+      // real in the same transaction so a rejected top-up rolls back the
+      // whole edit instead of partially applying it.
+      const updated = await prisma.$transaction(async (tx) => {
+        await reconcileBookingEditFinancials(booking, data.totalKobo, tx);
+        return tx.booking.update({ where: { id: booking.id }, data });
+      });
       if (booking.vendor?.userId) {
         await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking details updated", `The customer updated booking #${booking.bookingNumber} — check the new details.`, { bookingId: booking.id });
       }
       return res.json({ booking: updated });
     }
+
+    // CONFIRMED: nothing is charged yet (the proposal might still be
+    // declined) -- a dry-run precheck just tells the customer up front if
+    // they can't actually afford this edit, so they see it right away
+    // rather than only once the vendor eventually accepts it.
+    await reconcileBookingEditFinancials(booking, data.totalKobo, prisma, { dryRun: true });
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingEditSnapshot: data, pendingEditRequestedAt: new Date() } });
     if (booking.vendor?.userId) {
@@ -280,9 +326,15 @@ async function acceptEditedBooking(req, res, next) {
     assertVendorOwnsBooking(req, booking);
     if (!booking.pendingEditSnapshot) return res.status(409).json({ error: "There is no edit awaiting your approval on this booking." });
 
-    const updated = await prisma.booking.update({
-      where: { id: booking.id },
-      data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null, wasEdited: true },
+    // Only actually charged/refunded now that the vendor has genuinely
+    // committed to it -- the earlier dry-run at proposal time (updateBooking)
+    // was just a preview, nothing was held back for it.
+    const updated = await prisma.$transaction(async (tx) => {
+      await reconcileBookingEditFinancials(booking, booking.pendingEditSnapshot.totalKobo, tx);
+      return tx.booking.update({
+        where: { id: booking.id },
+        data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null, wasEdited: true },
+      });
     });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit accepted", `The vendor accepted your changes to booking #${booking.bookingNumber}.`, { bookingId: booking.id });
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });

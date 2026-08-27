@@ -8108,11 +8108,21 @@ function showHelpProc(){
 }
 
 var _afMethod='CARD';
-function showAddFundsModal(){
+// minKobo/onSuccess (both optional) let another flow reuse this same real
+// top-up modal instead of building its own -- e.g. an edit-booking save
+// that came back short shows exactly how much more is needed, pre-fills
+// it, and resumes whatever it was doing (not just refreshing the wallet
+// card, the plain Profile "+ Add Funds" entry point's own default).
+function showAddFundsModal(minKobo,onSuccess){
   _afMethod='CARD';
-  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
+  window._addFundsOnSuccess=onSuccess||null;
+  var prefill=minKobo?Math.ceil(minKobo/100):'';
+  var shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need at least &#x20a6;'+Number(prefill).toLocaleString()+' more to cover this. Add any amount you like.</div>'):'';
+  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div>'
+    +shortfallNote
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
     +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
-    +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
+    +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(minKobo?'Amount to Add':'Custom Amount')+'</label><input id="af-inp" type="number" value="'+prefill+'" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div id="af-methods" style="display:flex;gap:8px;margin-bottom:16px;">'
     +'<button onclick="_afMethod=\'CARD\';document.getElementById(\'af-card-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';" id="af-card-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #E8392E;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">💳 Card/USSD</button>'
     +'<button onclick="_afMethod=\'BANK_TRANSFER\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
@@ -8127,10 +8137,13 @@ async function submitAddFunds(){
   if(!a||a<100){toast('Minimum ₦100');return;}
   try{
     var res=await api('/payments/wallet/deposit/initialize',{method:'POST',body:JSON.stringify({amountKobo:Math.round(a*100),paymentMethod:_afMethod})});
+    var onSuccess=window._addFundsOnSuccess;
+    function afterFunded(){
+      if(onSuccess){window._addFundsOnSuccess=null;onSuccess();}
+      else if(typeof loadEscrowWalletCard==='function')loadEscrowWalletCard();
+    }
     if(res.manual){
-      openManualBankTransferModal(res,function(){
-        if(typeof loadEscrowWalletCard==='function')loadEscrowWalletCard();
-      });
+      openManualBankTransferModal(res,function(){toast('Funds added!');afterFunded();});
       return;
     }
     closeProcedureModal();
@@ -8144,7 +8157,7 @@ async function submitAddFunds(){
         return (w.balanceKobo||0)>baseBal;
       }, function(){
         toast('Wallet funded!');
-        if(typeof loadEscrowWalletCard==='function')loadEscrowWalletCard();
+        afterFunded();
       });
     }
   }catch(err){
@@ -9642,33 +9655,52 @@ function openEditBookingModalById(id){
   if(!b){showToast&&showToast('Could not open editor — reopen the booking and try again.','warning');return;}
   openEditBookingModal(b);
 }
-function openEditBookingModal(b){
+// Home Cook editing gets the real full meal picker -- every item on the
+// vendor's actual menu as a checkbox (not just the ones already booked),
+// pre-checked with whatever was originally selected, freely toggleable,
+// plus "Other" free-text rows (any number of them, each with its own
+// price) for anything not on the menu -- the exact same picker UX as
+// booking for the first time (renderMealPicker), just seeded from the
+// existing booking instead of starting empty. EP items stay on the
+// simpler text-replace fields below (EP add-ons aren't a menu-driven
+// concept the same way).
+var _ebItemPicker=null;
+async function openEditBookingModal(b){
   _editingBooking=b;
   closeBottomSheet&&closeBottomSheet();
+  var isEP=b.type==='EVENT_PLANNING';
+  var isCook=b.type==='HOME_COOK';
+  showProcedureModal('<div style="padding:30px;text-align:center;color:#9A9390;">Loading…</div>');
+  var vendorMenu=[];
+  if(isCook){
+    try{ var vres=await api('/vendors/'+b.vendorId); vendorMenu=vres.vendor&&vres.vendor.menuItems||[]; }catch(e){}
+    _ebItemPicker={selections:(Array.isArray(b.selectedItems)?b.selectedItems:[]).map(function(it){
+      return {menuItemId:it.menuItemId||null,name:it.name,priceKobo:it.priceKobo,qty:it.qty||1,custom:!!it.custom,_cid:it.custom?('c'+Math.random().toString(36).slice(2)):undefined};
+    })};
+  }else{
+    _ebItemPicker=null;
+  }
   // Guests only applies to Event Planning bookings -- Home Cook bookings
   // never collect a guest count. When the booking's package has a real
   // configured guestCount, cap the field to it (same clamp-on-type used by
   // the original booking form) instead of leaving it freely editable.
-  var isEP=b.type==='EVENT_PLANNING';
   var maxGuests=(isEP&&b.servicePackage&&b.servicePackage.guestCount)?b.servicePackage.guestCount:null;
   var guestsField=isEP
     ?('<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Guests</label>'
       +'<input class="if" id="eb-guests" type="number" min="1"'+(maxGuests?' max="'+maxGuests+'" oninput="_clampEpbGuests(this,'+maxGuests+')"':'')+' value="'+(b.guestCount||'')+'" placeholder="e.g. 200" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
       +(maxGuests?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0">Up to '+maxGuests+' guests for this package</p>':''))
     :'';
-  // The items originally booked (Home Cook a-la-carte picks, EP add-ons) --
+  // EP's own items (add-ons) stay the simpler retype-in-place fields --
   // each one's own text is freely retypeable to swap in something else
-  // entirely, keeping its original price/quantity so the total doesn't
-  // silently jump around from what's really just a wording change. Every
-  // line is submitted as a custom item (see saveBookingEdit) rather than
-  // kept linked to its original menuItemId, since a real menu item's name
-  // is always re-derived server-side from that id and would otherwise
-  // silently ignore whatever the customer typed here.
-  var bookedItems=Array.isArray(b.selectedItems)?b.selectedItems:[];
-  var itemsField=bookedItems.length
+  // entirely, keeping its original price/quantity, submitted as a custom
+  // item (see saveBookingEdit) since a real menu item's name is always
+  // re-derived server-side from its id and would otherwise silently
+  // ignore whatever's typed here.
+  var epBookedItems=isEP&&Array.isArray(b.selectedItems)?b.selectedItems:[];
+  var epItemsField=epBookedItems.length
     ?('<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Items Booked</label>'
       +'<p style="color:#9A9390;font-size:11px;margin:0 0 8px;">Type over any item to replace it — its price stays the same.</p>'
-      +bookedItems.map(function(it,idx){
+      +epBookedItems.map(function(it){
         return '<input class="if eb-item-inp" data-price="'+(it.priceKobo||0)+'" data-qty="'+(it.qty||1)+'" value="'+String(it.name||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;margin-bottom:8px;">';
       }).join(''))
     :'';
@@ -9682,12 +9714,76 @@ function openEditBookingModal(b){
     +_arField('Event Time','eb-time',b.eventTime||'','')
     +_arField('Venue','eb-venue',b.venue||'','')
     +guestsField
-    +itemsField
+    +epItemsField
+    +(isCook?'<div id="eb-items-section"></div>':'')
     +'<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="eb-notes" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:70px;">'+(b.notes||'')+'</textarea>'
     +'<button onclick="saveBookingEdit()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save Changes</button>'
     +'</div>'
   );
   document.getElementById('eb-date').value=b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'';
+  if(isCook){ _editingBookingMenu=vendorMenu; renderEbItemsSection(); }
+}
+var _editingBookingMenu=[];
+function _ebItemsTotal(){
+  return (_ebItemPicker?_ebItemPicker.selections:[]).reduce(function(s,x){return s+x.priceKobo*(x.qty||1);},0);
+}
+function renderEbItemsSection(){
+  var el=document.getElementById('eb-items-section');
+  if(!el||!_ebItemPicker)return;
+  var menu=_editingBookingMenu||[];
+  var pkgKobo=(_editingBooking&&_editingBooking.servicePackage&&_editingBooking.servicePackage.priceKobo)||0;
+  var itemsTotal=_ebItemsTotal();
+  var newTotal=pkgKobo+itemsTotal;
+  var prevTotal=(_editingBooking&&_editingBooking.totalKobo)||0;
+  var h='<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Items</label>'
+    +'<p style="color:#9A9390;font-size:11px;margin:0 0 10px;">Select just like before — deselect what you don\'t want, pick anything else from the menu, or type your own below.</p>'
+    +(menu.length?'':'<div style="text-align:center;padding:16px 10px;color:#9A9390;font-size:12px;">This cook hasn\'t added any menu items.</div>')
+    +menu.map(function(m){
+      var sel=_ebItemPicker.selections.find(function(x){return x.menuItemId===m.id;});
+      return '<label style="display:flex;align-items:center;gap:12px;background:'+(sel?'rgba(232,57,46,.1)':'#1C1C1C')+';border:1.5px solid '+(sel?'#E8392E':'#2A2850')+';border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;">'
+        +'<input type="checkbox" '+(sel?'checked':'')+' onchange="toggleEbItem(\''+m.id+'\','+m.priceKobo+',\''+String(m.name).replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#E8392E;flex-shrink:0;">'
+        +'<div style="flex:1;font-weight:700;color:#F2EDE8;font-size:14px;">'+m.name+'</div>'
+        +'<div style="font-weight:800;color:#E8392E;font-size:13px;">&#x20a6;'+Number(Math.round(m.priceKobo/100)).toLocaleString()+'</div>'
+        +'</label>';
+    }).join('')
+    +_ebItemPicker.selections.filter(function(x){return x.custom;}).map(function(x){
+      return '<div style="display:flex;align-items:center;gap:12px;background:rgba(232,57,46,.1);border:1.5px solid #E8392E;border-radius:12px;padding:12px;margin-bottom:8px;">'
+        +'<span style="font-size:22px;flex-shrink:0;">&#x270D;&#xFE0F;</span>'
+        +'<div style="flex:1;font-weight:700;color:#F2EDE8;font-size:14px;">'+x.name+'</div>'
+        +'<div style="font-weight:800;color:#E8392E;font-size:13px;">&#x20a6;'+Number(Math.round(x.priceKobo/100)).toLocaleString()+'</div>'
+        +'<span onclick="removeEbItemCustom(\''+x._cid+'\')" style="color:#9A9390;cursor:pointer;font-size:18px;margin-left:4px;">&times;</span>'
+        +'</div>';
+    }).join('')
+    +'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:12px;padding:12px;margin-top:4px;">'
+    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px;">Other — type what you want</div>'
+    +'<input id="eb-other-name" placeholder="e.g. Suya, Ofada Rice..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
+    +'<input id="eb-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
+    +'<button onclick="addEbItemCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #E8392E;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;">+ Add</button>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid #2A2850;">'
+    +'<span style="color:#9A9390;font-size:13px;">New Total</span>'
+    +'<span style="font-weight:900;font-size:17px;color:'+(newTotal>prevTotal?'#F5A623':'#2ECC71')+';">&#x20a6;'+Number(Math.round(newTotal/100)).toLocaleString()+'</span>'
+    +'</div>'
+    +(newTotal!==prevTotal?'<div style="text-align:right;color:#9A9390;font-size:11px;margin-top:2px;">Previously &#x20a6;'+Number(Math.round(prevTotal/100)).toLocaleString()+'</div>':'');
+  el.innerHTML=h;
+}
+function toggleEbItem(menuItemId,priceKobo,name){
+  var i=_ebItemPicker.selections.findIndex(function(x){return x.menuItemId===menuItemId;});
+  if(i>-1)_ebItemPicker.selections.splice(i,1);
+  else _ebItemPicker.selections.push({menuItemId:menuItemId,name:name,priceKobo:priceKobo,qty:1});
+  renderEbItemsSection();
+}
+function addEbItemCustom(){
+  var name=(document.getElementById('eb-other-name')||{}).value||'';
+  var price=parseFloat((document.getElementById('eb-other-price')||{}).value);
+  if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
+  if(!(price>0)){showToast&&showToast('Enter a price','warning');return;}
+  _ebItemPicker.selections.push({name:name.trim(),priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
+  renderEbItemsSection();
+}
+function removeEbItemCustom(cid){
+  _ebItemPicker.selections=_ebItemPicker.selections.filter(function(x){return x._cid!==cid;});
+  renderEbItemsSection();
 }
 async function saveBookingEdit(){
   if(!_editingBooking)return;
@@ -9696,12 +9792,19 @@ async function saveBookingEdit(){
   var venue=(document.getElementById('eb-venue')||{}).value||'';
   var guests=(document.getElementById('eb-guests')||{}).value||'';
   var notes=(document.getElementById('eb-notes')||{}).value||'';
-  var itemInps=document.querySelectorAll('.eb-item-inp');
   var items;
-  if(itemInps.length){
-    items=Array.from(itemInps).map(function(inp){
-      return {customName:inp.value.trim(),customPriceKobo:parseInt(inp.getAttribute('data-price'),10)||0,qty:parseInt(inp.getAttribute('data-qty'),10)||1};
-    }).filter(function(it){return it.customName;});
+  if(_editingBooking.type==='HOME_COOK'&&_ebItemPicker){
+    if(!_ebItemPicker.selections.length){showToast&&showToast('Select at least one item','warning');return;}
+    items=_ebItemPicker.selections.map(function(x){
+      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:x.qty}:{menuItemId:x.menuItemId,qty:x.qty};
+    });
+  }else{
+    var itemInps=document.querySelectorAll('.eb-item-inp');
+    if(itemInps.length){
+      items=Array.from(itemInps).map(function(inp){
+        return {customName:inp.value.trim(),customPriceKobo:parseInt(inp.getAttribute('data-price'),10)||0,qty:parseInt(inp.getAttribute('data-qty'),10)||1};
+      }).filter(function(it){return it.customName;});
+    }
   }
   try{
     var res=await api('/bookings/'+_editingBooking.id,{method:'PATCH',body:JSON.stringify({
@@ -9712,7 +9815,17 @@ async function saveBookingEdit(){
     closeProcedureModal();
     if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
   }catch(err){
-    showToast&&showToast(err.message||'Could not update booking','warning');
+    var shortfallKobo=err.data&&err.data.shortfallKobo;
+    if(shortfallKobo){
+      // showAddFundsModal itself is the combined "insufficient funds, told
+      // exactly how much, type in an amount to add" screen -- it already
+      // shows the shortfall and pre-fills it; on success it retries this
+      // exact save so the edit goes through automatically once funded.
+      showToast&&showToast('Insufficient funds — you need ₦'+Number(Math.round(shortfallKobo/100)).toLocaleString()+' more to cover this.','warning');
+      showAddFundsModal(shortfallKobo,function(){ saveBookingEdit(); });
+    }else{
+      showToast&&showToast(err.message||'Could not update booking','warning');
+    }
   }
 }
 function renderCookDashboard(){
