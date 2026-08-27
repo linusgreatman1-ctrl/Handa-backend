@@ -16,6 +16,7 @@ router.get("/users", ctrl.listUsers);
 router.get("/users/:id", requireContentOrSuperAdmin, ctrl.getCustomerDetailForAdmin);
 router.patch("/users/:id/status", ctrl.updateUserStatus);
 router.delete("/users/:id", requireSuperAdmin, ctrl.deleteUserForAdmin);
+router.post("/users/:id/wallet-adjustment", requireSuperAdmin, ctrl.adjustUserWallet);
 
 router.get("/vendors", ctrl.listVendorsForAdmin);
 router.get("/vendors/:id", requireContentOrSuperAdmin, ctrl.getVendorDetailForAdmin);

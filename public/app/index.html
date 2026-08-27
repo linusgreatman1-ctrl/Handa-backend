@@ -4037,7 +4037,9 @@ function promptCallTopUp(topUpRequiredKobo){
       var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-call-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
       if(res.session)window._sfmSession=res.session;
       if(res.manual){
-        openManualBankTransferModal(res,function(){showToast('Call fee top-up confirmed — continuing to packaging.','success');});
+        openManualBankTransferModal(res,function(){showToast('Call fee top-up confirmed — continuing to packaging.','success');},function(){
+          promptCallTopUp(topUpRequiredKobo);
+        });
       }else if(res.authorizationUrl){
         window.open(res.authorizationUrl,'_blank');
         showToast('Complete payment in the new tab to continue.','success');
@@ -4070,7 +4072,9 @@ function promptRiderFeeTopUp(topUpRequiredKobo,distanceKm){
       var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-rider-fee-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
       if(res.session)window._sfmSession=res.session;
       if(res.manual){
-        openManualBankTransferModal(res,function(){showToast('Rider fee topped up — your shopper can now search for a rider.','success');});
+        openManualBankTransferModal(res,function(){showToast('Rider fee topped up — your shopper can now search for a rider.','success');},function(){
+          promptRiderFeeTopUp(topUpRequiredKobo,distanceKm);
+        });
       }else if(res.authorizationUrl){
         window.open(res.authorizationUrl,'_blank');
         showToast('Complete payment in the new tab to continue.','success');
@@ -4199,6 +4203,59 @@ function renderEtrack(){
   body.innerHTML = '<div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div>';
 }
 
+// Pays the deposit for an already-created session (window._sfmSession).
+// Split out from depositAndFindShopper so a Bank Transfer "Cancel" can
+// retry just the payment step -- re-running the whole outer function would
+// re-POST /shop-sessions and create a duplicate session.
+async function payForShopSessionDeposit(budgetKobo){
+  var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
+  var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
+  var payRes=await api('/shop-sessions/'+window._sfmSession.id+'/pay',{method:'POST',body:JSON.stringify({budgetKobo:budgetKobo,paymentMethod:paymentMethod})});
+  if(payRes.session)window._sfmSession=payRes.session;
+
+  function proceedToFinding(){
+    sfmSocketListeners();
+    if(_socket)_socket.emit('shop-session:join',{sessionId:window._sfmSession.id});
+    renderShopPhase('finding');
+    // Socket is the primary signal; this poll is just a safety net in
+    // case the socket connection dropped or never opened.
+    window._sfmPollIv=setInterval(async function(){
+      try{
+        var r=await api('/shop-sessions/'+window._sfmSession.id);
+        if(r.session.status!=='SEARCHING'){window._sfmSession=r.session;clearInterval(window._sfmPollIv);onSfmStatus(r.session.status);}
+      }catch(e){}
+    },5000);
+  }
+
+  if(payRes.manual){
+    // Bank transfer -- the session isn't real (paid) yet, so don't move
+    // to "finding a shopper" until the admin actually confirms the
+    // transfer landed. Cancelling from here re-opens the payment-method
+    // picker for this same already-created session instead of dropping
+    // the customer wherever the underlying screen happens to be.
+    openManualBankTransferModal(payRes,proceedToFinding,function(){
+      openEscrowModal(budgetKobo/100,function(){payForShopSessionDeposit(budgetKobo);});
+    });
+    return;
+  }
+
+  if(payRes.authorizationUrl){
+    window.open(payRes.authorizationUrl,'_blank');
+    showToast('Complete payment in the new tab, then return here.','success');
+    // Real Paystack redirect for card/USSD — the session isn't matched
+    // to a shopper until the deposit clears. Actively verify (the
+    // webhook alone may not be configured in this environment) so the
+    // deposit actually lands; proceedToFinding()'s own status poll
+    // below picks up the resulting SEARCHING→MATCHED transition on
+    // its own once it does.
+    pollPaystackVerify(payRes.reference, async function(){
+      var r=await api('/shop-sessions/'+window._sfmSession.id);
+      return r.session.status!=='SEARCHING';
+    }, function(){});
+  }
+
+  proceedToFinding();
+}
 async function depositAndFindShopper() {
   var validItems=shopItems.filter(x=>x.text.trim());
   if(validItems.length===0){showToast('Add at least one item to your list','warning');return;}
@@ -4221,50 +4278,7 @@ async function depositAndFindShopper() {
       // Date.now()-based ids for them so later approve/price calls (which
       // reference item.id) hit the right row.
       shopItems=createRes.session.items.map(function(it){return {id:it.id,text:it.text,approved:it.approved,price:it.priceKobo?Math.round(it.priceKobo/100):null};});
-
-      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
-      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
-      var payRes=await api('/shop-sessions/'+window._sfmSession.id+'/pay',{method:'POST',body:JSON.stringify({budgetKobo:budgetKobo,paymentMethod:paymentMethod})});
-      if(payRes.session)window._sfmSession=payRes.session;
-
-      function proceedToFinding(){
-        sfmSocketListeners();
-        if(_socket)_socket.emit('shop-session:join',{sessionId:window._sfmSession.id});
-        renderShopPhase('finding');
-        // Socket is the primary signal; this poll is just a safety net in
-        // case the socket connection dropped or never opened.
-        window._sfmPollIv=setInterval(async function(){
-          try{
-            var r=await api('/shop-sessions/'+window._sfmSession.id);
-            if(r.session.status!=='SEARCHING'){window._sfmSession=r.session;clearInterval(window._sfmPollIv);onSfmStatus(r.session.status);}
-          }catch(e){}
-        },5000);
-      }
-
-      if(payRes.manual){
-        // Bank transfer -- the session isn't real (paid) yet, so don't move
-        // to "finding a shopper" until the admin actually confirms the
-        // transfer landed.
-        openManualBankTransferModal(payRes,proceedToFinding);
-        return;
-      }
-
-      if(payRes.authorizationUrl){
-        window.open(payRes.authorizationUrl,'_blank');
-        showToast('Complete payment in the new tab, then return here.','success');
-        // Real Paystack redirect for card/USSD — the session isn't matched
-        // to a shopper until the deposit clears. Actively verify (the
-        // webhook alone may not be configured in this environment) so the
-        // deposit actually lands; proceedToFinding()'s own status poll
-        // below picks up the resulting SEARCHING→MATCHED transition on
-        // its own once it does.
-        pollPaystackVerify(payRes.reference, async function(){
-          var r=await api('/shop-sessions/'+window._sfmSession.id);
-          return r.session.status!=='SEARCHING';
-        }, function(){});
-      }
-
-      proceedToFinding();
+      await payForShopSessionDeposit(budgetKobo);
     }catch(err){
       showToast(err.message||'Could not start your session','warning');
     }
@@ -7198,7 +7212,9 @@ function promptItemsTopUp(shortfallKobo,itemId){
       var res=await api('/shop-sessions/'+window._sfmSession.id+'/topup-items',{method:'POST',body:JSON.stringify({amountKobo:amountKobo,paymentMethod:paymentMethod})});
       if(res.session)window._sfmSession=res.session;
       if(res.manual){
-        openManualBankTransferModal(res,function(){showToast('Top-up submitted — approve the item again once it\'s confirmed.','success');});
+        openManualBankTransferModal(res,function(){showToast('Top-up submitted — approve the item again once it\'s confirmed.','success');},function(){
+          promptItemsTopUp(shortfallKobo,itemId);
+        });
       }else if(res.authorizationUrl){
         window.open(res.authorizationUrl,'_blank');
         showToast('Complete payment in the new tab, then approve the item again.','success');
@@ -8224,6 +8240,15 @@ async function submitAddFunds(){
     // the balance has become enough some other way since this screen
     // opened) or throws the exact same shortfall error, which reopens
     // this exact screen -- an honest "try again," not a fake success.
+    // Check the real current balance first so a genuine shortfall shows
+    // one clear message instead of silently reopening this same screen
+    // and looking like nothing happened.
+    var realBal=null;
+    try{ realBal=(await api('/wallet')).balanceKobo; }catch(e){}
+    if(realBal!=null&&window._afMinKobo&&realBal<window._afMinKobo){
+      toast('Your wallet balance is only ₦'+Math.floor(realBal/100).toLocaleString()+' — you still need ₦'+Math.ceil((window._afMinKobo-realBal)/100).toLocaleString()+' more. Pick Card or Bank Transfer instead.');
+      return;
+    }
     closeProcedureModal();
     var onSuccessWallet=window._addFundsOnSuccess;
     window._addFundsOnSuccess=null;
@@ -9964,9 +9989,9 @@ async function openEditBookingModal(b){
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit Booking</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Changes are sent to the vendor for approval. You can edit right up until the booking\'s date.</p>'
-    +_arField('Event Date','eb-date',b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'','date')
-    +_arField('Event Time','eb-time',b.eventTime||'','')
-    +_arField('Venue','eb-venue',b.venue||'','')
+    +_arField(isCook?'Cooking Date':'Event Date','eb-date',b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'','date')
+    +_arField(isCook?'Cooking Time':'Event Time','eb-time',b.eventTime||'','')
+    +_arField(isCook?'Cooking Address':'Venue','eb-venue',b.venue||'','')
     +guestsField
     +epItemsField
     +(isCook?'<div id="eb-items-section"></div>':'')
@@ -10148,7 +10173,7 @@ async function payCommission(method){
     var period=await api('/vendors/me/commission-period');
     var res=await api('/payments/commission/'+period.period.id+'/initialize',{method:'POST',body:JSON.stringify({paymentMethod:method})});
     if(res.paid){showToast&&showToast('Commission paid from wallet','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':'cook');}
-    else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Commission payment confirmed','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':'cook');});}
+    else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Commission payment confirmed','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':'cook');},function(){openVendorPayMethodModal('commission');});}
     else if(res.authorizationUrl){
       window.open(res.authorizationUrl,'_blank');
       showToast&&showToast('Complete payment in the new tab','info');
@@ -10167,7 +10192,7 @@ async function payToFeature(method){
   try{
     var res=await api('/payments/feature-boost/initialize',{method:'POST',body:JSON.stringify({paymentMethod:method})});
     if(res.paid){showToast&&showToast('Feature boost paid from wallet','success');}
-    else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Feature boost payment confirmed','success');});}
+    else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Feature boost payment confirmed','success');},function(){openVendorPayMethodModal('feature');});}
     else if(res.authorizationUrl){
       window.open(res.authorizationUrl,'_blank');
       showToast&&showToast('Complete payment in the new tab','info');
@@ -11136,6 +11161,14 @@ function payForBooking(bookingId, totalKobo, onSuccess){
         openManualBankTransferModal(res,function(){
           showToast&&showToast('Payment confirmed — sent to the vendor for review.','success');
           if(onSuccess)onSuccess(); else renderEHistory();
+        },function(){
+          // Back out of Bank Transfer -- re-open the same payment-method
+          // picker for this same booking, instead of just closing and
+          // dropping the customer wherever the underlying screen happens
+          // to be. payForBooking itself is safe to just re-invoke here:
+          // it doesn't create anything new, only re-opens the picker for
+          // this already-existing bookingId.
+          payForBooking(bookingId, totalKobo, onSuccess);
         });
         return;
       }

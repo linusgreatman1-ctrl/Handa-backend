@@ -175,6 +175,35 @@ async function updateUserStatus(req, res, next) {
   }
 }
 
+// A real, permanent support capability -- credit or debit a user's wallet
+// by a specific amount with a recorded reason (TransactionType.ADJUSTMENT),
+// for cases the normal payment/escrow flows don't cover on their own (a
+// goodwill credit, correcting a data issue, etc.). Superadmin-only since
+// it moves real money with no counterparty transaction backing it.
+async function adjustUserWallet(req, res, next) {
+  try {
+    const { amountKobo, reason } = req.body;
+    const amount = Math.round(Number(amountKobo));
+    if (!Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: "A non-zero amountKobo is required." });
+    if (!reason || !String(reason).trim()) return res.status(400).json({ error: "A reason is required." });
+
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, name: true, email: true } });
+    if (!target) return res.status(404).json({ error: "User not found." });
+
+    const walletSvc = require("../services/wallet.service");
+    if (amount > 0) {
+      await walletSvc.creditWallet(target.id, amount, "ADJUSTMENT", { description: reason.trim() });
+    } else {
+      await walletSvc.debitWallet(target.id, -amount, "ADJUSTMENT", { description: reason.trim() });
+    }
+    const wallet = await walletSvc.getOrCreateWallet(target.id);
+    await logAdminAction(req.user, "WALLET_ADJUSTED", "User", target.id, `${amount > 0 ? "Credited" : "Debited"} ₦${Math.abs(Math.round(amount / 100)).toLocaleString()} for ${target.name}: ${reason.trim()}`);
+    res.json({ balanceKobo: wallet.balanceKobo });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listVendorsForAdmin(req, res, next) {
   try {
     const { vtype, verified, state } = req.query;
@@ -1389,4 +1418,5 @@ module.exports = {
   listManualPaymentRequestsForAdmin,
   confirmManualPaymentForAdmin,
   rejectManualPaymentForAdmin,
+  adjustUserWallet,
 };
