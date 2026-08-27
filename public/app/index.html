@@ -9271,11 +9271,9 @@ async function openVendorBookingDetail(id){
     // was pure noise.
     if(b.type==='EVENT_PLANNING')rows.splice(4,0,['Guests',b.guestCount||'Not set']);
     var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
-    // Same permanent "was edited" record as the customer's own detail
-    // screen -- right after Payment Method, on top of (before) the items
-    // list, so the vendor sees "here's what changed" immediately before
-    // the changed items themselves.
-    var vendorEditedBanner=b.wasEdited?'<div style="margin:10px 0;padding:10px 14px;border-radius:12px;background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);text-align:center;color:#3B9FE8;font-weight:700;font-size:12px;">&#x270F;&#xFE0F; Edited Booking Details</div>':'';
+    // b.wasEdited is no longer shown as an inline banner here -- the
+    // sheet's own title becomes "Booking Details (Edited)" below instead,
+    // same as the customer's own detail screen.
     var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
     var vendorStatusBlock='';
@@ -9318,6 +9316,7 @@ async function openVendorBookingDetail(id){
       pendingEditBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;margin-bottom:8px;">&#x270F;&#xFE0F; Customer Proposed Changes</div>'
         +_pendingEditSummaryHtml(pe)
+        +((pe.totalKobo!==undefined&&pe.totalKobo<b.totalKobo)?'<div style="margin-top:8px;font-size:11px;color:#9A9390;">Accepting refunds the '+N(Math.round((b.totalKobo-pe.totalKobo)/100))+' difference to the customer\'s escrow wallet.</div>':'')
         +'<div style="display:flex;gap:10px;margin-top:12px;">'
         +'<button onclick="vendorDeclineEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Edited Booking</button>'
         +'<button onclick="vendorAcceptEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">Accept &amp; Continue</button>'
@@ -9347,7 +9346,6 @@ async function openVendorBookingDetail(id){
     );
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
-      +vendorEditedBanner
       +_packageIncludesHtml(b)
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
@@ -9361,7 +9359,7 @@ async function openVendorBookingDetail(id){
       +contactAndCancelBlock
       +pendingEditBlock
       +vendorStatusBlock;
-    showBottomSheet('Booking Details',content);
+    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
   }
@@ -9725,18 +9723,12 @@ async function openCustomerHistoryDetail(kind,id){
         +'<div style="font-weight:800;font-size:14px;color:#E8392E;">&#x274C; Declined</div>'
         +'</div>';
     }
-    // A permanent record that this booking's details were changed at some
-    // point (b.wasEdited, set the moment the vendor accepts a pending
-    // edit) -- shown alongside whatever other banner applies, not instead
-    // of it, since "was edited" and "is now completed/cancelled" are both
-    // true facts about the same booking. Sits right after the Payment
-    // Method row and before the items list -- on top of the edited items,
-    // not tacked on below the whole card -- so it's read as "here's what
-    // changed" immediately before the changed items themselves.
-    var editedBanner=b.wasEdited?'<div style="margin:10px 0;padding:10px 14px;border-radius:12px;background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);text-align:center;color:#3B9FE8;font-weight:700;font-size:12px;">&#x270F;&#xFE0F; Edited Booking Details</div>':'';
+    // b.wasEdited (set the moment the vendor accepts a pending edit) is no
+    // longer shown as an inline banner here -- instead the whole sheet's
+    // own title becomes "Booking Details (Edited)" below, so a non-edited
+    // booking's card looks identical to before.
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
-      +editedBanner
       +_packageIncludesHtml(b)
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
@@ -9762,6 +9754,7 @@ async function openCustomerHistoryDetail(kind,id){
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="text-align:center;color:#F5A623;font-weight:700;font-size:13px;margin-bottom:8px;">&#x270F;&#xFE0F; Your Edit Is Awaiting Vendor Approval</div>'
         +_pendingEditSummaryHtml(b.pendingEditSnapshot)
+        +((b.pendingEditSnapshot.totalKobo!==undefined&&b.pendingEditSnapshot.totalKobo<b.totalKobo)?'<div style="margin-top:8px;font-size:11px;color:#9A9390;text-align:center;">The '+N(Math.round((b.totalKobo-b.pendingEditSnapshot.totalKobo)/100))+' difference returns to your escrow wallet once the vendor accepts.</div>':'')
         +'</div>'
       ):'')
       +(needsCompletionResponse?(
@@ -9786,7 +9779,7 @@ async function openCustomerHistoryDetail(kind,id){
         +'</div>'
       ):'')
       +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
-    showBottomSheet('Booking Details',content);
+    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content);
     // Cached by id so the Edit button above can pass just the id through
     // the onclick attribute instead of inlining JSON.stringify(b) directly
     // into an HTML attribute -- any apostrophe in b.notes/b.venue used to
