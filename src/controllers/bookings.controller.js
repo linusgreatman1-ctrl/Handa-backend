@@ -58,7 +58,7 @@ function clampGuestCount(guestCount, servicePackage) {
 // cook/event-planner dashboards show.
 async function createBooking(req, res, next) {
   try {
-    const { vendorId, type, servicePackageId, items, eventDate, eventTime, venue, guestCount, phone, notes, paymentMethod } = req.body;
+    const { vendorId, type, servicePackageId, items, eventDate, eventTime, venue, guestCount, phone, notes, paymentMethod, packageKey, packageLabel } = req.body;
     if (!vendorId || !type) return res.status(400).json({ error: "vendorId and type are required." });
     if (!["HOME_COOK", "EVENT_PLANNING"].includes(type)) return res.status(400).json({ error: "Invalid booking type." });
 
@@ -85,6 +85,11 @@ async function createBooking(req, res, next) {
         customerId: req.user.id,
         vendorId,
         servicePackageId: servicePackage?.id,
+        // Only meaningful (and only ever sent by the frontend) when there's
+        // no real servicePackageId -- a meal-picker package's own display
+        // name, so "Package" in booking details isn't always "--" for those.
+        packageKey: servicePackage ? null : (packageKey ? String(packageKey).slice(0, 60) : null),
+        packageLabel: servicePackage ? null : (packageLabel ? String(packageLabel).slice(0, 120) : null),
         selectedItems: selectedItemsSnapshot,
         eventDate: eventDate ? new Date(eventDate) : null,
         eventTime,

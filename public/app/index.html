@@ -485,6 +485,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
     <div id="reg-form" style="display:none"></div>
     <button class="btn full" id="auth-btn" onclick="doAuth()" style="padding:15px;font-size:16px;margin-bottom:14px">Sign In →</button>
+    <div id="reg-signin-link" style="display:none;text-align:center;margin:-6px 0 14px;"><span style="color:#9A9390;font-size:13px">Already have an account? </span><span onclick="setLTab('login')" style="color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline">Sign in</span></div>
     <p style="text-align:center;color:#6B6560;font-size:11px;margin:-6px 0 14px;line-height:1.5">By continuing, you agree to our <span onclick="openLegalModal('terms')" style="color:#9A9390;text-decoration:underline;cursor:pointer;">Terms &amp; Conditions</span> and <span onclick="openLegalModal('privacy')" style="color:#9A9390;text-decoration:underline;cursor:pointer;">Privacy Policy</span>.</p>
     <div id="login-extras">
       <div style="text-align:center;margin-bottom:14px"><span style="color:#9A9390;font-size:13px">Or </span><span onclick="guestLogin()" style="color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline">Continue as Guest</span></div>
@@ -8804,6 +8805,7 @@ function setLTab(t){
   var lf=document.getElementById('login-form'),rf=document.getElementById('reg-form');
   if(lf)lf.style.display=t==='login'?'block':'none';
   if(rf)rf.style.display=t==='reg'?'block':'none';
+  var rsl=document.getElementById('reg-signin-link');if(rsl)rsl.style.display=t==='reg'?'block':'none';
   if(t==='reg')buildRegForm();
   // Registering feels like advancing to its own page — the role picker,
   // login/register tab bar, and guest/social options (all login-only
@@ -9083,6 +9085,21 @@ function bindBookingLiveUpdateListener(){
     }
   });
 }
+// Shared between the vendor's own pendingEditBlock and the customer's own
+// hasPendingEdit banner -- both need to actually show what's being
+// proposed (previously only a bare "awaiting approval" label with no
+// detail, on both sides), including the proposed items list.
+function _pendingEditSummaryHtml(pe){
+  var peRows=[];
+  if(pe.eventDate!==undefined)peRows.push(['Date',pe.eventDate?new Date(pe.eventDate).toLocaleDateString():'TBD']);
+  if(pe.eventTime!==undefined)peRows.push(['Time',pe.eventTime||'—']);
+  if(pe.venue!==undefined)peRows.push(['Venue',pe.venue||'—']);
+  if(pe.guestCount!==undefined)peRows.push(['Guests',pe.guestCount||'—']);
+  if(pe.notes!==undefined)peRows.push(['Notes',pe.notes||'—']);
+  if(pe.totalKobo!==undefined)peRows.push(['New Total',N(Math.round(pe.totalKobo/100))]);
+  var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">New Items</div>'+pe.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:2px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+  return peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')+itemsHtml;
+}
 async function openVendorBookingDetail(id){
   window._openBookingDetailId=id;window._openBookingDetailViewer='vendor';
   bindBookingLiveUpdateListener();
@@ -9103,7 +9120,7 @@ async function openVendorBookingDetail(id){
       ['Type',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
       ['Date',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
-      ['Package',b.servicePackage?b.servicePackage.label:'—'],
+      ['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')],
       ['Total',N(Math.round(b.totalKobo/100))],
       ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with you (not via the app)':(b.paymentMethod||'—')],
     ];
@@ -9135,7 +9152,12 @@ async function openVendorBookingDetail(id){
         +'</div>';
     }else if(b.status==='CONFIRMED'){
       var isCookB=b.type==='HOME_COOK';
-      if(b.vendorConfirmedCompleteAt){
+      if(b.pendingEditSnapshot){
+        // Accept/decline it first (pendingEditBlock, rendered below) -- the
+        // backend's own start-job guard already rejects this too, but
+        // showing the button at all here just invites a confusing 409.
+        vendorStatusBlock='';
+      }else if(b.vendorConfirmedCompleteAt){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>';
       }else if(isCookB&&!b.vendorJobStartedAt){
         vendorStatusBlock='<button onclick="vendorStartJob(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">&#x25B6;&#xFE0F; Job Started</button>';
@@ -9146,16 +9168,9 @@ async function openVendorBookingDetail(id){
     var pendingEditBlock='';
     if(b.pendingEditSnapshot){
       var pe=b.pendingEditSnapshot;
-      var peRows=[];
-      if(pe.eventDate!==undefined)peRows.push(['Date',pe.eventDate?new Date(pe.eventDate).toLocaleDateString():'TBD']);
-      if(pe.eventTime!==undefined)peRows.push(['Time',pe.eventTime||'—']);
-      if(pe.venue!==undefined)peRows.push(['Venue',pe.venue||'—']);
-      if(pe.guestCount!==undefined)peRows.push(['Guests',pe.guestCount||'—']);
-      if(pe.notes!==undefined)peRows.push(['Notes',pe.notes||'—']);
-      if(pe.totalKobo!==undefined)peRows.push(['New Total',N(Math.round(pe.totalKobo/100))]);
       pendingEditBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;margin-bottom:8px;">&#x270F;&#xFE0F; Customer Proposed Changes</div>'
-        +peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')
+        +_pendingEditSummaryHtml(pe)
         +'<div style="display:flex;gap:10px;margin-top:12px;">'
         +'<button onclick="vendorDeclineEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Edited Booking</button>'
         +'<button onclick="vendorAcceptEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">Accept &amp; Continue</button>'
@@ -9412,9 +9427,15 @@ async function openCustomerHistoryDetail(kind,id){
       ['Booked On',b.createdAt?new Date(b.createdAt).toLocaleString():'—'],
       ['Scheduled For',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
-      ['Package',b.servicePackage?b.servicePackage.label:'—'],
+      ['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')],
       ['Total',N(Math.round(b.totalKobo/100))],
     ];
+    // The current items -- reflects whatever the booking's real state is
+    // right now, so once an edit is accepted this naturally shows the NEW
+    // items automatically (selectedItems is what the accept endpoint
+    // updates). Previously the customer's own detail screen never showed
+    // items at all, only the vendor's did.
+    var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
     // Guest count is only meaningful for Event Planning bookings -- Home
     // Cook bookings never collect it, so showing "Guests: Not set" there
     // was pure noise.
@@ -9558,6 +9579,7 @@ async function openCustomerHistoryDetail(kind,id){
     var editedBanner=b.wasEdited?'<div style="margin-top:14px;padding:10px 14px;border-radius:12px;background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);text-align:center;color:#3B9FE8;font-weight:700;font-size:12px;">&#x270F;&#xFE0F; Edited Booking Details</div>':'';
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
+      +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
       +editedBanner
@@ -9579,7 +9601,10 @@ async function openCustomerHistoryDetail(kind,id){
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Job To Be Completed</div>'
       ):'')
       +(hasPendingEdit?(
-        '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;color:#F5A623;font-weight:700;font-size:13px;">&#x270F;&#xFE0F; Your Edit Is Awaiting Vendor Approval</div>'
+        '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
+        +'<div style="text-align:center;color:#F5A623;font-weight:700;font-size:13px;margin-bottom:8px;">&#x270F;&#xFE0F; Your Edit Is Awaiting Vendor Approval</div>'
+        +_pendingEditSummaryHtml(b.pendingEditSnapshot)
+        +'</div>'
       ):'')
       +(needsCompletionResponse?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);">'
@@ -9639,18 +9664,25 @@ function openVendorBookingCall(){
 // own visibility into why, and because the backend now requires it
 // (cancelBooking 400s without one).
 var CANCEL_BOOKING_REASONS=['Schedule conflict — I need to reschedule','Found another vendor','Budget issues — cannot afford anymore','Vendor did not respond to my messages','I made a mistake in the booking details','Emergency / Unforeseen circumstances','Other reason'];
+// Same list, phrased from the vendor's own side -- a vendor cancelling
+// isn't "budget issues" or "found another vendor," those only make sense
+// from the customer who's paying. Picked at render time in
+// openCancelBookingReasonModal based on which role currently has the
+// modal open (_eRole), not by who owns the booking.
+var VENDOR_CANCEL_BOOKING_REASONS=['Schedule conflict — I can\'t make it','Customer unresponsive to my messages','Unable to fulfil this booking as requested','Pricing / items issue with this booking','Emergency / Unforeseen circumstances','Other reason'];
 // Multi-select (checkboxes, not single-choice) plus a free-text "Other"
-// field -- a customer cancelling often has more than one real reason, and
-// the fixed list can't cover everything. Reasons picked + any typed text
-// are joined into one string for the existing plain-text Booking.cancelReason
-// column (no schema change needed for this).
+// field -- cancelling often has more than one real reason, and the fixed
+// list can't cover everything. Reasons picked + any typed text are joined
+// into one string for the existing plain-text Booking.cancelReason column
+// (no schema change needed for this).
 function openCancelBookingReasonModal(id){
   window._cancelBookingId=id; window._cancelBookingReasons=[];
+  var reasons=(_eRole==='customer')?CANCEL_BOOKING_REASONS:VENDOR_CANCEL_BOOKING_REASONS;
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Cancel Booking</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Select every reason that applies.</p>'
     +'<div id="cbr-reasons-list">'
-    +CANCEL_BOOKING_REASONS.map(function(r,i){return '<div onclick="toggleCancelBookingReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;"><div id="cbr-box-'+i+'" style="width:18px;height:18px;border-radius:5px;border:2px solid #555;flex-shrink:0;"></div><span style="color:#F2EDE8;font-size:13px;">'+r+'</span></div>';}).join('')
+    +reasons.map(function(r,i){return '<div onclick="toggleCancelBookingReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;"><div id="cbr-box-'+i+'" style="width:18px;height:18px;border-radius:5px;border:2px solid #555;flex-shrink:0;"></div><span style="color:#F2EDE8;font-size:13px;">'+r+'</span></div>';}).join('')
     +'</div>'
     +'<div id="cbr-other-wrap" style="display:none;margin:4px 0 4px;"><textarea id="cbr-other-text" placeholder="Type your reason…" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;min-height:60px;font-family:\'DM Sans\',sans-serif;"></textarea></div>'
     +'<button id="cbr-confirm-btn" onclick="confirmCancelBookingWithReason()" style="display:none;width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Confirm Cancellation</button>'
@@ -9784,6 +9816,18 @@ var _editingBookingMenu=[];
 function _ebItemsTotal(){
   return (_ebItemPicker?_ebItemPicker.selections:[]).reduce(function(s,x){return s+x.priceKobo*(x.qty||1);},0);
 }
+// The booking's own packageKey (3-Day Meal Prep / Weekly Family Meals) --
+// looked up against the same _hcPackages template that gated the original
+// create-flow meal picker, so editing enforces the exact same cap: the
+// customer can't exceed however many meals that package fixes (3 or 7),
+// only reselect within it. Multiple Meals Package/Event Catering (and any
+// booking with no packageKey at all -- a real ServicePackage-linked or
+// a-la-carte booking) stay uncapped, matching the create flow exactly.
+function _ebMealCap(){
+  var tpl=_hcPackages.find(function(p){return p.id===(_editingBooking&&_editingBooking.packageKey);});
+  if(!tpl||tpl.mealCount==null||tpl.mealCount===Infinity)return null;
+  return tpl.mealCount;
+}
 function renderEbItemsSection(){
   var el=document.getElementById('eb-items-section');
   if(!el||!_ebItemPicker)return;
@@ -9792,13 +9836,17 @@ function renderEbItemsSection(){
   var itemsTotal=_ebItemsTotal();
   var newTotal=pkgKobo+itemsTotal;
   var prevTotal=(_editingBooking&&_editingBooking.totalKobo)||0;
+  var required=_ebMealCap();
+  var count=_ebItemPicker.selections.length;
+  var full=required!=null&&count>=required;
   var h='<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Items</label>'
-    +'<p style="color:#9A9390;font-size:11px;margin:0 0 10px;">Select just like before — deselect what you don\'t want, pick anything else from the menu, or type your own below.</p>'
+    +'<p style="color:#9A9390;font-size:11px;margin:0 0 10px;">'+(required!=null?('Select exactly '+required+' meal'+(required===1?'':'s')+' — '+count+' of '+required+' selected. Deselect one to swap it for another.'):'Select just like before — deselect what you don\'t want, pick anything else from the menu, or type your own below.')+'</p>'
     +(menu.length?'':'<div style="text-align:center;padding:16px 10px;color:#9A9390;font-size:12px;">This cook hasn\'t added any menu items.</div>')
     +menu.map(function(m){
       var sel=_ebItemPicker.selections.find(function(x){return x.menuItemId===m.id;});
-      return '<label style="display:flex;align-items:center;gap:12px;background:'+(sel?'rgba(232,57,46,.1)':'#1C1C1C')+';border:1.5px solid '+(sel?'#E8392E':'#2A2850')+';border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;">'
-        +'<input type="checkbox" '+(sel?'checked':'')+' onchange="toggleEbItem(\''+m.id+'\','+m.priceKobo+',\''+String(m.name).replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#E8392E;flex-shrink:0;">'
+      var disabled=!sel&&full;
+      return '<label style="display:flex;align-items:center;gap:12px;background:'+(sel?'rgba(232,57,46,.1)':'#1C1C1C')+';border:1.5px solid '+(sel?'#E8392E':'#2A2850')+';border-radius:12px;padding:12px;margin-bottom:8px;'+(disabled?'opacity:.4;':'cursor:pointer;')+'">'
+        +'<input type="checkbox" '+(sel?'checked':'')+(disabled?' disabled':'')+' onchange="toggleEbItem(\''+m.id+'\','+m.priceKobo+',\''+String(m.name).replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#E8392E;flex-shrink:0;">'
         +'<div style="flex:1;font-weight:700;color:#F2EDE8;font-size:14px;">'+m.name+'</div>'
         +'<div style="font-weight:800;color:#E8392E;font-size:13px;">&#x20a6;'+Number(Math.round(m.priceKobo/100)).toLocaleString()+'</div>'
         +'</label>';
@@ -9811,12 +9859,14 @@ function renderEbItemsSection(){
         +'<span onclick="removeEbItemCustom(\''+x._cid+'\')" style="color:#9A9390;cursor:pointer;font-size:18px;margin-left:4px;">&times;</span>'
         +'</div>';
     }).join('')
-    +'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:12px;padding:12px;margin-top:4px;">'
-    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px;">Other — type what you want</div>'
-    +'<input id="eb-other-name" placeholder="e.g. Suya, Ofada Rice..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
-    +'<input id="eb-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
-    +'<button onclick="addEbItemCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #E8392E;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;">+ Add</button>'
-    +'</div>'
+    +(full?'':(
+      '<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:12px;padding:12px;margin-top:4px;">'
+      +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px;">Other — type what you want</div>'
+      +'<input id="eb-other-name" placeholder="e.g. Suya, Ofada Rice..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
+      +'<input id="eb-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
+      +'<button onclick="addEbItemCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #E8392E;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;">+ Add</button>'
+      +'</div>'
+    ))
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid #2A2850;">'
     +'<span style="color:#9A9390;font-size:13px;">New Total</span>'
     +'<span style="font-weight:900;font-size:17px;color:'+(newTotal>prevTotal?'#F5A623':'#2ECC71')+';">&#x20a6;'+Number(Math.round(newTotal/100)).toLocaleString()+'</span>'
@@ -9826,11 +9876,18 @@ function renderEbItemsSection(){
 }
 function toggleEbItem(menuItemId,priceKobo,name){
   var i=_ebItemPicker.selections.findIndex(function(x){return x.menuItemId===menuItemId;});
-  if(i>-1)_ebItemPicker.selections.splice(i,1);
-  else _ebItemPicker.selections.push({menuItemId:menuItemId,name:name,priceKobo:priceKobo,qty:1});
+  if(i>-1){
+    _ebItemPicker.selections.splice(i,1);
+  }else{
+    var required=_ebMealCap();
+    if(required!=null&&_ebItemPicker.selections.length>=required){showToast&&showToast('You already selected '+required+' meals — deselect one first.','warning');return;}
+    _ebItemPicker.selections.push({menuItemId:menuItemId,name:name,priceKobo:priceKobo,qty:1});
+  }
   renderEbItemsSection();
 }
 function addEbItemCustom(){
+  var required=_ebMealCap();
+  if(required!=null&&_ebItemPicker.selections.length>=required){showToast&&showToast('You already selected '+required+' meals — deselect one first.','warning');return;}
   var name=(document.getElementById('eb-other-name')||{}).value||'';
   var price=parseFloat((document.getElementById('eb-other-price')||{}).value);
   if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
@@ -10431,6 +10488,8 @@ async function cookBkConfirmBooking(){
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_cb.cookId, type:'HOME_COOK', items:items,
       servicePackageId:pkgReal?pkgReal.id:undefined,
+      packageKey:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.id:undefined,
+      packageLabel:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.nm:undefined,
       eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes,
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});

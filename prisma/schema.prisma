@@ -387,6 +387,17 @@ model Booking {
   servicePackageId String?
   servicePackage   ServicePackage? @relation(fields: [servicePackageId], references: [id])
 
+  // Display-only tag for a Home Cook meal-picker package (3-Day Meal Prep,
+  // Weekly Family Meals, Multiple Meals Package, Event Catering Package) --
+  // these are priced purely from the picked items, never a real
+  // ServicePackage row (see cookBkConfirmBooking's mealPickerItems branch),
+  // so servicePackageId stays null for them and "Package" would otherwise
+  // always show "--". packageKey is the local template id (e.g. "basic"),
+  // read back by the edit flow to re-derive that package's own meal-count
+  // cap; packageLabel is the human-readable name shown in booking details.
+  packageKey   String?
+  packageLabel String?
+
   // Free-form selected menu items / add-ons, e.g. [{menuItemId, name, qty, priceKobo}]
   selectedItems Json?
 
