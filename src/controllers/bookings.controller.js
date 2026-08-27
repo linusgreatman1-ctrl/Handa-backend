@@ -38,6 +38,19 @@ async function resolveBookingItems(items, vendorId) {
   return { selectedItemsSnapshot, itemsTotalKobo };
 }
 
+// The real root cause of this cap "not working": a fixed-template EP
+// package (Basic/Standard/Premium/Birthday) created via the vendor's
+// "quick add" flow, or seeded directly, can carry a null guestCount even
+// though its own customer-facing card text ("Up to 200 guests" etc.) is a
+// hardcoded template description that never changes -- the promised cap
+// and the enforced cap silently diverge the moment guestCount is null.
+// Mirrors the frontend's own _epPackages template defaults exactly, so a
+// package whose real guestCount was never set (or was cleared) still gets
+// the cap its own card text promises, instead of silently becoming
+// unlimited. Wedding/Corporate/Burial/Naming make no "Up to N" claim in
+// their template text, so they get no fallback here either.
+const EP_TEMPLATE_GUEST_DEFAULTS = { BASIC: 100, STANDARD: 200, PREMIUM: 500, BIRTHDAY: 150 };
+
 // Never let a stored guestCount exceed the package's own configured max --
 // authoritative server-side clamp. A client-side oninput clamp alone can't
 // be trusted as the sole enforcement (bypassable by any direct API call,
@@ -47,7 +60,10 @@ function clampGuestCount(guestCount, servicePackage) {
   if (guestCount == null || guestCount === "") return guestCount;
   const n = parseInt(guestCount);
   if (!Number.isFinite(n)) return guestCount;
-  if (servicePackage && servicePackage.guestCount) return Math.min(n, servicePackage.guestCount);
+  if (servicePackage) {
+    const cap = servicePackage.guestCount || EP_TEMPLATE_GUEST_DEFAULTS[servicePackage.key];
+    if (cap) return Math.min(n, cap);
+  }
   return n;
 }
 
@@ -258,11 +274,16 @@ async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRu
   if (diff === 0) return null;
   if (diff > 0) {
     const w = await walletSvc.getOrCreateWallet(booking.customerId, tx);
-    // Same DEV_BYPASS_PAYMENTS escape hatch debitWallet itself already
-    // honors -- without this, this precheck would be the one payment path
-    // in the whole app that's stricter than every other, breaking that
-    // env's established "test without needing real funds" behavior.
-    if (w.balanceKobo < diff && !walletSvc.devBypassEnabled()) {
+    // Deliberately NOT gated on DEV_BYPASS_PAYMENTS, unlike debitWallet's
+    // own internal check below -- this precheck's whole job is to show the
+    // customer the real "insufficient funds -> add funds" flow, exactly
+    // like Shop-For-Me's approveItem (which has no such bypass at all and
+    // is why that flow is reliably demonstrable). Bypassing it here meant
+    // this check silently never fired on an environment with the flag on,
+    // making the feature look broken/untestable rather than actually
+    // working -- the flag only needs to keep the eventual debitWallet call
+    // below from blocking, not this warning from ever firing.
+    if (w.balanceKobo < diff) {
       throw Object.assign(new Error("Your escrow wallet does not have enough to cover the new total. Add funds to continue."), { status: 400, shortfallKobo: diff - w.balanceKobo });
     }
     if (!dryRun) {

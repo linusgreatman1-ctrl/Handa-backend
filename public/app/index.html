@@ -9026,13 +9026,30 @@ async function renderVendorDashboard(kind){
 // arrives in real time (notify() fires it from confirmBookingPayment for
 // Home Cook and createBooking for Event Planner), the dashboard just never
 // used to react to it, only to a full page/screen reload.
-async function loadVendorBookingsList(isCook){
+// Dashboard shows the 10 most recent (bookings already arrive newest-first
+// from the API) with a "See More" reveal for the rest -- the full,
+// unlimited list stays History's job (showVendorRideHistory), which
+// already shows everything with no cap. Cached so "See More" can re-render
+// without a second fetch.
+var _vendorBookingsFull=[];
+function loadVendorBookingsList(isCook){
+  return api('/bookings?as=vendor').then(function(res){
+    _vendorBookingsFull=res.bookings||[];
+    renderVendorBookingsList(isCook,10);
+  }).catch(function(err){
+    var listEl2=document.getElementById('vendor-bookings-list');
+    if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load bookings')+'</div>';
+  });
+}
+function renderVendorBookingsList(isCook,limit){
   try{
-    var res=await api('/bookings?as=vendor');
+    var all=_vendorBookingsFull;
     var listEl=document.getElementById('vendor-bookings-list');
     if(!listEl)return;
-    if(!res.bookings.length){listEl.innerHTML='<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:40px;margin:0 0 8px">'+(isCook?'🧑‍🍳':'🎊')+'</p><p>No bookings yet</p></div>';return;}
-    listEl.innerHTML=res.bookings.map(function(b){
+    if(!all.length){listEl.innerHTML='<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:40px;margin:0 0 8px">'+(isCook?'🧑‍🍳':'🎊')+'</p><p>No bookings yet</p></div>';return;}
+    var shown=limit?all.slice(0,limit):all;
+    var remaining=all.length-shown.length;
+    listEl.innerHTML=shown.map(function(b){
       var statusColors={REQUESTED:'#9A9390',PAID:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#9A9390'};
       var sc=statusColors[b.status]||'#9A9390';
       var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
@@ -9049,7 +9066,8 @@ async function loadVendorBookingsList(isCook){
       var pendingEditBadge=b.pendingEditSnapshot?'<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(245,166,35,.1);color:#F5A623;font-size:11px;font-weight:700;text-align:center;">✏️ Customer proposed changes — open to review</div>':'';
       var jobStartedBadge=(isCook&&b.status==='CONFIRMED'&&b.vendorJobStartedAt&&!b.vendorConfirmedCompleteAt)?'<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(155,89,182,.1);color:#9B59B6;font-size:11px;font-weight:700;text-align:center;">▶️ Job Started</div>':'';
       return '<div onclick="openVendorBookingDetail(\''+b.id+'\')" style="background:#1C1C1C;border-radius:14px;padding:14px;margin-bottom:10px;border:1.5px solid #2A2850;cursor:pointer"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="color:#F2EDE8">'+(b.customer?b.customer.name:'Customer')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px">'+b.status+'</span></div><p style="color:#9A9390;font-size:12px;margin:0 0 2px">'+sub+'</p><p style="color:#9A9390;font-size:12px;margin:0">📅 '+when+(b.eventTime?' at '+b.eventTime:'')+' • ₦'+Number(Math.round(b.totalKobo/100)).toLocaleString()+'</p>'+actions+pendingEditBadge+jobStartedBadge+'</div>';
-    }).join('');
+    }).join('')
+    +(remaining>0?'<button onclick="renderVendorBookingsList('+isCook+',0)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-top:4px;">See More ('+remaining+' more)</button>':'');
   }catch(err){
     var listEl2=document.getElementById('vendor-bookings-list');
     if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load bookings')+'</div>';
@@ -9129,6 +9147,11 @@ async function openVendorBookingDetail(id){
     // was pure noise.
     if(b.type==='EVENT_PLANNING')rows.splice(4,0,['Guests',b.guestCount||'Not set']);
     var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+    // Same permanent "was edited" record as the customer's own detail
+    // screen -- right after Payment Method, on top of (before) the items
+    // list, so the vendor sees "here's what changed" immediately before
+    // the changed items themselves.
+    var vendorEditedBanner=b.wasEdited?'<div style="margin:10px 0;padding:10px 14px;border-radius:12px;background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);text-align:center;color:#3B9FE8;font-weight:700;font-size:12px;">&#x270F;&#xFE0F; Edited Booking Details</div>':'';
     var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
     var vendorStatusBlock='';
@@ -9196,6 +9219,7 @@ async function openVendorBookingDetail(id){
     );
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
+      +vendorEditedBanner
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
@@ -9429,6 +9453,7 @@ async function openCustomerHistoryDetail(kind,id){
       ['Venue',b.venue||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')],
       ['Total',N(Math.round(b.totalKobo/100))],
+      ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with the vendor (not via the app)':(b.paymentMethod||'—')],
     ];
     // The current items -- reflects whatever the booking's real state is
     // right now, so once an edit is accepted this naturally shows the NEW
@@ -9575,14 +9600,17 @@ async function openCustomerHistoryDetail(kind,id){
     // point (b.wasEdited, set the moment the vendor accepts a pending
     // edit) -- shown alongside whatever other banner applies, not instead
     // of it, since "was edited" and "is now completed/cancelled" are both
-    // true facts about the same booking.
-    var editedBanner=b.wasEdited?'<div style="margin-top:14px;padding:10px 14px;border-radius:12px;background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);text-align:center;color:#3B9FE8;font-weight:700;font-size:12px;">&#x270F;&#xFE0F; Edited Booking Details</div>':'';
+    // true facts about the same booking. Sits right after the Payment
+    // Method row and before the items list -- on top of the edited items,
+    // not tacked on below the whole card -- so it's read as "here's what
+    // changed" immediately before the changed items themselves.
+    var editedBanner=b.wasEdited?'<div style="margin:10px 0;padding:10px 14px;border-radius:12px;background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);text-align:center;color:#3B9FE8;font-weight:700;font-size:12px;">&#x270F;&#xFE0F; Edited Booking Details</div>':'';
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
+      +editedBanner
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
-      +editedBanner
       +terminalBanner
       +(awaitingVendorDecision?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Vendor To Accept Your Booking</div>'
@@ -9779,8 +9807,21 @@ async function openEditBookingModal(b){
   // Guests only applies to Event Planning bookings -- Home Cook bookings
   // never collect a guest count. When the booking's package has a real
   // configured guestCount, cap the field to it (same clamp-on-type used by
-  // the original booking form) instead of leaving it freely editable.
-  var maxGuests=(isEP&&b.servicePackage&&b.servicePackage.guestCount)?b.servicePackage.guestCount:null;
+  // the original booking form) instead of leaving it freely editable. When
+  // the real value is null (the common case for a quick-added/seeded fixed
+  // package -- its card still promises "Up to N guests" via the template's
+  // own static description regardless), fall back to that same template's
+  // default so editing enforces the exact cap the package was ever shown
+  // to promise, same fallback selectEPPackage uses for a fresh booking.
+  var maxGuests=null;
+  if(isEP&&b.servicePackage){
+    if(b.servicePackage.guestCount!=null){
+      maxGuests=b.servicePackage.guestCount;
+    }else{
+      var _ebEpTpl=_epPackages.find(function(p){return p.id===String(b.servicePackage.key||'').toLowerCase();});
+      if(_ebEpTpl&&_ebEpTpl.guests!=null)maxGuests=_ebEpTpl.guests;
+    }
+  }
   var guestsField=isEP
     ?('<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Guests</label>'
       +'<input class="if" id="eb-guests" type="number" min="1"'+(maxGuests?' max="'+maxGuests+'" oninput="_clampEpbGuests(this,'+maxGuests+')"':'')+' value="'+(b.guestCount||'')+'" placeholder="e.g. 200" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
@@ -10728,10 +10769,14 @@ function selectEPPackage(id){
     // .pr carries the vendor's real configured price (real.price, in naira)
     // once selected — the template's own .pr is just a display default for
     // planners who haven't set a price yet, never what gets charged.
-    // .guestCount carries the package's real configured guest count (if any)
-    // so the details screen can auto-fill/lock the guests field instead of
-    // always leaving it blank.
-    _epb.selectedPkg=Object.assign({},tpl,{pr:real?real.price:tpl.pr,guestCount:real?real.guests:null});
+    // .guestCount carries the package's real configured guest count when
+    // the vendor set one; otherwise falls back to the template's own
+    // default (tpl.guests) -- the card's "Up to N guests" text is that
+    // SAME static template description regardless of the real value, so
+    // without this fallback a package whose real guestCount was never set
+    // (the common case for quick-added/seeded packages) showed a promised
+    // cap on the card but enforced none at all.
+    _epb.selectedPkg=Object.assign({},tpl,{pr:real?real.price:tpl.pr,guestCount:(real&&real.guests!=null)?real.guests:tpl.guests});
   }else{
     // A CUSTOM package — id is "custom_<servicePackageId>", not one of the
     // fixed template ids, so build the selection straight from the real
