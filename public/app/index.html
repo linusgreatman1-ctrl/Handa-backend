@@ -10027,8 +10027,18 @@ async function openEditBookingModal(b){
     _ebItemPicker={selections:(Array.isArray(b.selectedItems)?b.selectedItems:[]).map(function(it){
       return {menuItemId:it.menuItemId||null,name:it.name,priceKobo:it.priceKobo,qty:it.qty||1,custom:!!it.custom,_cid:it.custom?('c'+Math.random().toString(36).slice(2)):undefined};
     })};
+    _epEditItemPicker=null;
   }else{
     _ebItemPicker=null;
+    // EP's own "Items Booked" used to be plain retype-in-place text fields,
+    // one per already-booked item, with no way to drop one or add
+    // something new. Now built the same way Cook's picker is: a checklist
+    // seeded from the vendor's own package "What's Included" list (the
+    // real facts about what this package covers), checked/unchecked to
+    // match whatever's currently on the booking, plus an Other row to type
+    // in anything extra -- same interaction as the Home Cook meal picker,
+    // just sourced from the package's includes instead of a menu.
+    _epEditItemPicker=isEP?_buildEpEditItemPicker(b):null;
   }
   // Guests only applies to Event Planning bookings -- Home Cook bookings
   // never collect a guest count. When the booking's package has a real
@@ -10053,20 +10063,6 @@ async function openEditBookingModal(b){
       +'<input class="if" id="eb-guests" type="number" min="1"'+(maxGuests?' max="'+maxGuests+'" oninput="_clampEpbGuests(this,'+maxGuests+')"':'')+' value="'+(b.guestCount||'')+'" placeholder="e.g. 200" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
       +(maxGuests?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0">Up to '+maxGuests+' guests for this package</p>':''))
     :'';
-  // EP's own items (add-ons) stay the simpler retype-in-place fields --
-  // each one's own text is freely retypeable to swap in something else
-  // entirely, keeping its original price/quantity, submitted as a custom
-  // item (see saveBookingEdit) since a real menu item's name is always
-  // re-derived server-side from its id and would otherwise silently
-  // ignore whatever's typed here.
-  var epBookedItems=isEP&&Array.isArray(b.selectedItems)?b.selectedItems:[];
-  var epItemsField=epBookedItems.length
-    ?('<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Items Booked</label>'
-      +'<p style="color:#9A9390;font-size:11px;margin:0 0 8px;">Type over any item to replace it — its price stays the same.</p>'
-      +epBookedItems.map(function(it){
-        return '<input class="if eb-item-inp" data-price="'+(it.priceKobo||0)+'" data-qty="'+(it.qty||1)+'" value="'+String(it.name||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;margin-bottom:8px;">';
-      }).join(''))
-    :'';
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
@@ -10077,16 +10073,99 @@ async function openEditBookingModal(b){
     +_arField(isCook?'Cooking Time':'Event Time','eb-time',b.eventTime||'','')
     +_arField(isCook?'Cooking Address':'Venue','eb-venue',b.venue||'','')
     +guestsField
-    +epItemsField
-    +(isCook?'<div id="eb-items-section"></div>':'')
+    +'<div id="eb-items-section"></div>'
     +'<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes</label><textarea id="eb-notes" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;min-height:70px;">'+(b.notes||'')+'</textarea>'
     +'<button onclick="saveBookingEdit()" style="width:100%;margin-top:16px;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">Save Changes</button>'
     +'</div>'
   );
   document.getElementById('eb-date').value=b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'';
   if(isCook){ _editingBookingMenu=vendorMenu; renderEbItemsSection(); }
+  else if(isEP&&_epEditItemPicker){ renderEpEditItemsSection(); }
 }
 var _editingBookingMenu=[];
+var _epEditItemPicker=null;
+// Seeds the EP edit picker from the vendor's own package "What's
+// Included" list -- the real, vendor-set facts about what this package
+// covers (see _packageIncludesHtml, shown read-only everywhere else) --
+// checked to match whatever's actually on the booking today. A plain
+// package booking (no proposal involved) has an empty selectedItems by
+// design (see createBooking -- items is never sent for a package-only
+// booking), so with nothing to match against, every include defaults to
+// checked: "everything the package promises, as booked." Any existing
+// item that doesn't match an include by name (proposal-derived services,
+// or something added via Other on an earlier edit) carries over as its
+// own already-checked custom row instead of being silently dropped.
+function _buildEpEditItemPicker(b){
+  var includes=(b.servicePackage&&Array.isArray(b.servicePackage.includes))?b.servicePackage.includes:[];
+  var existing=Array.isArray(b.selectedItems)?b.selectedItems:[];
+  var norm=function(s){return String(s||'').trim().toLowerCase();};
+  var matchedNames={};
+  var selections=[];
+  includes.forEach(function(inc){
+    var match=existing.find(function(it){return norm(it.name)===norm(inc);});
+    if(match){
+      matchedNames[norm(inc)]=true;
+      selections.push({name:inc,priceKobo:match.priceKobo||0,included:true});
+    }else if(!existing.length){
+      // Nothing customized yet on this booking -- default to the package
+      // as-promised, everything included.
+      selections.push({name:inc,priceKobo:0,included:true});
+    }else{
+      selections.push({name:inc,priceKobo:0,included:false});
+    }
+  });
+  existing.forEach(function(it){
+    if(!matchedNames[norm(it.name)]){
+      selections.push({name:it.name,priceKobo:it.priceKobo||0,included:true,custom:true,_cid:'c'+Math.random().toString(36).slice(2)});
+    }
+  });
+  return {includes:includes,selections:selections};
+}
+function renderEpEditItemsSection(){
+  var el=document.getElementById('eb-items-section');
+  if(!el||!_epEditItemPicker)return;
+  var p=_epEditItemPicker;
+  var includeRows=p.selections.filter(function(x){return !x.custom;});
+  var customRows=p.selections.filter(function(x){return x.custom;});
+  var h='<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Items Included</label>'
+    +'<p style="color:#9A9390;font-size:11px;margin:0 0 10px;">Deselect anything you don\'t want from this package, or add your own below.</p>'
+    +(includeRows.length?'':'<div style="text-align:center;padding:12px 10px;color:#9A9390;font-size:12px;">This package has no listed inclusions.</div>')
+    +includeRows.map(function(x,i){
+      return '<label style="display:flex;align-items:center;gap:12px;background:'+(x.included?'rgba(232,57,46,.1)':'#1C1C1C')+';border:1.5px solid '+(x.included?'#E8392E':'#2A2850')+';border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;">'
+        +'<input type="checkbox" '+(x.included?'checked':'')+' onchange="toggleEpEditItem('+i+')" style="width:18px;height:18px;accent-color:#E8392E;flex-shrink:0;">'
+        +'<div style="flex:1;font-weight:700;color:#F2EDE8;font-size:14px;">'+x.name+'</div>'
+        +'</label>';
+    }).join('')
+    +customRows.map(function(x){
+      return '<div style="display:flex;align-items:center;gap:12px;background:rgba(232,57,46,.1);border:1.5px solid #E8392E;border-radius:12px;padding:12px;margin-bottom:8px;">'
+        +'<span style="font-size:22px;flex-shrink:0;">&#x270D;&#xFE0F;</span>'
+        +'<div style="flex:1;font-weight:700;color:#F2EDE8;font-size:14px;">'+x.name+'</div>'
+        +'<span onclick="removeEpEditItemCustom(\''+x._cid+'\')" style="color:#9A9390;cursor:pointer;font-size:18px;margin-left:4px;">&times;</span>'
+        +'</div>';
+    }).join('')
+    +'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:12px;padding:12px;margin-top:4px;">'
+    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px;">Other — type what you want</div>'
+    +'<input id="eb-ep-other-name" placeholder="e.g. Live band, Photo booth..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;">'
+    +'<button onclick="addEpEditItemCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #E8392E;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;">+ Add</button>'
+    +'</div>';
+  el.innerHTML=h;
+}
+function toggleEpEditItem(index){
+  var includeRows=_epEditItemPicker.selections.filter(function(x){return !x.custom;});
+  var row=includeRows[index];
+  if(row)row.included=!row.included;
+  renderEpEditItemsSection();
+}
+function addEpEditItemCustom(){
+  var name=(document.getElementById('eb-ep-other-name')||{}).value||'';
+  if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
+  _epEditItemPicker.selections.push({name:name.trim(),priceKobo:0,included:true,custom:true,_cid:'c'+Date.now()});
+  renderEpEditItemsSection();
+}
+function removeEpEditItemCustom(cid){
+  _epEditItemPicker.selections=_epEditItemPicker.selections.filter(function(x){return x._cid!==cid;});
+  renderEpEditItemsSection();
+}
 function _ebItemsTotal(){
   return (_ebItemPicker?_ebItemPicker.selections:[]).reduce(function(s,x){return s+x.priceKobo*(x.qty||1);},0);
 }
@@ -10186,13 +10265,10 @@ async function saveBookingEdit(){
     items=_ebItemPicker.selections.map(function(x){
       return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:x.qty}:{menuItemId:x.menuItemId,qty:x.qty};
     });
-  }else{
-    var itemInps=document.querySelectorAll('.eb-item-inp');
-    if(itemInps.length){
-      items=Array.from(itemInps).map(function(inp){
-        return {customName:inp.value.trim(),customPriceKobo:parseInt(inp.getAttribute('data-price'),10)||0,qty:parseInt(inp.getAttribute('data-qty'),10)||1};
-      }).filter(function(it){return it.customName;});
-    }
+  }else if(_editingBooking.type==='EVENT_PLANNING'&&_epEditItemPicker){
+    var epChecked=_epEditItemPicker.selections.filter(function(x){return x.included;});
+    if(!epChecked.length){showToast&&showToast('Select at least one item','warning');return;}
+    items=epChecked.map(function(x){return {customName:x.name,customPriceKobo:x.priceKobo,qty:1};});
   }
   try{
     var res=await api('/bookings/'+_editingBooking.id,{method:'PATCH',body:JSON.stringify({
