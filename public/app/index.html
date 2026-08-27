@@ -1656,10 +1656,18 @@ async function loadMyEventRequestsList(){
     var statusColors={OPEN:'#F5A623',PROPOSAL_ACCEPTED:'#2ECC71',CANCELLED:'#9A9390'};
     list.innerHTML = res.requests.map(function(r){
       var sc = statusColors[r.status]||'#9A9390';
+      // Declining the whole request (not one vendor's proposal -- that's
+      // the per-proposal Decline already inside openEventRequestDetailModal)
+      // only makes sense while it's still OPEN; withdraws every pending
+      // proposal on it too (see cancelEventRequest).
+      var declineBtn = r.status==='OPEN'
+        ? '<button onclick="event.stopPropagation();declineMyEventRequest(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Decline Request</button>'
+        : '';
       return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
         + '<div style="font-size:12px;color:#2ECC71;margin-top:4px;font-weight:700;">'+r._count.proposals+' proposal'+(r._count.proposals===1?'':'s')+' received</div>'
+        + declineBtn
         + '</div>';
     }).join('');
   }catch(err){
@@ -1668,6 +1676,16 @@ async function loadMyEventRequestsList(){
 }
 function closeMyEventRequestsModal(){
   var el=document.getElementById('my-requests-modal'); if(el) el.remove();
+}
+async function declineMyEventRequest(id){
+  if(!confirm('Decline this event request? Every planner\'s proposal on it will be withdrawn.'))return;
+  try{
+    await api('/event-requests/'+id+'/cancel',{method:'POST'});
+    showToast&&showToast('Event request declined','success');
+    loadMyEventRequestsList();
+  }catch(err){
+    showToast&&showToast(err.message||'Could not decline this request','warning');
+  }
 }
 
 async function openEventRequestDetailModal(id){
@@ -8188,7 +8206,13 @@ var _afMethod='CARD';
 // it, and resumes whatever it was doing (not just refreshing the wallet
 // card, the plain Profile "+ Add Funds" entry point's own default).
 function showAddFundsModal(minKobo,onSuccess,priceContext){
-  _afMethod='CARD';
+  // No method pre-selected -- the confirm button starts disabled (see
+  // walletBtn/cardBtn/transferBtn below) until the customer actually picks
+  // one. Wallet used to be the silent default the moment this screen
+  // opened, which meant a customer who genuinely wanted to pay by card or
+  // bank transfer could end up having their existing wallet balance spent
+  // anyway the instant they hit the (always-enabled) confirm button.
+  _afMethod=null;
   window._addFundsOnSuccess=onSuccess||null;
   // Stashed so a sub-flow (Bank Transfer) can reopen this exact screen,
   // with the same shortfall, if the customer backs out of it wanting a
@@ -8196,6 +8220,15 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
   window._afMinKobo=minKobo||null;
   window._afPriceContext=priceContext||null;
   var prefill=minKobo?Math.ceil(minKobo/100):'';
+  // Card/Bank Transfer/USSD charge the FULL raw price difference, not the
+  // wallet-netted shortfall (prefill) -- paying the whole difference by a
+  // method that isn't the wallet means the pre-existing wallet balance is
+  // never touched at all (the later retry's own debitWallet call consumes
+  // exactly what was just added, nothing more). Only picking "Wallet
+  // Balance" explicitly nets off what's already free in there.
+  var rawDiffKobo=(priceContext&&priceContext.oldTotalKobo!=null&&priceContext.newTotalKobo!=null)?(priceContext.newTotalKobo-priceContext.oldTotalKobo):minKobo;
+  window._afRawDiffKobo=rawDiffKobo||null;
+  var rawDiffPrefill=rawDiffKobo?Math.ceil(rawDiffKobo/100):prefill;
   // minKobo means this was opened to cover a SPECIFIC shortfall (a booking
   // edit's new total) -- that number is exact (the edit's own new total
   // minus what's already held), not a suggestion, so this locks to it:
@@ -8225,7 +8258,7 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
     shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need &#x20a6;'+Number(prefill).toLocaleString()+' to complete this booking.</div>'):'';
   }
   var amountBlock=minKobo
-    ?('<div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Amount to Add</label><input id="af-inp" type="number" value="'+prefill+'" readonly style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:16px;font-weight:800;box-sizing:border-box;cursor:not-allowed;"></div>')
+    ?('<div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Amount to Add</label><input id="af-inp" type="number" value="" placeholder="Pick a payment method below" readonly style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:16px;font-weight:800;box-sizing:border-box;cursor:not-allowed;"></div>')
     :('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
       +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
       +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" value="" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>');
@@ -8238,16 +8271,37 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
   // the original action for real, succeeding if the balance has since
   // become enough (e.g. funded another way in the meantime) or reopening
   // this same screen with the same shortfall if not.
-  var walletBtn=minKobo?('<button onclick="_afMethod=\'WALLET\';document.getElementById(\'af-wallet-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';" id="af-wallet-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4B0; Wallet Balance</button>'):'';
+  var walletBtn=minKobo?('<button onclick="selectAfMethod(\'WALLET\')" id="af-wallet-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4B0; Wallet Balance</button>'):'';
   showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div>'
     +shortfallNote
     +amountBlock
     +'<div id="af-methods" style="display:flex;gap:8px;margin-bottom:16px;">'
     +walletBtn
-    +'<button onclick="_afMethod=\'CARD\';document.getElementById(\'af-card-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';var wb=document.getElementById(\'af-wallet-btn\');if(wb)wb.style.borderColor=\'#2A2850\';" id="af-card-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #E8392E;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">💳 Card/USSD</button>'
-    +'<button onclick="_afMethod=\'BANK_TRANSFER\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';var wb=document.getElementById(\'af-wallet-btn\');if(wb)wb.style.borderColor=\'#2A2850\';" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
+    +'<button onclick="selectAfMethod(\'CARD\')" id="af-card-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">💳 Card/USSD</button>'
+    +'<button onclick="selectAfMethod(\'BANK_TRANSFER\')" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
     +'</div>'
-    +'<button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">'+(minKobo?('Pay &#x20a6;'+Number(prefill).toLocaleString()):'Continue to Payment')+'</button></div>');
+    +'<button id="af-confirm-btn" onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;'+(minKobo?'opacity:.4;pointer-events:none;':'')+'">'+(minKobo?'Pay':'Continue to Payment')+'</button></div>');
+}
+// Shared by all three method buttons on the Add Funds screen (when a
+// specific shortfall/minKobo is being covered) -- picks the amount to
+// actually charge: Wallet Balance nets off the shortfall (prefill,
+// already accounts for the free balance sitting in the wallet); Card/Bank
+// Transfer/USSD charge the FULL raw price difference instead, so the
+// pre-existing wallet balance is never silently spent when the customer
+// explicitly chose a different method. Also flips the confirm button from
+// disabled (no method chosen yet) to enabled with the real amount shown.
+function selectAfMethod(method){
+  _afMethod=method;
+  var isWallet=method==='WALLET';
+  var kobo=isWallet?window._afMinKobo:(window._afRawDiffKobo||window._afMinKobo);
+  var naira=kobo?Math.ceil(kobo/100):0;
+  var inp=document.getElementById('af-inp');
+  if(inp)inp.value=naira;
+  var btn=document.getElementById('af-confirm-btn');
+  if(btn){btn.style.opacity='1';btn.style.pointerEvents='auto';btn.textContent='Pay ₦'+Number(naira).toLocaleString();}
+  var walletBtnEl=document.getElementById('af-wallet-btn');if(walletBtnEl)walletBtnEl.style.borderColor=isWallet?'#E8392E':'#2A2850';
+  var cardBtnEl=document.getElementById('af-card-btn');if(cardBtnEl)cardBtnEl.style.borderColor=(method==='CARD')?'#E8392E':'#2A2850';
+  var transferBtnEl=document.getElementById('af-transfer-btn');if(transferBtnEl)transferBtnEl.style.borderColor=(method==='BANK_TRANSFER')?'#E8392E':'#2A2850';
 }
 // Card/USSD still go via real Paystack checkout. Bank Transfer shows the
 // real company bank details and waits for admin confirmation instead --
@@ -9309,8 +9363,13 @@ async function openVendorBookingDetail(id){
         +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Dispute Is Pending Resolve From Handa.</div>'
         +'</div>';
     }else if(b.status==='COMPLETED'){
+      // EP's completion is one-sided/immediate (no confirm() popup, no
+      // toast -- see vendorMarkBookingComplete) so this plain-text line is
+      // the only place the real outcome (10% platform commission recorded,
+      // escrow released) actually shows.
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
         +'<div style="font-weight:800;font-size:14px;color:#2ECC71;">&#x2705; This Booking Is Completed</div>'
+        +(b.type==='EVENT_PLANNING'?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">10% of the booking (&#x20a6;'+Number(Math.round(b.totalKobo*0.1/100)).toLocaleString()+') has been recorded as platform commission.</div>':'')
         +'</div>';
     }else if(b.status==='CANCELLED'&&vendorDisputeResolved){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
@@ -9513,13 +9572,13 @@ async function submitVendorDisputeResponse(ticketId,bookingId){
   }
 }
 async function vendorMarkBookingComplete(id,isEP){
-  // Event Planner completion is one-sided and immediate -- there's no
-  // customer Yes/No step after this, escrow/commission settles right away.
-  // Confirm first since it can't be undone from here.
-  if(isEP&&!confirm('Mark this booking complete? This ends the session immediately, records your 10% platform commission, and cannot be undone.'))return;
+  // EP completion is one-sided and immediate -- no confirm() popup and no
+  // toast on success; the real result (10% commission recorded) shows as
+  // plain text on the booking detail screen itself (see openVendorBookingDetail's
+  // vendorStatusBlock), reached by just re-opening the detail below.
   try{
     await api('/bookings/'+id+'/complete',{method:'POST'});
-    showToast&&showToast(isEP?'Booking completed.':'Marked complete — waiting on the customer to confirm.','success');
+    if(!isEP)showToast&&showToast('Marked complete — waiting on the customer to confirm.','success');
     // Harmless no-op when this wasn't reached from inside a procedure
     // modal (the normal Orders-list entry point) -- but when it WAS (e.g.
     // the "Your Proposal" event-request view), the booking-detail bottom

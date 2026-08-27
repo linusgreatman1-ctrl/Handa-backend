@@ -2,6 +2,7 @@ const prisma = require("../config/db");
 const { generateReference } = require("../utils/reference");
 const companyBank = require("../config/companyBank");
 const { notifyAllAdmins } = require("./notifications.service");
+const { devBypassEnabled } = require("./wallet.service");
 
 // Bank Transfer is the one payment method that never touches Paystack —
 // every other method (Card/USSD/Wallet) keeps using it unchanged. The
@@ -16,6 +17,18 @@ async function createManualPaymentRequest(userId, purpose, targetId, amountKobo,
   const request = await prisma.manualPaymentRequest.create({
     data: { userId, purpose, targetId: targetId != null ? String(targetId) : null, amountKobo, reference },
   });
+  // DEV_BYPASS_PAYMENTS=true (same flag wallet.service.js's debitWallet
+  // already honors) skips the real admin-confirmation wait so a bank
+  // transfer "pays" the moment it's submitted -- lets the whole escrow/
+  // add-funds flow be exercised end-to-end without needing a second admin
+  // session open just to click Confirm each time. Unset (or "false") this
+  // before treating the app as production -- a real bank transfer must
+  // stay admin-confirmed, since nothing here actually verifies the money
+  // landed.
+  if (devBypassEnabled()) {
+    const confirmed = await confirmManualPaymentRequest(request.id, null, io);
+    return { request: confirmed, bankDetails: companyBank };
+  }
   // io is optional -- a call site that omits it just skips the real-time
   // admin ping; the pending request is still there next time an admin
   // opens the Manual Bank Transfers tab either way.
