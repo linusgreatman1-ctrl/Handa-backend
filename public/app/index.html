@@ -8142,12 +8142,23 @@ function showAddFundsModal(minKobo,onSuccess){
     :('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
       +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
       +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" value="" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>');
+  // Only meaningful when there's a specific shortfall to retry paying --
+  // "Wallet Balance" here means "attempt to pay this exact amount straight
+  // from whatever's currently in the wallet," same real option every other
+  // payment screen in the app already offers (openEscrowModal's own
+  // "Wallet Balance -- Pay instantly from your wallet"). It can still fail
+  // (that's exactly how we got to this screen) -- picking it just retries
+  // the original action for real, succeeding if the balance has since
+  // become enough (e.g. funded another way in the meantime) or reopening
+  // this same screen with the same shortfall if not.
+  var walletBtn=minKobo?('<button onclick="_afMethod=\'WALLET\';document.getElementById(\'af-wallet-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';" id="af-wallet-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4B0; Wallet Balance</button>'):'';
   showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div>'
     +shortfallNote
     +amountBlock
     +'<div id="af-methods" style="display:flex;gap:8px;margin-bottom:16px;">'
-    +'<button onclick="_afMethod=\'CARD\';document.getElementById(\'af-card-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';" id="af-card-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #E8392E;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">💳 Card/USSD</button>'
-    +'<button onclick="_afMethod=\'BANK_TRANSFER\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
+    +walletBtn
+    +'<button onclick="_afMethod=\'CARD\';document.getElementById(\'af-card-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#2A2850\';var wb=document.getElementById(\'af-wallet-btn\');if(wb)wb.style.borderColor=\'#2A2850\';" id="af-card-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #E8392E;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">💳 Card/USSD</button>'
+    +'<button onclick="_afMethod=\'BANK_TRANSFER\';document.getElementById(\'af-transfer-btn\').style.borderColor=\'#E8392E\';document.getElementById(\'af-card-btn\').style.borderColor=\'#2A2850\';var wb=document.getElementById(\'af-wallet-btn\');if(wb)wb.style.borderColor=\'#2A2850\';" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
     +'</div>'
     +'<button onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">'+(minKobo?('Pay &#x20a6;'+Number(prefill).toLocaleString()):'Continue to Payment')+'</button></div>');
 }
@@ -8155,6 +8166,20 @@ function showAddFundsModal(minKobo,onSuccess){
 // real company bank details and waits for admin confirmation instead --
 // see openManualBankTransferModal.
 async function submitAddFunds(){
+  if(_afMethod==='WALLET'){
+    // "Pay from wallet" isn't a top-up at all -- it's a direct retry of
+    // whatever originally failed with insufficient funds. That original
+    // action (e.g. saveBookingEdit) already debits the wallet itself as
+    // part of its own normal flow; retrying it here either succeeds (if
+    // the balance has become enough some other way since this screen
+    // opened) or throws the exact same shortfall error, which reopens
+    // this exact screen -- an honest "try again," not a fake success.
+    closeProcedureModal();
+    var onSuccessWallet=window._addFundsOnSuccess;
+    window._addFundsOnSuccess=null;
+    if(onSuccessWallet)onSuccessWallet();
+    return;
+  }
   var v=document.getElementById('af-inp');var a=v?parseFloat(v.value):0;
   if(!a||a<100){toast('Minimum ₦100');return;}
   try{
