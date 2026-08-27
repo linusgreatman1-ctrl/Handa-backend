@@ -9519,8 +9519,14 @@ function renderVendorBookingsList(isCook,limit){
       // REQUESTED cook booking just means "customer hasn't paid yet" --
       // nothing to accept/decline until it reaches PAID.
       var actionableStatus=isCook?'PAID':'REQUESTED';
+      // Was inline Accept/Decline right on the card -- matching how a new
+      // Event Request is already handled (a single "Open Event Request"
+      // button, the real Accept/Decline living inside the detail view, not
+      // the card), a fresh booking now gets just one "Open Booking" button
+      // here too; the real Accept Booking/Decline Booking buttons live at
+      // the bottom of openVendorBookingDetail itself.
       var actions=b.status===actionableStatus
-        ?'<div style="display:flex;gap:8px;margin-top:10px"><button onclick="event.stopPropagation();vendorBookingAction(\''+b.id+'\',\'accept\')" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">Accept</button><button onclick="event.stopPropagation();vendorBookingAction(\''+b.id+'\',\'decline\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer">Decline</button></div>'
+        ?'<button onclick="event.stopPropagation();openVendorBookingDetail(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">📋 Open Booking</button>'
         :(isCook&&b.status==='REQUESTED'?'<div style="margin-top:10px;padding:8px;border-radius:9px;background:rgba(154,147,144,.1);color:#9A9390;font-size:11px;font-weight:700;text-align:center;">Awaiting customer payment</div>':'');
       var pendingEditBadge=b.pendingEditSnapshot?'<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(245,166,35,.1);color:#F5A623;font-size:11px;font-weight:700;text-align:center;">✏️ Customer proposed changes — open to review</div>':'';
       var jobStartedBadge=(isCook&&b.status==='CONFIRMED'&&b.vendorJobStartedAt&&!b.vendorConfirmedCompleteAt)?'<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(155,89,182,.1);color:#9B59B6;font-size:11px;font-weight:700;text-align:center;">▶️ Job Started</div>':'';
@@ -9623,6 +9629,7 @@ async function openVendorBookingDetail(id){
     // same as the customer's own detail screen.
     var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
+    var isCookB=b.type==='HOME_COOK';
     var vendorStatusBlock='';
     if(vendorHasOpenDispute){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
@@ -9647,8 +9654,18 @@ async function openVendorBookingDetail(id){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;">Dispute Resolved -- Refunded To The Customer</div>'
         +'</div>';
+    }else if(b.status===(isCookB?'PAID':'REQUESTED')){
+      // The real Accept/Decline action now lives here, at the bottom of
+      // the full detail view -- reached via the dashboard card's single
+      // "Open Booking" button -- instead of two buttons sitting directly
+      // on the list card, matching the same pattern already used for a
+      // new Event Request (Open Event Request -> full details -> the real
+      // decision made inside).
+      vendorStatusBlock='<div style="display:flex;gap:10px;margin-top:14px;">'
+        +'<button onclick="vendorBookingAction(\''+b.id+'\',\'decline\')" style="flex:1;padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Booking</button>'
+        +'<button onclick="vendorBookingAction(\''+b.id+'\',\'accept\')" style="flex:1;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Accept Booking</button>'
+        +'</div>';
     }else if(b.status==='CONFIRMED'){
-      var isCookB=b.type==='HOME_COOK';
       if(b.pendingEditSnapshot){
         // Accept/decline it first (pendingEditBlock, rendered below) -- the
         // backend's own start-job guard already rejects this too, but
@@ -10588,6 +10605,11 @@ async function vendorBookingAction(id,action){
       openVendorBookingDetail(id);
       loadVendorBookingsList(S.vtype!=='event_planner');
     }else{
+      // Decline (now also reachable from inside the detail sheet itself,
+      // not just the dashboard card) leaves nothing to view any more --
+      // close it first so a stale/declined booking isn't left showing
+      // behind the freshly re-rendered dashboard.
+      closeBottomSheet&&closeBottomSheet();
       renderVendorDashboard(S.vtype==='event_planner'?'ep':'cook');
     }
   }catch(err){showToast&&showToast(err.message||'Could not update booking','warning');}
