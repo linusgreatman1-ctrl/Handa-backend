@@ -985,23 +985,28 @@ function setAccessToken(t){ _accessToken = t; if(t) sessionStorage.setItem('hand
 // and api()'s reactive 401 path, both now send this explicitly instead of
 // relying solely on the shared cookie.
 var _refreshToken = sessionStorage.getItem('handa_refresh_token') || null;
-// Also mirrored into localStorage, under its own key -- a real, separate
-// gap from the per-tab fix above: sessionStorage (both this and the
-// access token) is wiped the moment the browser itself is actually
-// closed, not just the tab, even though the refresh token's own real
-// lifetime is 30 days. "Refresh after leaving the browser closed for
-// hours" landed on a genuinely empty sessionStorage, so tryRestoreSession
-// returned false immediately (its first line) and the app fell straight
-// to the login screen -- whose customer tile happens to be selected by
-// default, which is what actually read as "it changed to the customer
-// page" for every role. This backup is read ONLY when a tab's own
-// sessionStorage has nothing at all (see the startup call below) -- a
-// tab that already has its own token never touches it, so this doesn't
-// reintroduce the original cross-tab collision the per-tab move fixed.
+// A prior version of this file also mirrored the refresh token into a
+// SINGLE shared localStorage key, meant purely as a "still logged in after
+// the whole browser was closed" convenience. That's exactly what caused
+// the real, repeatedly-reported bug: "leave several role dashboards open
+// in different tabs for a while, come back, and they've all turned into
+// one of them (e.g. everything becomes the rider tab)." localStorage is
+// shared across every tab of the browser, so the LAST tab to refresh (or
+// log in) anywhere silently overwrote that one shared key with its own
+// token -- and any tab whose own sessionStorage later needed restoring
+// (a real tab reload, not just switching back to an already-open tab)
+// picked up whichever account happened to be sitting in that shared slot
+// instead of its own. There is no storage primitive that's both genuinely
+// per-tab AND survives a full browser restart, so this was a real,
+// unfixable-in-place conflict between the two goals -- per-tab isolation
+// (multiple real accounts open at once, which this app's own 5-role
+// switcher and this session's own testing both rely on constantly) wins,
+// since silently becoming a different account is far worse than an
+// occasional "please log in again after fully closing the browser."
 function setRefreshToken(t){
   _refreshToken = t;
-  if(t){ sessionStorage.setItem('handa_refresh_token', t); localStorage.setItem('handa_refresh_backup', t); }
-  else{ sessionStorage.removeItem('handa_refresh_token'); localStorage.removeItem('handa_refresh_backup'); }
+  if(t){ sessionStorage.setItem('handa_refresh_token', t); }
+  else{ sessionStorage.removeItem('handa_refresh_token'); }
 }
 
 // Reads a JWT's payload without verifying the signature — only ever used
@@ -11349,34 +11354,13 @@ function sendPlanToShopper(){
     };
   },50);
 }
-// A genuinely fresh tab (no sessionStorage token at all -- e.g. the
-// browser itself was closed, not just this tab, since sessionStorage
-// doesn't survive that) still has a real 30-day-lifetime refresh token
-// sitting in the localStorage backup (see setRefreshToken's own comment)
-// -- use it once, here, before giving up and falling to the login
-// screen. Refreshing seeds THIS tab's own sessionStorage via the normal
-// setAccessToken/setRefreshToken calls, so every later refresh in this
-// tab goes through the regular per-tab path unchanged.
-async function _recoverSessionFromBackupIfNeeded(){
-  if(_accessToken)return;
-  var backup=null;
-  try{ backup=localStorage.getItem('handa_refresh_backup'); }catch(e){}
-  if(!backup)return;
-  try{
-    var res=await api('/auth/refresh',{method:'POST',body:JSON.stringify({refreshToken:backup})});
-    if(res&&res.accessToken){
-      setAccessToken(res.accessToken);
-      if(res.refreshToken)setRefreshToken(res.refreshToken);
-    }
-  }catch(e){
-    // Backup itself is dead (past its real 30-day life, already rotated
-    // by a later login elsewhere, or explicitly revoked by a logout) --
-    // fall through to the normal not-logged-in path below.
-  }
-}
+// No cross-tab localStorage recovery here on purpose -- see setRefreshToken's
+// comment. A genuinely fresh tab (sessionStorage empty, e.g. the browser
+// was fully closed and reopened) has no way to know which of possibly
+// several real accounts it should silently become, so it correctly falls
+// through to the login screen below instead of guessing.
 window.addEventListener('DOMContentLoaded',async function(){
   loadRealCatalog();
-  await _recoverSessionFromBackupIfNeeded();
   tryRestoreSession().then(function(restored){ if(!restored) eGo('login'); });
 });
 
