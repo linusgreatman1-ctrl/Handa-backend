@@ -1369,7 +1369,7 @@ async function openNotification(id){
       else if(isCustomer&&typeof openCustomerHistoryDetail==='function'){closeNotificationsModal();openCustomerHistoryDetail('booking',d.bookingId);}
       // rider/shopper: bookings aren't their concern -- stay put, already marked read.
     }else if(d.eventRequestId&&typeof openEventRequestDetailModal==='function'){
-      openEventRequestDetailModal(d.eventRequestId); // a floating modal, not a screen swap -- safe for any role, and layers on top so the list stays intact underneath.
+      openEventRequestDetailModal(d.eventRequestId); // a floating modal, not a screen swap -- safe for any role. Closes #notif-modal itself (see its own comment) since it doesn't actually layer on top of it.
     }else if(d.shopSessionId){
       if(isCustomer&&typeof openCustomerHistoryDetail==='function'){closeNotificationsModal();eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
       else if(S.role==='shopper'&&typeof eGo==='function'){closeNotificationsModal();eGo('shopper');}
@@ -1798,6 +1798,14 @@ async function openEventRequestDetailModal(id){
   // socket push, History) since it only exists at all when opened from
   // that list in the first place.
   closeMyEventRequestsModal();
+  // Same z-index problem, same fix -- #notif-modal is ALSO 9999, above
+  // this bottom sheet's 9500. The notification-click handler's own
+  // comment assumed this sheet "layers on top so the list stays intact
+  // underneath," which is backwards: opening a proposal from a "New
+  // proposal received" notification rendered the real detail sheet
+  // correctly, just hidden behind the still-open notification list, so
+  // tapping it looked like nothing happened.
+  closeNotificationsModal();
   showBottomSheet('Request Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
   try{
     var res = await api('/event-requests/'+id);
