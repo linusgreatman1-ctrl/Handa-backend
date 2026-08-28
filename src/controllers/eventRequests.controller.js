@@ -84,7 +84,11 @@ async function listEventRequests(req, res, next) {
 
     const requests = await prisma.eventRequest.findMany({
       where: { customerId: req.user.id, ...(status && { status }) },
-      include: { _count: { select: { proposals: true } } },
+      // Counts only PENDING/ACCEPTED proposals -- a DECLINED or WITHDRAWN
+      // one is no longer anything the customer needs to see or act on, so
+      // it shouldn't inflate "N Proposal(s) Received" or make the card
+      // look like there's something new to look at.
+      include: { _count: { select: { proposals: { where: { status: { notIn: ["DECLINED", "WITHDRAWN"] } } } } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ requests });

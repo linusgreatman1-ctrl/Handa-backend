@@ -1368,8 +1368,19 @@ async function openNotification(id){
       // while the booking fetch was still in flight.
       else if(isCustomer&&typeof openCustomerHistoryDetail==='function'){closeNotificationsModal();openCustomerHistoryDetail('booking',d.bookingId);}
       // rider/shopper: bookings aren't their concern -- stay put, already marked read.
-    }else if(d.eventRequestId&&typeof openEventRequestDetailModal==='function'){
-      openEventRequestDetailModal(d.eventRequestId); // a floating modal, not a screen swap -- safe for any role. Closes #notif-modal itself (see its own comment) since it doesn't actually layer on top of it.
+    }else if(d.eventRequestId){
+      // openEventRequestDetailModal is the CUSTOMER's own "my request"
+      // screen (Decline This Request, Accept/Decline on OTHER vendors'
+      // proposals) -- routing an EP's own "New event request" notification
+      // through it was showing the vendor a screen built for the customer,
+      // right down to an ACCEPTED proposal's "View Booking" link landing
+      // on openCustomerHistoryDetail (Edit/Cancel Booking, customer-only
+      // actions) instead of the vendor's own openVendorBookingDetail.
+      // openEventRequestForVendor is the real vendor-side equivalent
+      // (Submit Proposal / track-my-proposal, with its own correct
+      // openVendorBookingDetail link once accepted).
+      if(isVendor&&typeof openEventRequestForVendor==='function'){closeNotificationsModal();openEventRequestForVendor(d.eventRequestId);}
+      else if(isCustomer&&typeof openEventRequestDetailModal==='function'){openEventRequestDetailModal(d.eventRequestId);} // closes #notif-modal itself, see its own comment.
     }else if(d.shopSessionId){
       if(isCustomer&&typeof openCustomerHistoryDetail==='function'){closeNotificationsModal();eGo('history');openCustomerHistoryDetail('session',d.shopSessionId);}
       else if(S.role==='shopper'&&typeof eGo==='function'){closeNotificationsModal();eGo('shopper');}
@@ -1732,7 +1743,7 @@ async function loadMyEventRequestsList(){
       // EP side already uses for "View Event Requests/Proposals"), and
       // once the customer HAS opened a proposal, it downgrades to "View
       // Proposal" the same way.
-      var alreadyViewed=_isEventRequestViewed(r.id);
+      var alreadyViewed=r._count.proposals<=_lastSeenProposalCount(r.id);
       var isFreshProposal=hasProposals&&!alreadyViewed;
       var btnLabel=!hasProposals?'See My Request':(isFreshProposal?'Open Proposal':'View Proposal');
       // Same 3-state progression as the button itself: nothing yet ->
@@ -1758,15 +1769,20 @@ function closeMyEventRequestsModal(){
   var el=document.getElementById('my-requests-modal'); if(el) el.remove();
 }
 // Same per-device localStorage pattern already used for _isRatingSkipped
-// -- no backend field needed, this is purely "has this browser looked at
-// it before" for the My Requests list's own button styling.
-function _isEventRequestViewed(id){
-  try{ return (JSON.parse(localStorage.getItem('handa_viewed_event_requests')||'[]')).indexOf(id)>-1; }catch(e){ return false; }
+// -- no backend field needed. Tracks the proposal COUNT seen at last
+// view, not just a plain viewed/not-viewed flag -- a flag alone broke
+// the very next proposal: opening a request while it still had zero
+// proposals marked the whole id "viewed" forever, so a real NEW proposal
+// arriving later still read as already-seen and never showed the green
+// "Open Proposal" state at all.
+function _lastSeenProposalCount(id){
+  try{ return (JSON.parse(localStorage.getItem('handa_seen_proposal_counts')||'{}'))[id]||0; }catch(e){ return 0; }
 }
-function _markEventRequestViewed(id){
+function _markSeenProposalCount(id,count){
   try{
-    var list=JSON.parse(localStorage.getItem('handa_viewed_event_requests')||'[]');
-    if(list.indexOf(id)===-1){list.push(id);localStorage.setItem('handa_viewed_event_requests',JSON.stringify(list));}
+    var map=JSON.parse(localStorage.getItem('handa_seen_proposal_counts')||'{}');
+    map[id]=count;
+    localStorage.setItem('handa_seen_proposal_counts',JSON.stringify(map));
   }catch(e){}
 }
 // Declining the whole request now only ever happens from inside the
@@ -1793,7 +1809,6 @@ async function declineMyEventRequest(id){
 // openCustomerHistoryDetail('booking', ...) on that identical sheet.
 async function openEventRequestDetailModal(id){
   window._openEventRequestId=id;
-  _markEventRequestViewed(id);
   // The "My Event Requests" list overlay renders at z-index:9999, higher
   // than this bottom sheet's own 9500 -- left open, it sat in front of
   // the detail sheet that was supposed to be opening, so "Open Request"/
@@ -1815,6 +1830,20 @@ async function openEventRequestDetailModal(id){
   try{
     var res = await api('/event-requests/'+id);
     var r = res.request;
+    // DECLINED/WITHDRAWN proposals are no longer anything the customer
+    // needs to see or act on -- once one proposal is ACCEPTED,
+    // acceptProposal auto-declines every other PENDING one server-side,
+    // so this same filter is also what clears the "losing" proposals off
+    // the customer's view the moment they accept one, not just the ones a
+    // vendor personally declined.
+    var activeProposals=(r.proposals||[]).filter(function(p){return p.status!=='DECLINED'&&p.status!=='WITHDRAWN';});
+    // Whether this request was already "seen" at its current active-
+    // proposal count, BEFORE this open updates that record -- drives the
+    // in-sheet write-up so it matches the card's own progression: fresh
+    // (green, "N Proposal(s) Received") vs. already opened ("Vendors are
+    // waiting for your feedback").
+    var wasAlreadySeen=activeProposals.length<=_lastSeenProposalCount(id);
+    _markSeenProposalCount(id,activeProposals.length);
     var rows=[
       ['Event Type', r.eventType],
       ['Status', r.status.replace('_',' ')],
@@ -1829,11 +1858,16 @@ async function openEventRequestDetailModal(id){
       +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;">'+r.servicesRequested.join(', ')+'</div></div>':'')
       +(r.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+r.notes+'</div></div>':'')
       +'</div>';
-    var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Proposals ('+r.proposals.length+')</div>';
-    if(!r.proposals.length){
-      proposalsHtml+='<div style="text-align:center;padding:20px;color:#9A9390;background:#242424;border-radius:13px;">No proposals yet — check back soon.</div>';
+    var proposalsWriteup=!activeProposals.length
+      ?'Waiting For Proposals'
+      :(wasAlreadySeen?'Vendors are waiting for your feedback':(activeProposals.length+' Proposal'+(activeProposals.length===1?'':'s')+' Received'));
+    var proposalsWriteupColor=(activeProposals.length&&!wasAlreadySeen)?'#2ECC71':'#9A9390';
+    var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Proposals</div>'
+      +'<div style="font-size:13px;color:'+proposalsWriteupColor+';font-weight:700;margin-bottom:8px;">'+proposalsWriteup+'</div>';
+    if(!activeProposals.length){
+      proposalsHtml+='<div style="text-align:center;padding:20px;color:#9A9390;background:#242424;border-radius:13px;">Waiting For Proposals</div>';
     }else{
-      proposalsHtml+=r.proposals.map(function(p){
+      proposalsHtml+=activeProposals.map(function(p){
         var canAccept = r.status==='OPEN' && p.status==='PENDING';
         var statusColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
         var sc = statusColors[p.status]||'#9A9390';
