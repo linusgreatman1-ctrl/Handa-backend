@@ -3147,6 +3147,14 @@ function bindGlobalChatRequestListener(){
     var myId=(S.user||{}).id;
     if(!msg||msg.senderId===myId)return;
     if(msg.threadId===window._activeChatThreadId)return; // already looking at this exact chat
+    // The Shop-For-Me live-call screen has its own embedded chat panel
+    // (live-chat-msgs for the customer, shopper-chat-msgs for the shopper)
+    // -- both parties are already actively on this same call together, so
+    // a message there should just land silently in that panel (which
+    // sfmBindChatSocketListener already appends it to), not interrupt the
+    // call with a "wants to chat with you" prompt for a conversation
+    // they're already in.
+    if(msg.threadId===window._sfmChatThreadId&&(document.getElementById('live-chat-msgs')||document.getElementById('shopper-chat-msgs')))return;
     var roleWord={CUSTOMER:'Customer',VENDOR:'Vendor',RIDER:'Rider',SHOPPER:'Shopper',ADMIN:'Support'}[msg.senderRole]||'Someone';
     var name=msg.senderRole==='ADMIN'?'Handa Support':(msg.senderName||roleWord);
     showChatRequestBanner(name,roleWord,msg.threadId);
@@ -3490,7 +3498,8 @@ function renderShopPhase(phase) {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
           <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s ease-in-out infinite;flex-shrink:0;"></div>
           <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
-          <span style="font-size:12px;color:#9A9390;margin-left:auto;">${sfmShopperName()} ★${sfmShopperRating()}</span>
+          <span id="sfm-call-timer" style="font-size:12px;font-weight:800;color:#F2EDE8;background:#242424;padding:2px 8px;border-radius:8px;margin-left:auto;font-variant-numeric:tabular-nums;">00:00</span>
+          <span style="font-size:12px;color:#9A9390;">${sfmShopperName()} ★${sfmShopperRating()}</span>
           <button onclick="sfmSoftExitCall('sfm-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
         </div>
         <div class="video-frame" id="sfm-video-frame" style="margin-bottom:0;height:185px;">
@@ -3511,9 +3520,7 @@ function renderShopPhase(phase) {
 
         <div style="margin-top:12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;">
           <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${sfmShopperName()}</div>
-          <div id="live-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:80px;overflow-y:auto;">
-            <div style="font-size:12px;color:#9A9390;background:#242424;padding:7px 10px;border-radius:10px;max-width:88%;align-self:flex-start;">Madam I don reach the tomato section. I dey show you now 🍅</div>
-          </div>
+          <div id="live-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:80px;overflow-y:auto;"></div>
           <div style="display:flex;gap:8px;">
             <input class="inp" id="live-chat-inp" placeholder="Send a message..." style="flex:1;padding:9px 12px;font-size:13px;" onkeydown="if(event.key==='Enter'){sendLiveChat();return false;}">
             <button onclick="sendLiveChat()" style="background:#E8392E;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
@@ -3525,6 +3532,7 @@ function renderShopPhase(phase) {
     renderApprovalItems();
     if(window._sfmSession){
       sfmStartCall(window._sfmSession.id, 'callee', null, 'rtc-remote-video');
+      sfmStartLiveCallTimer(window._sfmSession.callStartedAt, 'sfm-call-timer');
       // Join the real chat thread's room proactively, not lazily on first
       // send -- messages broadcast ONLY to chat:{threadId} (see
       // chat.controller.js's sendMessage), so a party whose socket never
@@ -3558,10 +3566,14 @@ function renderShopPhase(phase) {
       : liveStatus==='FINDING_RIDER'
       ? shopperNm+' is finding a rider to pick up your items'
       : shopperNm+' is now packaging your items';
+    sfmStopLiveCallTimer();
+    var _callDur=(window._sfmSession&&window._sfmSession.callStartedAt&&window._sfmSession.callEndedAt)
+      ? bcallFmtDuration(new Date(window._sfmSession.callEndedAt).getTime()-new Date(window._sfmSession.callStartedAt).getTime()) : null;
     body.innerHTML = `<div class="fi" style="text-align:center;padding:20px 0;">
       <div style="font-size:72px;margin-bottom:16px;">📦</div>
       <div class="h2">All Items Approved!</div>
       <p style="color:#9A9390;font-size:14px;margin-top:8px;margin-bottom:22px;">${waitingText}</p>
+      ${_callDur?`<div style="display:inline-flex;align-items:center;gap:6px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:6px 12px;margin-bottom:18px;font-size:12px;color:#9A9390;">📹 Live call lasted <b style="color:#F2EDE8;font-variant-numeric:tabular-nums;">${_callDur}</b></div>`:''}
       <div class="card" style="text-align:left;margin-bottom:18px;">
         <div style="font-weight:700;font-size:14px;margin-bottom:12px;">📋 Items Being Packaged:</div>
         ${shopItems.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2A2850;">
@@ -4558,6 +4570,29 @@ function sfmBindChatSocketListener(msgsElId, myUserId){
   });
 }
 
+// ── Live call duration timer (both sides) ───────────────────────────────
+// Ticks from the session's real callStartedAt (the same field the backend
+// bills the session fee against, set the instant the shopper starts the
+// call) rather than from whenever this particular tab's WebRTC connection
+// happens to finish negotiating -- so a customer joining a few seconds
+// later still sees the same real elapsed time the shopper does, and it
+// matches what they're actually being charged for.
+function sfmStartLiveCallTimer(startedAtIso, elId){
+  sfmStopLiveCallTimer();
+  if(!startedAtIso) return;
+  var startedAt = new Date(startedAtIso).getTime();
+  function tick(){
+    var el=document.getElementById(elId);
+    if(!el){ sfmStopLiveCallTimer(); return; }
+    el.textContent = bcallFmtDuration(Math.max(0, Date.now()-startedAt));
+  }
+  tick();
+  window._sfmCallTimerIv = setInterval(tick, 1000);
+}
+function sfmStopLiveCallTimer(){
+  if(window._sfmCallTimerIv){ clearInterval(window._sfmCallTimerIv); window._sfmCallTimerIv=null; }
+}
+
 // ── Real WebRTC for the Shop-For-Me live call ───────────────────────────
 // window._rtc holds the one active call's state. The shopper is always the
 // offerer and the customer always the answerer — deterministic by role, so
@@ -4679,6 +4714,11 @@ function sfmBindWebrtcListeners(){
   _socket.on('webrtc:peer-joined', function(p){
     var rtc=window._rtc;
     if(!rtc||rtc.sessionId!==p.sessionId) return;
+    // The other side reappeared before the peer-left grace timer below
+    // fired -- a brief reconnect (network blip, backgrounded tab), not a
+    // real exit -- cancel the pending "Rejoin Call" UI so it never shows
+    // for something the user didn't actually do.
+    if(window._peerLeftTimer&&window._peerLeftSessionId===p.sessionId){clearTimeout(window._peerLeftTimer);window._peerLeftTimer=null;}
     if(rtc.role==='caller') makeOfferTo(p.fromSocketId); else rtc.remoteSocketId=p.fromSocketId;
   });
   _socket.on('webrtc:offer', function(p){
@@ -4706,13 +4746,28 @@ function sfmBindWebrtcListeners(){
   _socket.on('webrtc:peer-left', function(p){
     var rtc=window._rtc;
     if(!rtc||rtc.sessionId!==p.sessionId) return;
-    // Give the side that DIDN'T initiate the exit the same "Rejoin Call"
-    // recovery UI the exiting side already gets from sfmSoftExitCall,
-    // instead of leaving them with a frozen frame and a now-inert Exit
-    // button (rtc would already be null by the time they clicked it).
-    var frameId = rtc.role==='caller' ? 'shopper-video-frame' : 'sfm-video-frame';
-    showToast&&showToast('The other side left the call','warning');
-    sfmSoftExitCall(frameId);
+    // The server broadcasts this exact event both for a real intentional
+    // exit AND for any bare socket disconnect (network blip, a
+    // backgrounded mobile tab getting throttled, a brief Render hiccup) --
+    // it can't tell those apart. Treating every one as "they left" showed
+    // Rejoin Call on the other side even when nobody actually exited.
+    // Give the peer a short grace window to reconnect and rejoin (which
+    // fires webrtc:peer-joined above and cancels this) before actually
+    // surfacing the recovery UI.
+    if(window._peerLeftTimer)clearTimeout(window._peerLeftTimer);
+    window._peerLeftSessionId=p.sessionId;
+    window._peerLeftTimer=setTimeout(function(){
+      window._peerLeftTimer=null;
+      var rtcNow=window._rtc;
+      if(!rtcNow||rtcNow.sessionId!==p.sessionId) return;
+      // Give the side that DIDN'T initiate the exit the same "Rejoin Call"
+      // recovery UI the exiting side already gets from sfmSoftExitCall,
+      // instead of leaving them with a frozen frame and a now-inert Exit
+      // button (rtc would already be null by the time they clicked it).
+      var frameId = rtcNow.role==='caller' ? 'shopper-video-frame' : 'sfm-video-frame';
+      showToast&&showToast('The other side left the call','warning');
+      sfmSoftExitCall(frameId);
+    },6000);
   });
 }
 
@@ -5393,7 +5448,8 @@ function renderShopperPhase(phase) {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;">
           <div style="width:9px;height:9px;border-radius:50%;background:#E02020;animation:pulse .9s infinite;flex-shrink:0;"></div>
           <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
-          <span style="font-size:12px;color:#9A9390;margin-left:auto;">${live.customer?live.customer.name:'Customer'}</span>
+          <span id="shopper-call-timer" style="font-size:12px;font-weight:800;color:#F2EDE8;background:#242424;padding:2px 8px;border-radius:8px;margin-left:auto;font-variant-numeric:tabular-nums;">00:00</span>
+          <span style="font-size:12px;color:#9A9390;">${live.customer?live.customer.name:'Customer'}</span>
           <button onclick="sfmSoftExitCall('shopper-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
         </div>
 
@@ -5423,9 +5479,7 @@ function renderShopperPhase(phase) {
         <!-- Chat -->
         <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:11px 13px;margin-bottom:12px;margin-top:10px;">
           <div style="font-weight:700;font-size:12px;color:#9A9390;margin-bottom:6px;">💬 Chat with ${shopperCustomerName()}</div>
-          <div id="shopper-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:70px;overflow-y:auto;">
-            <div style="font-size:12px;background:#1C1C1C;padding:7px 10px;border-radius:10px;max-width:88%;color:#F2EDE8;">Aisha please show me the tomatoes, I want to see how fresh they are</div>
-          </div>
+          <div id="shopper-chat-msgs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:7px;max-height:70px;overflow-y:auto;"></div>
           <div style="display:flex;gap:8px;">
             <input class="inp" id="shopper-chat-inp" placeholder="Reply to user..." style="flex:1;padding:9px 12px;font-size:13px;" onkeydown="if(event.key==='Enter'){sendShopperChat();return false;}">
             <button onclick="sendShopperChat()" style="background:#F5A623;border:none;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer;flex-shrink:0;">➤</button>
@@ -5440,6 +5494,7 @@ function renderShopperPhase(phase) {
     renderShopperItemStatus();
     if(window._shopperSession){
       sfmStartCall(window._shopperSession.id, 'caller', 'rtc-local-video', 'rtc-remote-video');
+      sfmStartLiveCallTimer(window._shopperSession.callStartedAt, 'shopper-call-timer');
       // Same proactive room-join as the customer side -- see the matching
       // comment there. Without this, whichever party didn't send the
       // first message never actually joined chat:{threadId} and silently
@@ -5453,11 +5508,15 @@ function renderShopperPhase(phase) {
 
   // PHASE C: Package the items
   } else if (phase === 'packaging') {
+    sfmStopLiveCallTimer();
     const pkgItems = (window._shopperSession&&window._shopperSession.items||[]).filter(it=>it.approved);
     const pkgTotalKobo = pkgItems.reduce((s,it)=>s+(it.priceKobo||0),0);
+    const _sCallDur=(window._shopperSession&&window._shopperSession.callStartedAt&&window._shopperSession.callEndedAt)
+      ? bcallFmtDuration(new Date(window._shopperSession.callEndedAt).getTime()-new Date(window._shopperSession.callStartedAt).getTime()) : null;
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;text-align:center;">
       <div style="font-size:68px;margin-bottom:16px;">📦</div>
       <div class="h2">Call Ended!</div>
+      ${_sCallDur?`<div style="display:inline-flex;align-items:center;gap:6px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:6px 12px;margin-top:8px;margin-bottom:4px;font-size:12px;color:#9A9390;">📹 Live call lasted <b style="color:#F2EDE8;font-variant-numeric:tabular-nums;">${_sCallDur}</b></div>`:''}
       <div style="font-weight:700;font-size:15px;color:#2ECC71;margin-top:4px;margin-bottom:18px;">${pkgItems.length} item${pkgItems.length!==1?'s':''} approved — ${N(Math.round(pkgTotalKobo/100))} total</div>
       <div class="card" style="text-align:left;margin-bottom:16px;">
         <div style="font-weight:700;font-size:14px;margin-bottom:12px;">📦 Items to Package:</div>
@@ -5770,7 +5829,13 @@ function renderShopperItemStatus() {
 
 async function shopperStartLiveCall(){
   if(window._shopperSession){
-    try{ await api('/shop-sessions/'+window._shopperSession.id+'/start-call',{method:'POST'}); }
+    try{
+      var res=await api('/shop-sessions/'+window._shopperSession.id+'/start-call',{method:'POST'});
+      // The response carries the real callStartedAt the backend just
+      // stamped -- discarding it (as this used to) left the timer with
+      // nothing to count from when the liveCall phase renders right below.
+      if(res&&res.session)window._shopperSession=Object.assign({},window._shopperSession,res.session);
+    }
     catch(err){ showToast&&showToast(err.message||'Could not start the call','warning'); return; }
   }
   renderShopperPhase('liveCall');
@@ -5913,6 +5978,10 @@ async function shopperEndCallAndPackage(){
         showToast('Call ran long — waiting for the customer to pay the extra '+N(res.topUpRequiredKobo/100),'warning');
         return;
       }
+      // The response carries the real callEndedAt the backend just
+      // stamped -- discarding it (as this used to) left the packaging
+      // screen with nothing to compute the "call lasted X" line from.
+      if(res.session)window._shopperSession=Object.assign({},window._shopperSession,res.session);
     }
     catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
   }
