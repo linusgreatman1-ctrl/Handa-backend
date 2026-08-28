@@ -1735,13 +1735,18 @@ async function loadMyEventRequestsList(){
       var alreadyViewed=_isEventRequestViewed(r.id);
       var isFreshProposal=hasProposals&&!alreadyViewed;
       var btnLabel=!hasProposals?'See My Request':(isFreshProposal?'Open Proposal':'View Proposal');
+      // Same 3-state progression as the button itself: nothing yet ->
+      // something new just arrived (green, worth noticing) -> already
+      // seen, now just waiting on the customer to actually decide.
+      var writeupText=!hasProposals?'Waiting For Proposals':(isFreshProposal?(r._count.proposals+' Proposal'+(r._count.proposals===1?'':'s')+' Received'):'Vendors are waiting for your feedback');
+      var writeupColor=(hasProposals&&isFreshProposal)?'#2ECC71':'#9A9390';
       var openBtn=isFreshProposal
         ? '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>'
         : '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
       return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
-        + '<div style="font-size:12px;color:#2ECC71;margin-top:4px;font-weight:700;">'+(r._count.proposals===0?'Waiting For Proposals':(r._count.proposals+' Proposal'+(r._count.proposals===1?'':'s')+' Received'))+'</div>'
+        + '<div style="font-size:12px;color:'+writeupColor+';margin-top:4px;font-weight:700;">'+writeupText+'</div>'
         + openBtn
         + '</div>';
     }).join('');
