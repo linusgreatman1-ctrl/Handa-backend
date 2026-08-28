@@ -11847,15 +11847,14 @@ var STATUS_COLORS={REQUESTED:'#F5A623',OPEN:'#F5A623',ACCEPTED:'#3B9FE8',DECLINE
 // Job Started / two-sided-completion stage at all.
 function _customerBookingWriteup(b){
   var isEP=b.type==='EVENT_PLANNING';
-  var vendorWord=isEP?'EP':'chef';
   if(!isEP&&b.status==='PAID'||isEP&&b.status==='REQUESTED'){
-    return {text:'⏳ Waiting for '+vendorWord+' to accept booking',color:'#9A9390'};
+    return {text:'⏳ Waiting for vendor to accept booking',color:'#9A9390'};
   }
   if(b.status!=='CONFIRMED')return null;
-  if(b.pendingEditSnapshot)return {text:'✏️ Waiting for '+vendorWord+' to accept the changes',color:'#F5A623'};
+  if(b.pendingEditSnapshot)return {text:'✏️ Waiting for vendor to accept the changes',color:'#F5A623'};
   if(isEP)return {text:'⏳ Waiting for job to be completed',color:'#9A9390'};
-  if(b.vendorConfirmedCompleteAt)return {text:'👨‍🍳 Chef is waiting your confirmation',color:'#F5A623'};
-  if(b.vendorJobStartedAt)return {text:'👨‍🍳 Chef has started the job',color:'#9B59B6'};
+  if(b.vendorConfirmedCompleteAt)return {text:'👨‍🍳 Vendor is waiting your confirmation',color:'#F5A623'};
+  if(b.vendorJobStartedAt)return {text:'👨‍🍳 Vendor has started the job',color:'#9B59B6'};
   return {text:'⏳ Waiting for job to start',color:'#9A9390'};
 }
 async function populateHistory(){
