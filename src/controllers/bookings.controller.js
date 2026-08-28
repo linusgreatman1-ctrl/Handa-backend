@@ -298,17 +298,16 @@ async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRu
   if (diff === 0) return null;
   if (diff > 0) {
     const w = await walletSvc.getOrCreateWallet(booking.customerId, tx);
-    // Now gated on DEV_BYPASS_PAYMENTS like every other real-money check in
-    // the app (debitWallet's own internal check included) -- this used to
-    // deliberately stay enforced even with the flag on, specifically so the
-    // "insufficient funds -> Add Funds" flow could be demonstrated. That
-    // meant the flag couldn't actually do its one job here: a test payment
-    // picked from the Add Funds screen (Wallet/Card/Bank Transfer) still
-    // got rejected for a real balance shortfall before ever reaching
-    // debitWallet, which is real money movement that test accounts don't
-    // have. Bypass mode now skips this precheck entirely, same as it
-    // already does for every other payment path.
-    if (w.balanceKobo < diff && !walletSvc.devBypassEnabled()) {
+    // Deliberately NOT gated on DEV_BYPASS_PAYMENTS, unlike debitWallet's
+    // own internal check below -- this precheck's whole job is to show the
+    // customer the real "insufficient funds -> add funds" flow. Bypassing
+    // it here means the edit silently succeeds with no Add Funds screen at
+    // all, which is the opposite of what's wanted: the screen should still
+    // appear, and it's the payment picked FROM it (Bank Transfer, already
+    // real-money-free via manualPayments' own dev-bypass auto-confirm; or
+    // Wallet Balance, an honest retry against the real balance) that needs
+    // to actually go through, not this initial detection being skipped.
+    if (w.balanceKobo < diff) {
       throw Object.assign(new Error("Your escrow wallet does not have enough to cover the new total. Add funds to continue."), { status: 400, shortfallKobo: diff - w.balanceKobo });
     }
     if (!dryRun) {
