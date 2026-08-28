@@ -1150,6 +1150,16 @@ function connectSocket(){
     if(n.data&&n.data.bookingId&&document.getElementById('vendor-bookings-list')){
       loadVendorBookingsList(window._vendorDashKind==='cook');
     }
+    // Same gap on the customer's own side -- the vendor accepting/
+    // declining/editing/completing a booking used to only ever show up
+    // in History after leaving and coming back. History merges Bookings
+    // and Shop Sessions into one list (populateHistory), so a bookingId
+    // OR a shop session's own notify() payload (keyed sessionId, not
+    // shopSessionId -- see shopSessions.controller.js's notify() calls)
+    // both warrant refreshing it live here.
+    if(n.data&&(n.data.bookingId||n.data.sessionId)&&document.getElementById('history-list')&&typeof renderEHistory==='function'){
+      renderEHistory();
+    }
     // A new chat message's own real-time push (chat:message) only ever
     // reaches a socket that's already joined chat:{threadId} -- which
     // never happens for a brand-new conversation the recipient hasn't
