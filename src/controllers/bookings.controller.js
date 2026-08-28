@@ -371,6 +371,7 @@ async function updateBooking(req, res, next) {
       if (booking.vendor?.userId) {
         await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking details updated", `The customer updated booking #${booking.bookingNumber} — check the new details.`, { bookingId: booking.id });
       }
+      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
     }
 
@@ -391,6 +392,14 @@ async function updateBooking(req, res, next) {
         { bookingId: booking.id }
       );
     }
+    // Every other booking-mutating action here (accept/decline/accept-edit/
+    // decline-edit/start-job/complete) emits booking:updated so an already-
+    // open detail sheet on EITHER side re-renders in place -- this branch
+    // is what actually creates a pending edit, and was missing it, which is
+    // exactly why "customer edited" -> "job started" -> "waiting on
+    // customer" looked seamless everywhere downstream but silently broke
+    // at this first step.
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated, pending: true });
   } catch (err) {
     next(err);
