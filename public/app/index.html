@@ -1728,7 +1728,16 @@ async function declineMyEventRequest(id){
 // openCustomerHistoryDetail('booking', ...) on that identical sheet.
 async function openEventRequestDetailModal(id){
   window._openEventRequestId=id;
-  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
+  // The "My Event Requests" list overlay renders at z-index:9999, higher
+  // than this bottom sheet's own 9500 -- left open, it sat in front of
+  // the detail sheet that was supposed to be opening, so "Open Request"/
+  // "Open Proposal" looked like it did nothing (the real content was
+  // there, just hidden behind the still-visible list). Closing it here is
+  // a safe no-op when this was reached some other way (notification,
+  // socket push, History) since it only exists at all when opened from
+  // that list in the first place.
+  closeMyEventRequestsModal();
+  showBottomSheet('Request Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
   try{
     var res = await api('/event-requests/'+id);
     var r = res.request;
@@ -1777,9 +1786,9 @@ async function openEventRequestDetailModal(id){
       }).join('');
     }
     var content=infoCard+proposalsHtml
-      +(r.status==='OPEN'?'<button onclick="declineMyEventRequest(\''+r.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Decline This Request</button>':'')
+      +(r.status==='OPEN'?'<button onclick="declineMyEventRequest(\''+r.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Cancel Request</button>':'')
       +'<button onclick="closeEventDetailModal();closeMyEventRequestsModal();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">🏠 Back Home</button>';
-    showBottomSheet('Booking Details', content);
+    showBottomSheet('Request Details', content);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load request')+'</div>');
   }
