@@ -3098,10 +3098,14 @@ async function closeActiveChatThread(isAutoClose){
   try{
     await api('/chat/threads/'+threadId+'/close',{method:'POST'});
     showToast&&showToast(isAutoClose?'Chat closed after 3 minutes of inactivity.':'Chat ended.','info');
-    // Ends and clears off screen for the closer too, not just a disabled
-    // composer left sitting open -- matches what chat:closed below does
-    // for the OTHER party in real time.
-    closeChat();
+    // Ends the chat but keeps the conversation on screen -- disable the
+    // composer and show "This chat has ended" instead of yanking the whole
+    // overlay away, matching what a reopened closed thread already looks
+    // like (openSupportChat/openChatByThreadId). Previously called
+    // closeChat() here, which made the whole window vanish for the closer
+    // (and, via the chat:closed listener below, for the other party too)
+    // with nothing but a toast to explain it.
+    _setChatComposerClosed(true);
   }catch(err){
     if(!isAutoClose)showToast&&showToast(err.message||'Could not close chat','warning');
   }
@@ -3123,9 +3127,9 @@ function bindAppChatSocketListener(){
   _socket.on('chat:closed',function(p){
     if(!p||p.threadId!==window._activeChatThreadId)return;
     showToast&&showToast('The other person ended this chat.','info');
-    // Whoever closes it ends it for BOTH sides -- clears off this
-    // screen too, in real time, not just a disabled composer left open.
-    closeChat();
+    // Keep the conversation visible on the other party's screen too --
+    // just disable the composer, don't clear the chat off their screen.
+    _setChatComposerClosed(true);
   });
 }
 // A chat message landing on a thread the recipient ISN'T currently looking
@@ -3610,7 +3614,7 @@ function renderShopPhase(phase) {
         <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${riderNm} has arrived — items are being handed over</span>
       </div>`:''}
       <div style="display:flex;gap:9px;margin-bottom:14px;">
-        <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.4);background:rgba(59,159,232,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="openCallModal('${riderNm}','${sfmRiderPhone()}','${riderVehicle}','🏍️')">📞 Call Rider</button>
+        <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(59,159,232,.4);background:rgba(59,159,232,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="openCallModal('${riderNm}','${sfmRiderPhone()}','${riderVehicle}','🏍️','${sfmRiderUserId()}','${(window._sfmSession&&window._sfmSession.id)||''}')">📞 Call Rider</button>
         <button style="flex:1;padding:11px;border-radius:12px;border:1.5px solid rgba(26,140,80,.4);background:rgba(46,204,113,0.10);color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;" onclick="openShopChatModal()">💬 Chat Rider</button>
       </div>
 
@@ -3685,7 +3689,7 @@ function renderShopPhase(phase) {
             <div style="font-size:12px;color:#F5A623;font-weight:700;margin-top:2px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="openRatingsModal(window._sfmSession&&window._sfmSession.rider&&window._sfmSession.rider.userId,'RIDER',window._sfmSession&&window._sfmSession.rider&&window._sfmSession.rider.id)">★ ${sfmRiderRating()}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:7px;">
-            <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${riderNm}','${sfmRiderPhone()}','${riderVehicle}','🏍️')">📞</button>
+            <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${riderNm}','${sfmRiderPhone()}','${riderVehicle}','🏍️','${sfmRiderUserId()}','${(window._sfmSession&&window._sfmSession.id)||''}')">📞</button>
             <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(26,95,212,.4);" onclick="openShopChatModal()">💬</button>
           </div>
         </div>
@@ -4337,7 +4341,7 @@ function customerChatShopper(){
 function customerCallShopper(){
   var s=window._sfmSession; var u=s&&s.shopper&&s.shopper.user;
   if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
-  openCallModal(u.name||'Shopper',u.phone||'','Shopper','🧑‍💼');
+  openCallModal(u.name||'Shopper',u.phone||'','Shopper','🧑‍💼',u.id,s.id);
 }
 function sfmRiderName(){
   var s=window._sfmSession;
@@ -4346,6 +4350,10 @@ function sfmRiderName(){
 function sfmRiderPhone(){
   var s=window._sfmSession;
   return (s&&s.rider&&s.rider.user&&s.rider.user.phone)||'';
+}
+function sfmRiderUserId(){
+  var s=window._sfmSession;
+  return (s&&s.rider&&s.rider.user&&s.rider.user.id)||'';
 }
 function sfmRiderRating(){
   var s=window._sfmSession;
@@ -5501,10 +5509,18 @@ function renderShopperPhase(phase) {
         <div class="h3">Finding a Rider...</div>
         <p style="color:#9A9390;font-size:14px;margin-top:6px;">You'll be notified the moment a rider accepts</p>
       </div>
-      <div style="display:flex;justify-content:center;gap:7px;">
+      <div style="display:flex;justify-content:center;gap:7px;margin-bottom:24px;">
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out 0s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out .22s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out .44s infinite;"></div>
+      </div>
+      <div class="card" style="text-align:left;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px;">👤 ${shopperCustomerName()}</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Reach your customer while you wait for a rider</div>
+        <div style="display:flex;gap:9px;">
+          <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="shopperChatCustomer()">💬 Chat</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="shopperCallCustomer()">📞 Call</button>
+        </div>
       </div>
     </div>`;
 
@@ -5528,7 +5544,7 @@ function renderShopperPhase(phase) {
             <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ ${_riderHere?'Arrived':'En Route'}</div>
           </div>
           <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(59,159,232,.4);margin-right:6px;" onclick="openShopperRiderChat()">💬</button>
-          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${_rNm}','${shopperRiderPhone()}','${_rVeh}','🏍️')">📞</button>
+          <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${_rNm}','${shopperRiderPhone()}','${_rVeh}','🏍️','${shopperRiderUserId()}','${(window._shopperSession&&window._shopperSession.id)||''}')">📞</button>
         </div>
       </div>`;
     if(!_riderHere){
@@ -5686,7 +5702,7 @@ function renderShopperPhase(phase) {
         <div style="font-size:13px;color:#9A9390;margin-bottom:10px;">You'll be notified once ${custNm} confirms the delivery is complete</div>
         <div style="display:flex;gap:9px;">
           <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="openShopperRiderChat()">💬 Chat</button>
-          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal('${rdrNm}','${shopperRiderPhone()}','Rider','🏍️')">📞 Call</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal('${rdrNm}','${shopperRiderPhone()}','Rider','🏍️','${shopperRiderUserId()}','${(window._shopperSession&&window._shopperSession.id)||''}')">📞 Call</button>
         </div>
         <button class="btn btn-outline" style="width:100%;margin-top:9px;" onclick="openShopperRiderLocationModal()">📍 View Rider Location</button>
       </div>
@@ -5968,9 +5984,24 @@ function shopperCustomerName(){
   var s=window._shopperSession;
   return (s&&s.customer&&s.customer.name)||'the customer';
 }
+function shopperChatCustomer(){
+  var s=window._shopperSession; var u=s&&s.customer;
+  if(!u){showToast&&showToast('Customer not available yet','warning');return;}
+  var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
+  openChat({name:u.name||'Customer',em:'🏠',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id});
+}
+function shopperCallCustomer(){
+  var s=window._shopperSession; var u=s&&s.customer;
+  if(!u){showToast&&showToast('Customer not available yet','warning');return;}
+  openCallModal(u.name||'Customer',u.phone||'','Customer','🏠',u.id,s.id);
+}
 function shopperRiderName(){
   var s=window._shopperSession;
   return (s&&s.rider&&s.rider.user&&s.rider.user.name)||'your rider';
+}
+function shopperRiderUserId(){
+  var s=window._shopperSession;
+  return (s&&s.rider&&s.rider.user&&s.rider.user.id)||'';
 }
 function shopperRiderPhone(){
   var s=window._shopperSession;
@@ -6000,7 +6031,7 @@ function openShopperRiderLocationModal(){
     +'<div style="text-align:center;font-weight:700;font-size:13px;color:'+(arrived?'#2ECC71':'#6430C8')+';margin-bottom:14px;">'+(arrived?'✅ Arrived at customer\'s location':'🏍️ Heading to customer\'s location')+'</div>'
     +'<div style="display:flex;gap:9px;margin-bottom:10px;">'
     +'<button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="openShopperRiderChat()">💬 Chat</button>'
-    +'<button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal(\''+(r.user.name||'Rider')+'\',\''+(r.user.phone||'')+'\',\'Rider\',\'🏍️\')">📞 Call</button>'
+    +'<button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal(\''+(r.user.name||'Rider')+'\',\''+(r.user.phone||'')+'\',\'Rider\',\'🏍️\',\''+r.user.id+'\',\''+s.id+'\')">📞 Call</button>'
     +'</div>'
     +'<button class="btn btn-outline" style="width:100%;" onclick="document.getElementById(\'shopper-rider-loc-modal\').remove()">Close</button>'
     +'</div></div>';
@@ -8893,7 +8924,7 @@ function riderChatWithShopper(){
 function riderCallShopper(){
   var s=window._riderActiveSession; var u=s&&s.shopper&&s.shopper.user;
   if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
-  openCallModal(u.name||'Shopper',u.phone||'','Shopper','🧑‍🦱');
+  openCallModal(u.name||'Shopper',u.phone||'','Shopper','🧑‍🦱',u.id,s.id);
 }
 function riderChatWithCustomer(){
   var s=window._riderActiveSession; var u=s&&s.customer;
@@ -8904,7 +8935,7 @@ function riderChatWithCustomer(){
 function riderCallCustomer(){
   var s=window._riderActiveSession; var u=s&&s.customer;
   if(!u){showToast&&showToast('Customer not available yet','warning');return;}
-  openCallModal(u.name||'Customer',u.phone||'','Customer','🏠');
+  openCallModal(u.name||'Customer',u.phone||'','Customer','🏠',u.id,s.id);
 }
 async function riderMarkArrivedAtShopper(){
   if(!window._riderActiveSession){return;}
