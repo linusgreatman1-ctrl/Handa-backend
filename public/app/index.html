@@ -1716,7 +1716,7 @@ async function openEventRequestDetailModal(id){
       + '</div>'
       + (r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
       + (r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
-      + (r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">"'+r.notes+'"</div>':'')
+      + (r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">Note: '+r.notes+'</div>':'')
       + '</div>';
     if(!r.proposals.length){
       body.innerHTML = header + '<div style="text-align:center;padding:20px;">No proposals yet — check back soon.</div>';
@@ -1729,9 +1729,9 @@ async function openEventRequestDetailModal(id){
       return '<div style="background:#242424;border:1.5px solid '+(p.status==='ACCEPTED'?'#2ECC71':'#2A2850')+';border-radius:12px;padding:13px 14px;margin-bottom:10px;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><b style="color:#F2EDE8;font-size:14px;">'+(p.vendor?p.vendor.bizName:'Planner')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+p.status+'</span></div>'
         + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(p.priceKobo/100)).toLocaleString()+'</div>'
-        + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Includes: '+p.servicesIncluded.join(', ')+'</div>':'')
+        + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+p.servicesIncluded.join(', ')+'</div>':'')
         + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
-        + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">"'+p.notes+'"</div>':'')
+        + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
         + (canAccept?(
           '<div style="display:flex;gap:8px;margin-top:8px;">'
           +'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
@@ -1807,7 +1807,7 @@ async function openEventRequestForVendor(requestId){
       +'</div>'
       +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
       +(r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
-      +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">"'+r.notes+'"</div>':'')
+      +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">Note: '+r.notes+'</div>':'')
       +'<div style="border-top:1px solid #2A2850;margin-top:10px;padding-top:10px;font-size:12px;color:#9A9390;">Posted by <span style="color:#F2EDE8;font-weight:700;">'+(r.posterName||(r.customer&&r.customer.name)||'Customer')+'</span>'+((r.posterPhone||(r.customer&&r.customer.phone))?' • '+(r.posterPhone||r.customer.phone):'')+'</div>'
       +'</div>';
     var body=document.getElementById('erv-body');
@@ -1820,9 +1820,9 @@ async function openEventRequestForVendor(requestId){
         +'<div style="background:#242424;border:1.5px solid #2A2850;border-radius:13px;padding:14px;">'
         +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:8px;">Your Proposal</div>'
         +'<div style="font-weight:900;font-size:18px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(mine.priceKobo/100)).toLocaleString()+'</div>'
-        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Includes: '+mine.servicesIncluded.join(', ')+'</div>':'')
+        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+mine.servicesIncluded.join(', ')+'</div>':'')
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
-        +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">"'+mine.notes+'"</div>':'')
+        +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Note: '+mine.notes+'</div>':'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
         +'<div id="erv-job-action"></div>'
         +'</div>';
@@ -9499,7 +9499,13 @@ async function renderVendorDashboard(kind){
   try{
     var period=await api('/vendors/me/commission-period');
     var amtEl=document.getElementById('vendor-commission-amt');
-    if(amtEl)amtEl.textContent='₦'+Number(Math.round(period.period.amountDueKobo/100)).toLocaleString();
+    // amountDueKobo is the running gross total ever owed for this period --
+    // paying it (confirmCommissionPayment) sets amountPaidKobo to match but
+    // never touches amountDueKobo itself, so showing that raw field kept
+    // displaying the same due amount even right after a successful payment.
+    // The real outstanding balance is the difference.
+    var outstandingKobo=Math.max(0,(period.period.amountDueKobo||0)-(period.period.amountPaidKobo||0));
+    if(amtEl)amtEl.textContent='₦'+Number(Math.round(outstandingKobo/100)).toLocaleString();
   }catch(err){/* not HOME_COOK/EVENT_PLANNER, or not yet onboarded — leave the placeholder */}
 
   loadVendorBookingsList(isCook);
@@ -9610,15 +9616,16 @@ function _packageIncludesHtml(b){
     +inc.map(function(i){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+i+'</div>';}).join('')
     +'</div>';
 }
-function _pendingEditSummaryHtml(pe){
+function _pendingEditSummaryHtml(pe,isEP){
   var peRows=[];
   if(pe.eventDate!==undefined)peRows.push(['Date',pe.eventDate?new Date(pe.eventDate).toLocaleDateString():'TBD']);
   if(pe.eventTime!==undefined)peRows.push(['Time',pe.eventTime||'—']);
   if(pe.venue!==undefined)peRows.push(['Venue',pe.venue||'—']);
   if(pe.guestCount!==undefined)peRows.push(['Guests',pe.guestCount||'—']);
-  if(pe.notes!==undefined)peRows.push(['Notes',pe.notes||'—']);
+  if(pe.notes!==undefined)peRows.push(['Notes',pe.notes?('Note: '+pe.notes):'—']);
   if(pe.totalKobo!==undefined)peRows.push(['New Total',N(Math.round(pe.totalKobo/100))]);
-  var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">New Items</div>'+pe.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:2px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+  var itemsLabel=isEP?'New Package Includes':'New Items';
+  var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+itemsLabel+'</div>'+pe.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:2px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
   return peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')+itemsHtml;
 }
 async function openVendorBookingDetail(id){
@@ -9710,7 +9717,7 @@ async function openVendorBookingDetail(id){
       var pe=b.pendingEditSnapshot;
       pendingEditBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;margin-bottom:8px;">&#x270F;&#xFE0F; Customer Proposed Changes</div>'
-        +_pendingEditSummaryHtml(pe)
+        +_pendingEditSummaryHtml(pe,!isCookB)
         +((pe.totalKobo!==undefined&&pe.totalKobo<b.totalKobo)?'<div style="margin-top:8px;font-size:11px;color:#9A9390;">Accepting refunds the '+N(Math.round((b.totalKobo-pe.totalKobo)/100))+' difference to the customer\'s escrow wallet.</div>':'')
         +'<div style="display:flex;gap:10px;margin-top:12px;">'
         +'<button onclick="vendorDeclineEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Edited Booking</button>'
@@ -9726,7 +9733,12 @@ async function openVendorBookingDetail(id){
     // backend's own real permission model (the vendor side never actually
     // needs to back out of an EP booking the way a Home Cook vendor might
     // need to before a physical job starts).
-    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorHasOpenDispute;
+    // Also hidden before the vendor has actually decided (REQUESTED for
+    // EP / PAID for Cook, the same "actionable" status the real Accept/
+    // Decline buttons key off below) -- nothing to chat/call about until
+    // the vendor has accepted the booking.
+    var vendorNotYetDecided=b.status===(isCookB?'PAID':'REQUESTED');
+    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute;
     var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var contactAndCancelBlock=(vendorHideContactButtons&&!vendorCancellable)?'':(
       '<div style="margin-top:14px;">'
@@ -9741,9 +9753,14 @@ async function openVendorBookingDetail(id){
     );
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
-      +_packageIncludesHtml(b)
+      // Once real selectedItems exist (an edit, or a proposal-derived
+      // booking), that's the current, accurate truth -- showing the
+      // package's own raw, unedited "What's Included" template alongside
+      // it duplicates stale info (the original, pre-edit list) next to
+      // what's actually booked now.
+      +(b.selectedItems&&b.selectedItems.length?'':_packageIncludesHtml(b))
       +itemsHtml
-      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
+      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+b.notes+'</div></div>':'')
       +'</div>'
       +'<div style="background:#242424;border-radius:13px;padding:14px;">'
       +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:8px;">Booked By</div>'
@@ -10021,13 +10038,20 @@ async function openCustomerHistoryDetail(kind,id){
     var isTerminal=hasOpenDispute||isCompleted||isCancelledFromDispute||isPlainCancelled||isDeclined;
     var isEP=b.type==='EVENT_PLANNING';
     var isCookB=!isEP;
+    var hasPendingEdit=!!b.pendingEditSnapshot;
     // Home Cook only: before the vendor taps "Job Started", the customer
     // still sees a "waiting to start" message and can edit/cancel; once
     // started, editing/cancelling is over and the message changes to
     // "waiting to be completed". Event Planner has no such intermediate --
     // it's always the plain "waiting to be completed" message from
-    // CONFIRMED straight through to (one-sided) completion.
-    var awaitingJobStart=!isTerminal&&isCookB&&b.status==='CONFIRMED'&&!b.vendorJobStartedAt;
+    // CONFIRMED straight through to (one-sided) completion. Neither shows
+    // while an edit is awaiting the vendor's approval -- that banner
+    // (hasPendingEdit, rendered further down) is the only thing that
+    // should be on screen until the vendor accepts or declines it, at
+    // which point this reverts to its normal state either way (accepted:
+    // pendingEditSnapshot is cleared and the booking already reflects the
+    // new details; declined: also cleared, booking unchanged).
+    var awaitingJobStart=!isTerminal&&!hasPendingEdit&&isCookB&&b.status==='CONFIRMED'&&!b.vendorJobStartedAt;
     // Chat/Call/WhatsApp are removed once the job is actually completed,
     // AND once the vendor has marked it complete and it's the customer's
     // turn for the Yes/No response -- that prompt is meant to stand alone,
@@ -10039,7 +10063,6 @@ async function openCustomerHistoryDetail(kind,id){
     // the only thing left to do at that point (an admin resolves it, not
     // a chat message).
     var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute;
-    var hasPendingEdit=!!b.pendingEditSnapshot;
     // Home Cook: visible from the moment the booking is sent (REQUESTED/
     // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
     // the vendor taps Job Started -- the event date/time passing is NOT a
@@ -10050,7 +10073,7 @@ async function openCustomerHistoryDetail(kind,id){
     // Started concept for EP) or the customer cancels.
     var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (isCookB ? !b.vendorJobStartedAt : _jobNotPassed);
     var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (isCookB ? !b.vendorJobStartedAt : _jobNotPassed);
-    var awaitingVendor=!isTerminal&&!awaitingJobStart&&b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
+    var awaitingVendor=!isTerminal&&!awaitingJobStart&&!hasPendingEdit&&b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
     // Two genuinely different waiting states, easy to conflate: the vendor
     // hasn't even accepted yet (Event Planner: still REQUESTED, no payment
     // step at all; Home Cook: PAID -- REQUESTED there just means "not paid
@@ -10124,9 +10147,14 @@ async function openCustomerHistoryDetail(kind,id){
     // booking's card looks identical to before.
     var content='<div style="background:#242424;border-radius:13px;padding:14px;">'
       +rows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+r[1]+'</span></div>';}).join('')
-      +_packageIncludesHtml(b)
+      // Once real selectedItems exist (an edit, or a proposal-derived
+      // booking), that's the current, accurate truth -- showing the
+      // package's own raw, unedited "What's Included" template alongside
+      // it duplicates stale info (the original, pre-edit list) next to
+      // what's actually booked now.
+      +(b.selectedItems&&b.selectedItems.length?'':_packageIncludesHtml(b))
       +itemsHtml
-      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
+      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+b.notes+'</div></div>':'')
       +'</div>'
       +terminalBanner
       +(awaitingVendorDecision?(
@@ -10148,7 +10176,7 @@ async function openCustomerHistoryDetail(kind,id){
       +(hasPendingEdit?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="text-align:center;color:#F5A623;font-weight:700;font-size:13px;margin-bottom:8px;">&#x270F;&#xFE0F; Your Edit Is Awaiting Vendor Approval</div>'
-        +_pendingEditSummaryHtml(b.pendingEditSnapshot)
+        +_pendingEditSummaryHtml(b.pendingEditSnapshot,isEP)
         +((b.pendingEditSnapshot.totalKobo!==undefined&&b.pendingEditSnapshot.totalKobo<b.totalKobo)?'<div style="margin-top:8px;font-size:11px;color:#9A9390;text-align:center;">The '+N(Math.round((b.totalKobo-b.pendingEditSnapshot.totalKobo)/100))+' difference returns to your escrow wallet once the vendor accepts.</div>':'')
         +'</div>'
       ):'')
