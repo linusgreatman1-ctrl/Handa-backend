@@ -759,7 +759,14 @@ async function cancelBooking(req, res, next) {
     const cancelledBy = isCustomer ? "CUSTOMER" : "VENDOR";
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason, cancelledBy },
+      // Clears any unresolved pendingEditSnapshot along with the
+      // cancellation -- without this, a booking cancelled while an edit
+      // was still awaiting the vendor's decision kept showing "Customer
+      // Proposed Changes" (with live Accept/Decline buttons) forever,
+      // since every render of that block only ever checks whether
+      // pendingEditSnapshot is set, not whether the booking is still
+      // actually alive.
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason, cancelledBy, pendingEditSnapshot: null, pendingEditRequestedAt: null },
     });
     closeSupportThreadForContext(booking.id);
     // Notify whichever side didn't do the cancelling.
