@@ -9824,22 +9824,37 @@ async function openVendorBookingDetail(id){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
   }
 }
+// Refreshes the vendor's own Orders LIST in the background, matching the
+// established pattern already used by vendorBookingAction's accept path
+// (loadVendorBookingsList right alongside opening the detail sheet) --
+// without this, the list's cached _vendorBookingsFull stays stale after
+// the vendor's own action, so e.g. the "Customer proposed changes — open
+// to review" badge (keyed purely on pendingEditSnapshot) kept showing on
+// the dashboard card even after the vendor had already accepted/declined
+// that exact edit from the detail sheet, since nothing ever told the list
+// to re-fetch.
+function _refreshVendorBookingsListIfOpen(){
+  if(document.getElementById('vendor-bookings-list'))loadVendorBookingsList(window._vendorDashKind==='cook');
+}
 function vendorAcceptEditedBooking(id){
   api('/bookings/'+id+'/accept-edit',{method:'POST'}).then(function(){
     showToast&&showToast('Edit accepted','success');
     openVendorBookingDetail(id);
+    _refreshVendorBookingsListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not accept the edit','warning');});
 }
 function vendorDeclineEditedBooking(id){
   api('/bookings/'+id+'/decline-edit',{method:'POST'}).then(function(){
     showToast&&showToast('Edit declined — booking unchanged','success');
     openVendorBookingDetail(id);
+    _refreshVendorBookingsListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not decline the edit','warning');});
 }
 function vendorStartJob(id){
   api('/bookings/'+id+'/start-job',{method:'POST'}).then(function(){
     showToast&&showToast('Job started — the customer has been notified.','success');
     openVendorBookingDetail(id);
+    _refreshVendorBookingsListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not start the job','warning');});
 }
 async function customerConfirmBookingComplete(id,completed,isEP){
@@ -9966,6 +9981,7 @@ async function vendorMarkBookingComplete(id,isEP){
     // modal and would otherwise render invisibly behind it.
     closeProcedureModal&&closeProcedureModal();
     openVendorBookingDetail(id);
+    _refreshVendorBookingsListIfOpen();
   }catch(err){
     showToast&&showToast(err.message||'Could not mark this booking complete','warning');
   }
