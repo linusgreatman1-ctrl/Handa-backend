@@ -38,4 +38,21 @@ async function notifyAllAdmins(io, title, body, data) {
   }
 }
 
-module.exports = { notify, notifyAllAdmins };
+// Same fan-out pattern as notifyAllAdmins, for every active Event Planner
+// vendor -- a new event request previously only ever surfaced live via
+// the dispatch:eventplanners socket room (event-request:updated), which
+// only actually does anything for a planner who already happens to have
+// their dashboard's request section open at that exact moment. Nothing
+// wrote a real Notification row, so the bell/notification list never
+// showed it at all, live or otherwise.
+async function notifyAllEventPlanners(io, title, body, data) {
+  const vendors = await prisma.vendorProfile.findMany({
+    where: { vtype: "EVENT_PLANNER", user: { status: "ACTIVE" } },
+    select: { userId: true },
+  });
+  for (const v of vendors) {
+    await notify(io, v.userId, "ORDER_UPDATE", title, body, data).catch(() => {});
+  }
+}
+
+module.exports = { notify, notifyAllAdmins, notifyAllEventPlanners };

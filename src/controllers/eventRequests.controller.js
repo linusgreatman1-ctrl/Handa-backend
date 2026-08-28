@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const { notify } = require("../services/notifications.service");
+const { notify, notifyAllEventPlanners } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
 // Broadcast one event request to every qualified (EVENT_PLANNER) vendor,
@@ -38,7 +38,13 @@ async function createEventRequest(req, res, next) {
     // Every qualified (EVENT_PLANNER) vendor currently connected sees this
     // the moment it's posted -- previously only ever appeared once a
     // planner happened to reload/reopen their dashboard.
-    req.app.get("io")?.to("dispatch:eventplanners").emit("event-request:updated", { requestId: request.id, reason: "created" });
+    const io = req.app.get("io");
+    io?.to("dispatch:eventplanners").emit("event-request:updated", { requestId: request.id, reason: "created" });
+    // A real Notification row + bell push, for every EP whether or not
+    // they're currently connected -- the socket broadcast above only ever
+    // helped a planner already sitting on their dashboard's request list
+    // at the exact moment this fires.
+    notifyAllEventPlanners(io, "New event request", `A customer posted a new ${eventType} request${venue ? " in " + venue : ""} — submit a proposal.`, { eventRequestId: request.id }).catch(() => {});
     res.status(201).json({ request });
   } catch (err) {
     next(err);
