@@ -9660,7 +9660,7 @@ function _pendingEditSummaryHtml(pe,isEP){
   if(pe.eventTime!==undefined)peRows.push(['Time',pe.eventTime||'—']);
   if(pe.venue!==undefined)peRows.push(['Venue',pe.venue||'—']);
   if(pe.guestCount!==undefined)peRows.push(['Guests',pe.guestCount||'—']);
-  if(pe.notes!==undefined)peRows.push(['Notes',pe.notes?('Note: '+pe.notes):'—']);
+  if(pe.notes!==undefined)peRows.push(['Notes',pe.notes||'—']);
   if(pe.totalKobo!==undefined)peRows.push(['New Total',N(Math.round(pe.totalKobo/100))]);
   var itemsLabel=isEP?'New Package Includes':'New Items';
   var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+itemsLabel+'</div>'+pe.selectedItems.map(_itemRowHtml).join('')+'</div>'):'';
@@ -9798,7 +9798,7 @@ async function openVendorBookingDetail(id){
       // what's actually booked now.
       +(b.selectedItems&&b.selectedItems.length?'':_packageIncludesHtml(b))
       +itemsHtml
-      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+b.notes+'</div></div>':'')
+      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
       +'<div style="background:#242424;border-radius:13px;padding:14px;">'
       +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:8px;">Booked By</div>'
@@ -10192,7 +10192,7 @@ async function openCustomerHistoryDetail(kind,id){
       // what's actually booked now.
       +(b.selectedItems&&b.selectedItems.length?'':_packageIncludesHtml(b))
       +itemsHtml
-      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+b.notes+'</div></div>':'')
+      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
       +terminalBanner
       +(awaitingVendorDecision?(
