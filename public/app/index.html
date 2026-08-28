@@ -9637,6 +9637,16 @@ function bindBookingLiveUpdateListener(){
 // "what you're getting" is the package's own .includes list, which
 // previously only ever showed during package BROWSING, never on the
 // booking's own detail screen afterward. Shared between both sides.
+// One line item in a booking's Items list, with its real price attached
+// (unit price already resolved and stored server-side at booking/edit
+// time -- see resolveBookingItems in bookings.controller.js -- never
+// recomputed client-side). Shared by the pending-edit summary and both
+// the vendor's and customer's own booking-detail Items lists so a price
+// change here applies everywhere at once.
+function _itemRowHtml(it){
+  var lineTotal=Math.round((it.priceKobo||0)*(it.qty||1)/100);
+  return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;display:flex;justify-content:space-between;gap:10px;"><span>• '+it.name+' x'+it.qty+'</span><span style="color:#9A9390;white-space:nowrap;">'+N(lineTotal)+'</span></div>';
+}
 function _packageIncludesHtml(b){
   var inc=b.servicePackage&&b.servicePackage.includes;
   if(!inc||!inc.length)return '';
@@ -9653,7 +9663,7 @@ function _pendingEditSummaryHtml(pe,isEP){
   if(pe.notes!==undefined)peRows.push(['Notes',pe.notes?('Note: '+pe.notes):'—']);
   if(pe.totalKobo!==undefined)peRows.push(['New Total',N(Math.round(pe.totalKobo/100))]);
   var itemsLabel=isEP?'New Package Includes':'New Items';
-  var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+itemsLabel+'</div>'+pe.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:2px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+  var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+itemsLabel+'</div>'+pe.selectedItems.map(_itemRowHtml).join('')+'</div>'):'';
   return peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')+itemsHtml;
 }
 async function openVendorBookingDetail(id){
@@ -9684,7 +9694,7 @@ async function openVendorBookingDetail(id){
     // Cook bookings never collect it, so showing "Guests: Not set" there
     // was pure noise.
     if(b.type==='EVENT_PLANNING')rows.splice(4,0,['Guests',b.guestCount||'Not set']);
-    var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+    var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(_itemRowHtml).join('')+'</div>'):'';
     // b.wasEdited is no longer shown as an inline banner here -- the
     // sheet's own title becomes "Booking Details (Edited)" below instead,
     // same as the customer's own detail screen.
@@ -10027,7 +10037,7 @@ async function openCustomerHistoryDetail(kind,id){
     // items automatically (selectedItems is what the accept endpoint
     // updates). Previously the customer's own detail screen never showed
     // items at all, only the vendor's did.
-    var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+' x'+it.qty+'</div>';}).join('')+'</div>'):'';
+    var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(_itemRowHtml).join('')+'</div>'):'';
     // Guest count is only meaningful for Event Planning bookings -- Home
     // Cook bookings never collect it, so showing "Guests: Not set" there
     // was pure noise.
@@ -10623,6 +10633,21 @@ function removeEbItemCustom(cid){
 // there's nothing to confirm.
 async function saveBookingEdit(){
   if(!_editingBooking)return;
+  // Captured once, here, before any navigation away from the actual Edit
+  // Booking form -- the insufficient-funds choice/Add-Funds screens that
+  // can follow all reuse the shared #procedure-ov container, replacing
+  // this form's DOM entirely. Without this, a retry through those screens
+  // (_saveBookingEditReal called again later) would read these same
+  // document.getElementById(...) calls against a DOM that no longer has
+  // them, silently sending blank values -- notes in particular, since it
+  // has no other guard against that.
+  window._ebPendingFormValues={
+    date:(document.getElementById('eb-date')||{}).value||'',
+    time:(document.getElementById('eb-time')||{}).value||'',
+    venue:(document.getElementById('eb-venue')||{}).value||'',
+    guests:(document.getElementById('eb-guests')||{}).value||'',
+    notes:(document.getElementById('eb-notes')||{}).value||'',
+  };
   if(_editingBooking.type==='HOME_COOK'&&_ebItemPicker){
     var _newTotalKobo=_ebItemsTotal();
     var _diffKobo=_newTotalKobo-_editingBooking.totalKobo;
@@ -10686,11 +10711,19 @@ function _bookingEditFundsChoice(choice){
   }
 }
 async function _saveBookingEditReal(){
-  var date=(document.getElementById('eb-date')||{}).value||'';
-  var time=(document.getElementById('eb-time')||{}).value||'';
-  var venue=(document.getElementById('eb-venue')||{}).value||'';
-  var guests=(document.getElementById('eb-guests')||{}).value||'';
-  var notes=(document.getElementById('eb-notes')||{}).value||'';
+  // Prefer the values captured up front in saveBookingEdit() -- a retry
+  // through the funds-choice/Add-Funds screens re-invokes this function
+  // with the real Edit Booking form's DOM long gone, so reading straight
+  // from document.getElementById(...) again would silently blank
+  // everything (notes especially, which had no other fallback). Only
+  // falls back to a live DOM read if something calls this before that
+  // stash exists.
+  var _pf=window._ebPendingFormValues||{};
+  var date=_pf.date!==undefined?_pf.date:((document.getElementById('eb-date')||{}).value||'');
+  var time=_pf.time!==undefined?_pf.time:((document.getElementById('eb-time')||{}).value||'');
+  var venue=_pf.venue!==undefined?_pf.venue:((document.getElementById('eb-venue')||{}).value||'');
+  var guests=_pf.guests!==undefined?_pf.guests:((document.getElementById('eb-guests')||{}).value||'');
+  var notes=_pf.notes!==undefined?_pf.notes:((document.getElementById('eb-notes')||{}).value||'');
   var items;
   if(_editingBooking.type==='HOME_COOK'&&_ebItemPicker){
     if(!_ebItemPicker.selections.length){showToast&&showToast('Select at least one item','warning');return;}
