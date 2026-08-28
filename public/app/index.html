@@ -8516,7 +8516,7 @@ var _afMethod='CARD';
 // that came back short shows exactly how much more is needed, pre-fills
 // it, and resumes whatever it was doing (not just refreshing the wallet
 // card, the plain Profile "+ Add Funds" entry point's own default).
-function showAddFundsModal(minKobo,onSuccess,priceContext){
+function showAddFundsModal(minKobo,onSuccess,priceContext,onBack){
   // No method pre-selected -- the confirm button starts disabled (see
   // walletBtn/cardBtn/transferBtn below) until the customer actually picks
   // one. Wallet used to be the silent default the moment this screen
@@ -8530,6 +8530,12 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
   // different payment method instead.
   window._afMinKobo=minKobo||null;
   window._afPriceContext=priceContext||null;
+  // Optional -- lets a specific caller (the booking-edit funds-choice
+  // screen) say where "back" really goes instead of just closing
+  // everything. Callers that don't care (the generic Profile/Wallet
+  // "+ Add Funds" entry point) leave this unset, and _afGoBack falls back
+  // to the plain close it always did.
+  window._afOnBack=onBack||null;
   // minKobo is always the raw price difference (new total minus old) --
   // never netted against unrelated free wallet balance, the same figure
   // regardless of which payment method ends up picked (see selectAfMethod)
@@ -8569,7 +8575,7 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
   // become enough (e.g. funded another way in the meantime) or reopening
   // this same screen with the same shortfall if not.
   var walletBtn=minKobo?('<button onclick="selectAfMethod(\'WALLET\')" id="af-wallet-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4B0; Wallet Balance</button>'):'';
-  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div>'
+  showProcedureModal('<div style="padding:0 0 20px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="_afGoBack()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add Funds</div></div>'
     +shortfallNote
     +amountBlock
     +'<div id="af-methods" style="display:flex;gap:8px;margin-bottom:16px;">'
@@ -8578,6 +8584,16 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
     +'<button onclick="selectAfMethod(\'BANK_TRANSFER\')" id="af-transfer-btn" style="flex:1;padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">🏦 Bank Transfer</button>'
     +'</div>'
     +'<button id="af-confirm-btn" onclick="submitAddFunds()" style="width:100%;background:linear-gradient(135deg,#E8392E,#B52D24);border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;'+(minKobo?'opacity:.4;pointer-events:none;':'')+'">'+(minKobo?'Pay':'Continue to Payment')+'</button></div>');
+}
+// The Add Funds screen's own back arrow -- named/global (not an inline
+// closure) since onclick="" attributes can only call real global
+// functions. Goes to whatever specific screen the caller said "back"
+// means (booking-edit's funds-choice screen); falls back to the plain
+// close every other entry point (Profile/Wallet's generic "+ Add Funds")
+// already used.
+function _afGoBack(){
+  var cb=window._afOnBack;
+  if(cb)cb(); else closeProcedureModal();
 }
 // Shared by all three method buttons on the Add Funds screen (when a
 // specific shortfall/minKobo is being covered) -- picks the amount to
@@ -8651,7 +8667,7 @@ async function submitAddFunds(){
     }
     if(res.manual){
       openManualBankTransferModal(res,function(){toast('Funds added!');afterFunded();},function(){
-        showAddFundsModal(window._afMinKobo,onSuccess,window._afPriceContext);
+        showAddFundsModal(window._afMinKobo,onSuccess,window._afPriceContext,window._afOnBack);
       });
       return;
     }
@@ -10628,8 +10644,10 @@ async function saveBookingEdit(){
 // that same Add Funds screen directly, pre-filled to the real diff).
 function showBookingEditFundsChoice(diffKobo,realBalanceKobo,priceContext){
   window._bookingEditFundsDiff=diffKobo;
+  window._bookingEditFundsRealBalance=realBalanceKobo;
   window._bookingEditFundsPriceContext=priceContext;
   var html='<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><button onclick="_reopenEditBookingForm()" class="ibtn" style="background:#242424;">&#x2190;</button></div>'
     +'<div style="text-align:center;margin-bottom:18px;">'
     +'<div style="font-size:36px;margin-bottom:8px;">⚠️</div>'
     +'<div style="font-size:17px;font-weight:900;color:#F2EDE8;">Insufficient Funds For This Booking</div>'
@@ -10640,6 +10658,23 @@ function showBookingEditFundsChoice(diffKobo,realBalanceKobo,priceContext){
     +'</div>';
   showProcedureModal(html);
 }
+// Re-shows the same choice screen from its own stashed state -- the
+// back-arrow target for the Add Funds screen when it was opened from
+// here, so "Add Funds Another Way" -> back doesn't fall through to
+// closeProcedureModal() (which would dump the customer straight to
+// whatever's behind the whole overlay, not this choice screen).
+function _backToBookingEditFundsChoice(){
+  showBookingEditFundsChoice(window._bookingEditFundsDiff,window._bookingEditFundsRealBalance,window._bookingEditFundsPriceContext);
+}
+// This screen's own back arrow -- reopens the Edit Booking form itself
+// (not home/history). Reopening from the original booking snapshot
+// (rather than preserving in-progress edits) is a known, accepted
+// limitation -- the fix here is only about *where* back goes, not about
+// carrying form state across it.
+function _reopenEditBookingForm(){
+  closeProcedureModal();
+  if(_editingBooking)openEditBookingModal(_editingBooking);
+}
 function _bookingEditFundsChoice(choice){
   var diffKobo=window._bookingEditFundsDiff;
   var priceContext=window._bookingEditFundsPriceContext;
@@ -10647,7 +10682,7 @@ function _bookingEditFundsChoice(choice){
   if(choice==='WALLET'){
     _saveBookingEditReal();
   }else{
-    showAddFundsModal(diffKobo,function(){ _saveBookingEditReal(); },priceContext);
+    showAddFundsModal(diffKobo,function(){ _saveBookingEditReal(); },priceContext,_backToBookingEditFundsChoice);
   }
 }
 async function _saveBookingEditReal(){
@@ -10705,7 +10740,7 @@ async function _saveBookingEditReal(){
       // wrapper -- the choice screen has already been shown (or wasn't
       // needed, e.g. this call came from picking "Use My Wallet Balance"),
       // so funding and retrying here shouldn't loop back through it again.
-      showAddFundsModal(shortfallKobo,function(){ _saveBookingEditReal(); },priceContext);
+      showAddFundsModal(shortfallKobo,function(){ _saveBookingEditReal(); },priceContext,_reopenEditBookingForm);
     }else{
       showToast&&showToast(err.message||'Could not update booking','warning');
     }
