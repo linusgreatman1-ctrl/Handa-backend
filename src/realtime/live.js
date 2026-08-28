@@ -201,10 +201,28 @@ function attachLiveSocket(httpServer) {
     socket.on("bookingcall:invite", async ({ toUserId, bookingId, callerName, callerAvatar, callerRole }) => {
       if (!toUserId) return;
       if (bookingId) {
+        // The frontend reuses this same generic call system for two real
+        // contexts: Cook/EP bookings AND Shop-For-Me sessions (customer <->
+        // shopper <-> rider), passing whichever id it has as "bookingId" —
+        // it's just an opaque scoping token to this handler, not literally
+        // always a Booking row. Only checking the Booking table meant every
+        // Shop-For-Me in-app call invite silently vanished here (booking
+        // lookup returns null, early return), even though the caller had
+        // already been through this exact session's own party checks to
+        // even see the Call button.
         const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: { select: { userId: true } } } });
-        if (!booking) return;
-        const allowed = booking.customerId === user.id || (booking.vendor && booking.vendor.userId === user.id);
-        if (!allowed) return;
+        if (booking) {
+          const allowed = booking.customerId === user.id || (booking.vendor && booking.vendor.userId === user.id);
+          if (!allowed) return;
+        } else {
+          const session = await prisma.shopSession.findUnique({
+            where: { id: bookingId },
+            include: { shopper: { select: { userId: true } }, rider: { select: { userId: true } } },
+          });
+          if (!session) return;
+          const allowed = session.customerId === user.id || (session.shopper && session.shopper.userId === user.id) || (session.rider && session.rider.userId === user.id);
+          if (!allowed) return;
+        }
       }
       io.to(`user:${toUserId}`).emit("bookingcall:incoming", {
         fromUserId: user.id,
