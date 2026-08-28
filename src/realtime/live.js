@@ -266,6 +266,16 @@ function attachLiveSocket(httpServer) {
     escrowSvc.runAutoReleaseSweep().catch((err) => console.error("[escrow] auto-release sweep failed:", err));
   }, sweepMs);
 
+  // A Shop-For-Me session's holds auto-releasing (above) doesn't tell the
+  // session itself anything -- without this, one that auto-releases
+  // instead of the customer manually confirming never gets its unspent-
+  // budget refund, its payout notifications, or its status flipped to
+  // COMPLETED, and just sits at DELIVERED forever even though the money
+  // has actually already moved.
+  setInterval(() => {
+    shopSessionsCtrl.finalizeAutoReleasedSessions(io).catch((err) => console.error("[shop-session] auto-release finalize sweep failed:", err));
+  }, sweepMs);
+
   // Same off-request-path pattern as the escrow sweep above — a vendor's
   // commission period lapsing into OVERDUE isn't something any single
   // request naturally triggers, so it needs its own periodic check.

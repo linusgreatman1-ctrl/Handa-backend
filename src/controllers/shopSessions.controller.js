@@ -235,7 +235,17 @@ async function getSession(req, res, next) {
       session.pickupCode = undefined;
       session.deliveryCode = undefined;
     }
-    res.json({ session });
+    // Same "already reported, swap the button for a static state" pattern
+    // getBooking already has -- split per role (submitReport's own
+    // context map sends 'shopper_session' reports as context:SHOP_SESSION
+    // and 'rider' reports as context:RIDER, both keyed by this session's
+    // id), so the two report buttons can independently show "already
+    // reported" instead of one ticket silently covering both.
+    const [shopperReportTicket, riderReportTicket] = await Promise.all([
+      prisma.supportTicket.findFirst({ where: { context: "SHOP_SESSION", contextId: session.id }, orderBy: { createdAt: "desc" } }),
+      prisma.supportTicket.findFirst({ where: { context: "RIDER", contextId: session.id }, orderBy: { createdAt: "desc" } }),
+    ]);
+    res.json({ session, shopperReportTicket, riderReportTicket });
   } catch (err) {
     next(err);
   }
@@ -1027,11 +1037,79 @@ async function confirmSession(req, res, next) {
     if (session.status !== "DELIVERED") return res.status(409).json({ error: "Session has not been marked delivered yet." });
 
     await escrow.releaseAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Customer confirmed Shop-For-Me delivery" });
+    await refundUnspentBudget(session);
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
     closeSupportThreadForContext(session.id);
+    await notifyPayoutRecipients(req.app.get("io"), updated);
     res.json({ session: updated });
   } catch (err) {
     next(err);
+  }
+}
+
+// The customer's deposit covers sessionFee + riderFee + a real items
+// budget, but the shopper may never spend all of the items portion
+// (fewer items approved than budgeted for). Neither of those first two
+// fees is ever partially spent, so any leftover can only be in the
+// items budget -- refunds exactly that difference back to the
+// customer's wallet the moment the session completes, instead of it
+// silently staying locked in escrow with nothing left to release it for.
+async function refundUnspentBudget(session) {
+  const budgetKobo = session.depositKobo - session.sessionFeeKobo - session.riderFeeKobo;
+  if (budgetKobo <= 0) return;
+  const paidToSellers = await prisma.sellerPayout.aggregate({
+    where: { sessionId: session.id, status: { in: ["PENDING", "PROCESSING", "PAID"] } },
+    _sum: { amountKobo: true },
+  });
+  const unspentKobo = budgetKobo - (paidToSellers._sum.amountKobo || 0);
+  if (unspentKobo > 0) {
+    await walletSvc.creditWallet(session.customerId, unspentKobo, "ADJUSTMENT", { contextType: "SHOP_SESSION", contextId: session.id, description: "Unspent shopping budget refunded on session completion" });
+  }
+}
+
+// escrow.service.js's runAutoReleaseSweep releases individual holds
+// generically across every context (bookings included) with no idea
+// which session/booking they belonged to -- a Shop-For-Me session whose
+// customer never manually confirmed still needed the SAME completion
+// side effects (unspent-budget refund, payout notifications, status ->
+// COMPLETED) once its holds finish auto-releasing, which confirmSession
+// above already does for the manual-confirm path. Runs as its own sweep
+// (registered in live.js) rather than teaching the generic escrow sweep
+// about Shop-For-Me specifically -- checks every still-DELIVERED session
+// and finalizes any whose holds have all actually released.
+async function finalizeAutoReleasedSessions(io) {
+  const sessions = await prisma.shopSession.findMany({ where: { status: "DELIVERED" } });
+  let finalized = 0;
+  for (const session of sessions) {
+    const stillHeld = await prisma.escrowHold.count({ where: { contextType: "SHOP_SESSION", shopSessionId: session.id, status: "HELD" } });
+    if (stillHeld > 0) continue;
+    await refundUnspentBudget(session);
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    closeSupportThreadForContext(session.id);
+    await notifyPayoutRecipients(io, updated);
+    finalized++;
+  }
+  return finalized;
+}
+
+// Neither the shopper's nor the rider's escrow release ever told them
+// anything got paid -- releaseAllHoldsForContext is generic across every
+// context (bookings already send their own completion notify()
+// elsewhere, which is why this lives here and not inside the shared
+// escrow service, to avoid double-notifying a booking's vendor).
+async function notifyPayoutRecipients(io, session) {
+  const amountText = (kobo) => `₦${Math.round(kobo / 100).toLocaleString()}`;
+  if (session.shopperId) {
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+    if (shopper) {
+      await notify(io, shopper.userId, "ORDER_UPDATE", "Payment released", `Your shopper fee for this session (${amountText(session.sessionFeeKobo)}) has been released to your wallet.`, { sessionId: session.id }).catch(() => {});
+    }
+  }
+  if (session.riderId) {
+    const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
+    if (rider) {
+      await notify(io, rider.userId, "ORDER_UPDATE", "Payment released", `Your delivery fee for this session (${amountText(session.riderFeeKobo)}) has been released to your wallet.`, { sessionId: session.id }).catch(() => {});
+    }
   }
 }
 
@@ -1130,6 +1208,19 @@ async function confirmSellerPayouts(req, res, next) {
       const payout = await prisma.sellerPayout.create({
         data: { sessionId: session.id, sellerId: seller.id, amountKobo: alloc.amountKobo, reference },
       });
+      // DEV_BYPASS_PAYMENTS=true (same flag debitWallet/createManualPaymentRequest
+      // already honor) skips the real Paystack bank-account resolution and
+      // transfer entirely -- registered test sellers never have real bank
+      // details, so createTransferRecipient always rejected them with
+      // "account cannot be resolved" and there was no way to exercise this
+      // flow at all without a real payout rail. Marks PAID immediately,
+      // same as the ESCROW_DIRECT method above. Unset before production --
+      // a real Paystack payout must still actually verify and move money.
+      if (walletSvc.devBypassEnabled()) {
+        await prisma.sellerPayout.update({ where: { id: payout.id }, data: { status: "PAID", paidAt: new Date() } });
+        results.push({ sellerId: seller.id, status: "PAID" });
+        continue;
+      }
       try {
         if (!seller.bankCode) {
           results.push({ sellerId: seller.id, status: "FAILED", error: "This seller has no bank code on file — re-register them with a bank selected from the list." });
@@ -1183,6 +1274,7 @@ module.exports = {
   startConfirmCall,
   completeConfirmCall,
   confirmSession,
+  finalizeAutoReleasedSessions,
   cancelSession,
   confirmSellerPayouts,
   expireStaleSearchingSessions,

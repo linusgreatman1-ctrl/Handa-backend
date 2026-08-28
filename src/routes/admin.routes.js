@@ -28,6 +28,7 @@ router.post("/users/:id/call", requireContentOrSuperAdmin, ctrl.callUserForAdmin
 router.get("/riders", requireContentOrSuperAdmin, ctrl.listRidersForAdmin);
 router.get("/riders/:id", requireContentOrSuperAdmin, ctrl.getRiderDetailForAdmin);
 router.patch("/riders/:id/verify", ctrl.setRiderVerified);
+router.post("/riders/:id/recompute-stats", ctrl.recomputeRiderStats);
 router.get("/shoppers", requireContentOrSuperAdmin, ctrl.listShoppersForAdmin);
 router.get("/shoppers/:id", requireContentOrSuperAdmin, ctrl.getShopperDetailForAdmin);
 router.patch("/shoppers/:id/verify", ctrl.setShopperVerified);

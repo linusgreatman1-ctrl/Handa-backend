@@ -490,6 +490,30 @@ async function setRiderVerified(req, res, next) {
   }
 }
 
+// Corrects a rider's own denormalized "deliveries" counter against the
+// real ground truth (COMPLETED ShopSessions as rider) -- seed data
+// before an earlier fix hardcoded fake stats (deliveries:1240) onto the
+// demo rider account, and that stale base number kept getting
+// incremented by real completed deliveries ever since (the real
+// increment-on-complete logic in shopSessions.controller.js is and was
+// always correct), so it read as a fake, inflated total. No general
+// "edit any field" endpoint exists for this, and this project has no
+// direct DB/shell access outside the deployed process itself (see
+// internalCleanup.routes.js's own comment) -- this is the real, narrow
+// fix, not a one-off hack.
+async function recomputeRiderStats(req, res, next) {
+  try {
+    const rider = await prisma.riderProfile.findUnique({ where: { id: req.params.id } });
+    if (!rider) return res.status(404).json({ error: "Rider not found." });
+    const realDeliveries = await prisma.shopSession.count({ where: { riderId: rider.id, status: "COMPLETED" } });
+    const updated = await prisma.riderProfile.update({ where: { id: rider.id }, data: { deliveries: realDeliveries } });
+    await logAdminAction(req.user, "RIDER_STATS_RECOMPUTED", "RiderProfile", rider.id, `deliveries ${rider.deliveries} -> ${realDeliveries}`);
+    res.json({ rider: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function setShopperVerified(req, res, next) {
   try {
     const { isVerified } = req.body;
@@ -1381,6 +1405,7 @@ module.exports = {
   getShopperDetailForAdmin,
   setVendorVerified,
   setRiderVerified,
+  recomputeRiderStats,
   setShopperVerified,
   listPayments,
   listRidersForAdmin,
