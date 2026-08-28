@@ -429,6 +429,15 @@ model Booking {
   // hours. This caps it to one every few hours instead.
   lastCompletionReminderAt DateTime?
 
+  // Stamped the first time the "today is your event" sweep notifies an
+  // Event Planner that their booking's scheduled date has arrived (see
+  // sendEventDayReminders, bookingReminders.service.js) -- without this
+  // dedup, the 5-minute sweep would re-notify every tick for the whole
+  // day. Home Cook has no equivalent notification (the "Today is cooking
+  // day" write-up is display-only, computed live from eventDate, not
+  // backed by a stamped/notified field).
+  eventDayNotifiedAt DateTime?
+
   // Two-sided completion: the vendor marks their side done first, then the
   // customer either confirms (both set -> COMPLETED, escrow releases) or
   // disputes (neither the booking's status nor these fields change — a

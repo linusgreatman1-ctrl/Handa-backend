@@ -9570,6 +9570,39 @@ function loadVendorBookingsList(isCook){
     if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load bookings')+'</div>';
   });
 }
+// Calendar-day comparison only (never eventTime) -- "today is cooking/
+// event day" is a day-level concept. Uses local time, matching every
+// other eventDate display in this file (toLocaleDateString()).
+function _isEventDateTodayOrPast(eventDate){
+  if(!eventDate)return false;
+  var d=new Date(eventDate);
+  var today=new Date();
+  d.setHours(0,0,0,0);today.setHours(0,0,0,0);
+  return d.getTime()<=today.getTime();
+}
+// The one write-up line shown at the bottom of a booking card on the
+// VENDOR's own Orders/History list, mirroring the same short-text-in-one-
+// spot pattern already proven for the customer's equivalent
+// (_customerBookingWriteup) -- one string at a time, not stacked badges,
+// since these states are mutually exclusive by the backend's own guards
+// (e.g. an edit can never be pending once vendorJobStartedAt is set).
+function _vendorBookingWriteup(b,isCook){
+  if(b.status!=='CONFIRMED')return null;
+  if(b.pendingEditSnapshot)return {text:'✏️ Customer proposed changes — open to review',color:'#F5A623'};
+  if(isCook){
+    if(b.vendorConfirmedCompleteAt)return {text:'⏳ Waiting for customer to confirm completion',color:'#F5A623'};
+    if(b.vendorJobStartedAt)return {text:'▶️ Job Started',color:'#9B59B6'};
+    return _isEventDateTodayOrPast(b.eventDate)
+      ?{text:'📅 Today is cooking day',color:'#3B9FE8'}
+      :{text:'⏳ Waiting for cooking day',color:'#9A9390'};
+  }
+  // Event Planner: no Job Started, no two-sided completion -- the whole
+  // accepted-to-complete window is just "waiting for / it's the event
+  // day" (Mark Job Complete ends it immediately either way).
+  return _isEventDateTodayOrPast(b.eventDate)
+    ?{text:'📅 Today is event day',color:'#3B9FE8'}
+    :{text:'⏳ Awaiting event day',color:'#9A9390'};
+}
 function renderVendorBookingsList(isCook,limit){
   try{
     var all=_vendorBookingsFull;
@@ -9598,9 +9631,9 @@ function renderVendorBookingsList(isCook,limit){
       var actions=b.status===actionableStatus
         ?'<button onclick="event.stopPropagation();openVendorBookingDetail(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">📋 Open Booking</button>'
         :(isCook&&b.status==='REQUESTED'?'<div style="margin-top:10px;padding:8px;border-radius:9px;background:rgba(154,147,144,.1);color:#9A9390;font-size:11px;font-weight:700;text-align:center;">Awaiting customer payment</div>':'');
-      var pendingEditBadge=b.pendingEditSnapshot?'<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(245,166,35,.1);color:#F5A623;font-size:11px;font-weight:700;text-align:center;">✏️ Customer proposed changes — open to review</div>':'';
-      var jobStartedBadge=(isCook&&b.status==='CONFIRMED'&&b.vendorJobStartedAt&&!b.vendorConfirmedCompleteAt)?'<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:rgba(155,89,182,.1);color:#9B59B6;font-size:11px;font-weight:700;text-align:center;">▶️ Job Started</div>':'';
-      return '<div onclick="openVendorBookingDetail(\''+b.id+'\')" style="background:#1C1C1C;border-radius:14px;padding:14px;margin-bottom:10px;border:1.5px solid #2A2850;cursor:pointer"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="color:#F2EDE8">'+(b.customer?b.customer.name:'Customer')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px">'+b.status+'</span></div><p style="color:#9A9390;font-size:12px;margin:0 0 2px">'+sub+'</p><p style="color:#9A9390;font-size:12px;margin:0">📅 '+when+(b.eventTime?' at '+b.eventTime:'')+' • ₦'+Number(Math.round(b.totalKobo/100)).toLocaleString()+'</p>'+actions+pendingEditBadge+jobStartedBadge+'</div>';
+      var writeup=_vendorBookingWriteup(b,isCook);
+      var writeupHtml=writeup?('<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:'+writeup.color+'1A;color:'+writeup.color+';font-size:11px;font-weight:700;text-align:center;">'+writeup.text+'</div>'):'';
+      return '<div onclick="openVendorBookingDetail(\''+b.id+'\')" style="background:#1C1C1C;border-radius:14px;padding:14px;margin-bottom:10px;border:1.5px solid #2A2850;cursor:pointer"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="color:#F2EDE8">'+(b.customer?b.customer.name:'Customer')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px">'+b.status+'</span></div><p style="color:#9A9390;font-size:12px;margin:0 0 2px">'+sub+'</p><p style="color:#9A9390;font-size:12px;margin:0">📅 '+when+(b.eventTime?' at '+b.eventTime:'')+' • ₦'+Number(Math.round(b.totalKobo/100)).toLocaleString()+'</p>'+actions+writeupHtml+'</div>';
     }).join('')
     +(remaining>0?'<button onclick="renderVendorBookingsList('+isCook+',0)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-top:4px;">See More ('+remaining+' more)</button>':'');
   }catch(err){
@@ -11751,6 +11784,24 @@ function callEP(){if(!_epb||!_epb.ep)return;openCallModal(_epb.ep.nm,_epb.ep.ph|
 
 var STATUS_COLORS={REQUESTED:'#F5A623',OPEN:'#F5A623',ACCEPTED:'#3B9FE8',DECLINED:'#E8392E',CONFIRMED:'#2ECC71',COMPLETED:'#2ECC71',CANCELLED:'#E8392E',
   SEARCHING:'#F5A623',MATCHED:'#3B9FE8',BUILDING_LIST:'#3B9FE8',LIVE_CALL:'#3B9FE8',PACKAGING:'#3B9FE8',FINDING_RIDER:'#3B9FE8',RIDER_ASSIGNED:'#3B9FE8',OUT_FOR_DELIVERY:'#3B9FE8',DELIVERED:'#2ECC71'};
+// The customer-facing mirror of _vendorBookingWriteup -- same one-line-
+// in-one-spot pattern, worded from the customer's own side ("chef"/"EP"
+// instead of "vendor", "your confirmation" instead of "customer
+// confirmation"). Cook and EP diverge here since only Cook has a
+// Job Started / two-sided-completion stage at all.
+function _customerBookingWriteup(b){
+  var isEP=b.type==='EVENT_PLANNING';
+  var vendorWord=isEP?'EP':'chef';
+  if(!isEP&&b.status==='PAID'||isEP&&b.status==='REQUESTED'){
+    return {text:'⏳ Waiting for '+vendorWord+' to accept booking',color:'#9A9390'};
+  }
+  if(b.status!=='CONFIRMED')return null;
+  if(b.pendingEditSnapshot)return {text:'✏️ Waiting for '+vendorWord+' to accept the changes',color:'#F5A623'};
+  if(isEP)return {text:'⏳ Waiting for job to be completed',color:'#9A9390'};
+  if(b.vendorConfirmedCompleteAt)return {text:'👨‍🍳 Chef is waiting your confirmation',color:'#F5A623'};
+  if(b.vendorJobStartedAt)return {text:'👨‍🍳 Chef has started the job',color:'#9B59B6'};
+  return {text:'⏳ Waiting for job to start',color:'#9A9390'};
+}
 async function populateHistory(){
   _allOrders = [];
   try{
@@ -11771,7 +11822,8 @@ async function populateHistory(){
         statusColor: STATUS_COLORS[b.status]||'#9A9390',
         type: isEP?'Event':'Home Cook',
         ts: new Date(b.createdAt).getTime(),
-        bookingId: b.id, totalKobo: b.totalKobo
+        bookingId: b.id, totalKobo: b.totalKobo,
+        writeup: _customerBookingWriteup(b)
       });
     });
     // A posted event request isn't a real Booking until a proposal is
@@ -11831,13 +11883,16 @@ function renderEHistoryItems(orders){
     // sent (see cookBkConfirmBooking), before this list is ever reached, so
     // there's nothing left to pay by the time a booking shows up in History.
     var detailClick=o.bookingId?"openCustomerHistoryDetail('booking','"+o.bookingId+"')":(o.sessionId?"openCustomerHistoryDetail('session','"+o.sessionId+"')":(o.eventRequestId?"openEventRequestDetailModal('"+o.eventRequestId+"')":''));
-    return '<div onclick="'+detailClick+'" style="display:flex;gap:12px;align-items:center;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;'+(detailClick?'cursor:pointer;':'')+'">'
+    var writeupHtml=o.writeup?('<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:'+o.writeup.color+'1A;color:'+o.writeup.color+';font-size:11px;font-weight:700;text-align:center;">'+o.writeup.text+'</div>'):'';
+    return '<div onclick="'+detailClick+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;'+(detailClick?'cursor:pointer;':'')+'">'
+      +'<div style="display:flex;gap:12px;align-items:center;">'
       +'<div style="width:44px;height:44px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+o.icon+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px;color:#F2EDE8">'+o.title+'</div>'
       +'<div style="font-size:11px;color:#9A9390;margin-top:2px">'+o.sub+'</div>'
       +'<div style="font-size:10px;color:#555;margin-top:2px">'+o.date+'</div></div>'
       +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#F2EDE8;font-size:13px">₦'+Number(o.amount).toLocaleString()+'</div>'
-      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px">'+o.status+'</div></div></div>';
+      +'<div style="font-size:10px;color:'+o.statusColor+';margin-top:3px">'+o.status+'</div></div>'
+      +'</div>'+writeupHtml+'</div>';
   }).join('');
 }
 // Opens a Wallet-vs-Card/Transfer/USSD picker for an ACCEPTED booking,

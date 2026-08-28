@@ -309,6 +309,13 @@ function attachLiveSocket(httpServer) {
     bookingRemindersSvc.autoCompleteOverdueEventPlannerBookings(io).catch((err) => console.error("[booking] EP auto-complete sweep failed:", err));
   }, sweepMs);
 
+  // Real-time push to the EP the calendar day their event arrives (the
+  // row write-up itself is computed live client-side -- this is just the
+  // explicit notification, which nothing else originates).
+  setInterval(() => {
+    bookingRemindersSvc.sendEventDayReminders(io).catch((err) => console.error("[booking] event-day reminder sweep failed:", err));
+  }, sweepMs);
+
   return io;
 }
 

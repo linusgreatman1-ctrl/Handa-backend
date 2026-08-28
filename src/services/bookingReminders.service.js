@@ -126,6 +126,49 @@ async function sendCompletionReminders(io) {
 // bookings.controller.js's completeEventPlanningBooking), so there's no
 // separate code path to keep in sync.
 const AUTO_COMPLETE_EP_MS = 24 * 60 * 60 * 1000;
+// The "Today is event day" row write-up (renderVendorBookingsList,
+// frontend) is computed live from eventDate on every render -- no
+// backend involvement needed for the TEXT. This sweep only handles the
+// separate, explicit real-time NOTIFICATION the EP should get the day
+// their event arrives ("it sends a notification to the ep about the
+// event"), which the frontend can't originate on its own. Compares
+// calendar dates only (not eventTime) since "today is event day" is a
+// day-level concept, not a specific instant -- matches how eventDate is
+// already displayed everywhere else in this app (toLocaleDateString(),
+// never combined with eventTime for date comparisons except in the
+// duration-based sweeps above, which are checking elapsed time, not
+// calendar day).
+async function sendEventDayReminders(io) {
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+  const bookings = await prisma.booking.findMany({
+    where: {
+      type: "EVENT_PLANNING",
+      status: "CONFIRMED",
+      eventDayNotifiedAt: null,
+      eventDate: { gte: todayStart, lt: todayEnd },
+    },
+    include: { vendor: { select: { userId: true } } },
+  });
+
+  let sent = 0;
+  for (const booking of bookings) {
+    await notify(
+      io,
+      booking.vendor.userId,
+      "ORDER_UPDATE",
+      "Today is your event",
+      `Today is the scheduled date for booking #${booking.bookingNumber} — mark it complete once it's done.`,
+      { bookingId: booking.id }
+    );
+    await prisma.booking.update({ where: { id: booking.id }, data: { eventDayNotifiedAt: new Date() } });
+    sent++;
+  }
+  return sent;
+}
+
 async function autoCompleteOverdueEventPlannerBookings(io) {
   // Required lazily to avoid a require-cycle at module-load time --
   // bookings.controller.js's own top-level requires never touch this
@@ -148,4 +191,4 @@ async function autoCompleteOverdueEventPlannerBookings(io) {
   return completed;
 }
 
-module.exports = { sendUpcomingReminders, sendCompletionReminders, autoCompleteOverdueEventPlannerBookings, combineDateAndTime };
+module.exports = { sendUpcomingReminders, sendCompletionReminders, sendEventDayReminders, autoCompleteOverdueEventPlannerBookings, combineDateAndTime };
