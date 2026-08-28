@@ -8557,19 +8557,21 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
   // price really changed by ₦8,500, and only ₦1,500 of that isn't already
   // covered by the wallet's existing free balance -- showing both instead
   // of just the netted one is what makes the smaller number make sense.
-  var shortfallNote;
-  if(priceContext&&priceContext.oldTotalKobo!=null&&priceContext.newTotalKobo!=null){
-    var rawDiff=priceContext.newTotalKobo-priceContext.oldTotalKobo;
-    var alreadyCovered=rawDiff-minKobo;
-    shortfallNote='<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">'
-      +'Booking total: &#x20a6;'+Number(Math.round(priceContext.oldTotalKobo/100)).toLocaleString()+' &#8594; &#x20a6;'+Number(Math.round(priceContext.newTotalKobo/100)).toLocaleString()+' (+&#x20a6;'+Number(Math.round(rawDiff/100)).toLocaleString()+').'
-      +(alreadyCovered>0?' &#x20a6;'+Number(Math.round(alreadyCovered/100)).toLocaleString()+' of that is already covered by your wallet balance — add &#x20a6;'+Number(prefill).toLocaleString()+' more to complete it.':' You need &#x20a6;'+Number(prefill).toLocaleString()+' more to complete this booking.')
-      +'</div>';
-  }else{
-    shortfallNote=minKobo?('<div style="font-size:12px;color:#F5A623;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;">You need &#x20a6;'+Number(prefill).toLocaleString()+' to complete this booking.</div>'):'';
-  }
+  // Just the two numbers, no explanation -- the "already covered by your
+  // wallet"/"you need X more" prose read as unnecessary noise once the
+  // Amount to Add field itself already shows the real figure up front.
+  var shortfallNote=(priceContext&&priceContext.oldTotalKobo!=null&&priceContext.newTotalKobo!=null)
+    ?('<div style="font-size:14px;color:#F2EDE8;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-weight:700;">'
+      +'Old Amount &#x20a6;'+Number(Math.round(priceContext.oldTotalKobo/100)).toLocaleString()+' &#8594; New Amount &#x20a6;'+Number(Math.round(priceContext.newTotalKobo/100)).toLocaleString()
+      +'</div>')
+    :'';
+  // Auto-filled with the real shortfall the moment this opens, instead of
+  // sitting blank ("Pick a payment method below") until a method is
+  // chosen -- selectAfMethod below still updates it live per method
+  // (Card/Bank Transfer charge the full raw difference, not this netted
+  // figure), this is just the immediately-visible starting number.
   var amountBlock=minKobo
-    ?('<div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Amount to Add</label><input id="af-inp" type="number" value="" placeholder="Pick a payment method below" readonly style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:16px;font-weight:800;box-sizing:border-box;cursor:not-allowed;"></div>')
+    ?('<div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Amount to Add</label><input id="af-inp" type="number" value="'+prefill+'" readonly style="width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:16px;font-weight:800;box-sizing:border-box;cursor:not-allowed;"></div>')
     :('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
       +['1000','2000','5000','10000','20000','50000'].map(function(a){return '<button onclick="document.getElementById(\'af-inp\').value=\''+a+'\';" style="padding:11px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x20a6;'+Number(a).toLocaleString()+'</button>';}).join('')
       +'</div><div style="margin-bottom:16px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Custom Amount</label><input id="af-inp" type="number" value="" placeholder="Enter amount..." style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>');
