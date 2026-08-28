@@ -10596,8 +10596,61 @@ function removeEbItemCustom(cid){
   _ebItemPicker.selections=_ebItemPicker.selections.filter(function(x){return x._cid!==cid;});
   renderEbItemsSection();
 }
+// Home Cook edits that raise the booking's total always get an explicit
+// confirmation step first -- even when the wallet already has enough to
+// cover it silently. The escrow hold for THIS booking doesn't cover the
+// new total yet, so the customer explicitly chooses how to cover the
+// difference (their existing wallet balance, or a fresh payment) rather
+// than it being silently pulled from their wallet with no heads-up.
+// Event Planning is never gated here -- an EP edit never changes
+// totalKobo at all (buildBookingEditData only relabels EP items), so
+// there's nothing to confirm.
 async function saveBookingEdit(){
   if(!_editingBooking)return;
+  if(_editingBooking.type==='HOME_COOK'&&_ebItemPicker){
+    var _newTotalKobo=_ebItemsTotal();
+    var _diffKobo=_newTotalKobo-_editingBooking.totalKobo;
+    if(_diffKobo>0){
+      var _realBalanceKobo=0;
+      try{ _realBalanceKobo=(await api('/wallet')).balanceKobo||0; }catch(e){}
+      showBookingEditFundsChoice(_diffKobo,_realBalanceKobo,{oldTotalKobo:_editingBooking.totalKobo,newTotalKobo:_newTotalKobo});
+      return;
+    }
+  }
+  await _saveBookingEditReal();
+}
+// The choice screen described above: states the real shortfall for THIS
+// booking and the real current wallet balance, then lets the customer
+// pick "pay it from what's already in my wallet" (retries the save
+// directly -- if the real balance turns out insufficient after all,
+// _saveBookingEditReal's own catch block falls through to the normal
+// Add Funds screen, same as ever) or "add funds another way" (opens
+// that same Add Funds screen directly, pre-filled to the real diff).
+function showBookingEditFundsChoice(diffKobo,realBalanceKobo,priceContext){
+  window._bookingEditFundsDiff=diffKobo;
+  window._bookingEditFundsPriceContext=priceContext;
+  var html='<div style="padding:0 0 20px;">'
+    +'<div style="text-align:center;margin-bottom:18px;">'
+    +'<div style="font-size:36px;margin-bottom:8px;">⚠️</div>'
+    +'<div style="font-size:17px;font-weight:900;color:#F2EDE8;">Insufficient Funds For This Booking</div>'
+    +'<div style="font-size:13px;color:#9A9390;margin-top:10px;line-height:1.5;">You need '+N(Math.round(diffKobo/100))+' more to complete this booking. You have '+N(Math.round(realBalanceKobo/100))+' in your wallet.</div>'
+    +'</div>'
+    +'<button onclick="_bookingEditFundsChoice(\'WALLET\')" style="width:100%;padding:13px;margin-bottom:10px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">💰 Use My Wallet Balance</button>'
+    +'<button onclick="_bookingEditFundsChoice(\'OTHER\')" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">➕ Add Funds Another Way</button>'
+    +'</div>';
+  showProcedureModal(html);
+}
+function _bookingEditFundsChoice(choice){
+  var diffKobo=window._bookingEditFundsDiff;
+  var priceContext=window._bookingEditFundsPriceContext;
+  closeProcedureModal();
+  if(choice==='WALLET'){
+    _saveBookingEditReal();
+  }else{
+    showAddFundsModal(diffKobo,function(){ _saveBookingEditReal(); },priceContext);
+  }
+}
+async function _saveBookingEditReal(){
   var date=(document.getElementById('eb-date')||{}).value||'';
   var time=(document.getElementById('eb-time')||{}).value||'';
   var venue=(document.getElementById('eb-venue')||{}).value||'';
@@ -10648,7 +10701,11 @@ async function saveBookingEdit(){
         priceContext={oldTotalKobo:_editingBooking.totalKobo,newTotalKobo:_ebItemsTotal()};
       }
       showToast&&showToast('Insufficient funds — you need ₦'+Number(Math.round(shortfallKobo/100)).toLocaleString()+' more to cover this.','warning');
-      showAddFundsModal(shortfallKobo,function(){ saveBookingEdit(); },priceContext);
+      // Retries straight into the real save, not the outer saveBookingEdit
+      // wrapper -- the choice screen has already been shown (or wasn't
+      // needed, e.g. this call came from picking "Use My Wallet Balance"),
+      // so funding and retrying here shouldn't loop back through it again.
+      showAddFundsModal(shortfallKobo,function(){ _saveBookingEditReal(); },priceContext);
     }else{
       showToast&&showToast(err.message||'Could not update booking','warning');
     }
