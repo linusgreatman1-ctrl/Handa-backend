@@ -9916,6 +9916,13 @@ async function customerConfirmBookingComplete(id,completed,isEP){
       // left the customer needing to find and reopen the same booking
       // again just to see it.
       openCustomerHistoryDetail('booking',id);
+      // The customer's own action here never triggers a self-notification
+      // (confirm-complete only notifies the vendor), so the live
+      // notification:new-driven History-list refresh never fires for it --
+      // without this, the row's own "Chef is waiting your confirmation"
+      // write-up stayed stuck showing that even after confirming, since
+      // #history-list's cached _allOrders was never re-fetched.
+      if(document.getElementById('history-list')&&typeof renderEHistory==='function')renderEHistory();
     }catch(err){
       showToast&&showToast(err.message||'Could not confirm this booking','warning');
     }
