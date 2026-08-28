@@ -3580,6 +3580,11 @@ function renderShopPhase(phase) {
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:11px 14px;margin-bottom:18px;text-align:left;">
         <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to ${shopperNm} after the rider confirms pickup of all your items.</div>
       </div>
+      ${(window._sfmSession&&window._sfmSession.deliveryCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:18px;text-align:center;">
+        <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Your Delivery Code</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${window._sfmSession.deliveryCode}</div>
+        <div style="font-size:11px;color:#9A9390;margin-top:6px;">Save this — give it to your rider once they arrive to deliver your items</div>
+      </div>`:''}
       <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:14px;">
         <div style="font-size:32px;animation:float 2s ease-in-out infinite;flex-shrink:0;">🧑‍💼</div>
         <div style="flex:1;">
@@ -5492,6 +5497,14 @@ function renderShopperPhase(phase) {
         <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${window._shopperSession.pickupCode}</div>
         <div style="font-size:11px;color:#9A9390;margin-top:6px;">Give this to the rider when they arrive to collect the items</div>
       </div>`:''}
+      <div class="card" style="text-align:left;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px;">👤 ${shopperCustomerName()}</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Reach your customer any time while you sort out the delivery</div>
+        <div style="display:flex;gap:9px;">
+          <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="shopperChatCustomer()">💬 Chat</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="shopperCallCustomer()">📞 Call</button>
+        </div>
+      </div>
       <button class="btn btn-primary" onclick="shopperCallFindRider()">🔍 Search for Nearby Riders</button>
       <button class="btn btn-outline" style="margin-top:9px;" onclick="renderShopperPhase('packaging')">← Back</button>
     </div>`;
@@ -5513,14 +5526,6 @@ function renderShopperPhase(phase) {
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out 0s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out .22s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#6430C8;animation:pulse 1.2s ease-in-out .44s infinite;"></div>
-      </div>
-      <div class="card" style="text-align:left;">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px;">👤 ${shopperCustomerName()}</div>
-        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Reach your customer while you wait for a rider</div>
-        <div style="display:flex;gap:9px;">
-          <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="shopperChatCustomer()">💬 Chat</button>
-          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="shopperCallCustomer()">📞 Call</button>
-        </div>
       </div>
     </div>`;
 
@@ -5547,6 +5552,15 @@ function renderShopperPhase(phase) {
           <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="openCallModal('${_rNm}','${shopperRiderPhone()}','${_rVeh}','🏍️','${shopperRiderUserId()}','${(window._shopperSession&&window._shopperSession.id)||''}')">📞</button>
         </div>
       </div>`;
+    // The pickup code was already shown once, back on the "Find a Rider"
+    // screen -- but that screen is long gone by the time the rider is
+    // actually here to collect the items, which is the moment it's
+    // actually needed. Repeat it here too so it's never lost mid-flow.
+    var _pickupCodeBanner=(window._shopperSession&&window._shopperSession.pickupCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:16px;text-align:center;">
+      <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Pickup Code</div>
+      <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${window._shopperSession.pickupCode}</div>
+      <div style="font-size:11px;color:#9A9390;margin-top:6px;">Give this to ${_rNm} when they arrive to collect the items</div>
+    </div>`:'';
     if(!_riderHere){
       // State 1: rider assigned, still on the way -- a real map (matching
       // the same visual language as the rider's own map screens) instead
@@ -5563,6 +5577,7 @@ function renderShopperPhase(phase) {
           <div class="mpin mrider" style="right:12%"><div class="mpc" style="width:48px;height:48px;background:#F5A623;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#F5A623;font-weight:800;">${_rNm.split(' ')[0]}</div></div>
           <div class="mlive">&#x25CF; LIVE</div>
         </div>
+        ${_pickupCodeBanner}
         ${_riderContactCard}
         <p style="text-align:center;color:#9A9390;font-size:12px;">You'll be notified the moment ${_rNm} arrives.</p>
       </div>`;
@@ -5579,6 +5594,7 @@ function renderShopperPhase(phase) {
         <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${_rNm} has arrived at your location</span>
       </div>
 
+      ${_pickupCodeBanner}
       ${_riderContactCard}
 
       <!-- Real items from this session -- go through these with the rider
@@ -5604,7 +5620,7 @@ function renderShopperPhase(phase) {
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.25);border-radius:13px;padding:13px 15px;margin-bottom:14px;">
         <div style="font-weight:800;font-size:13px;color:#2ECC71;margin-bottom:8px;">💸 Once You Confirm Handover:</div>
         ${[
-          ['🏪','Select your registered sellers and input amounts — CityChef pays them instantly'],
+          ['🏪','Select your registered sellers and input amounts — Handa pays them instantly'],
           ['📲','Each market seller receives a direct bank transfer + SMS confirmation'],
           ['⏳','Your session fee (80%) held in escrow until customer confirms delivery'],
           ['⏳','Rider delivery fee held in escrow until customer confirms delivery'],
@@ -5672,7 +5688,7 @@ function renderShopperPhase(phase) {
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;text-align:center;">
       <div style="font-size:68px;margin-bottom:14px;">🎉</div>
       <div class="h2">Payments Sent!</div>
-      <p style="color:#9A9390;font-size:14px;margin-top:6px;margin-bottom:22px;">CityChef has paid your market sellers directly from escrow. No cash changes hands.</p>
+      <p style="color:#9A9390;font-size:14px;margin-top:6px;margin-bottom:22px;">Handa has paid your market sellers directly from escrow. No cash changes hands.</p>
 
       <div class="card" style="text-align:left;margin-bottom:14px;">
         <div style="font-size:13px;font-weight:800;color:#F2EDE8;margin-bottom:12px;">✅ Seller Payments Dispatched</div>
@@ -6030,12 +6046,19 @@ function openShopperRiderLocationModal(){
     +'</div>'
     +'<div style="text-align:center;font-weight:700;font-size:13px;color:'+(arrived?'#2ECC71':'#6430C8')+';margin-bottom:14px;">'+(arrived?'✅ Arrived at customer\'s location':'🏍️ Heading to customer\'s location')+'</div>'
     +'<div style="display:flex;gap:9px;margin-bottom:10px;">'
-    +'<button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="openShopperRiderChat()">💬 Chat</button>'
-    +'<button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal(\''+(r.user.name||'Rider')+'\',\''+(r.user.phone||'')+'\',\'Rider\',\'🏍️\',\''+r.user.id+'\',\''+s.id+'\')">📞 Call</button>'
+    +'<button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="closeShopperRiderLocationModal();openShopperRiderChat()">💬 Chat</button>'
+    +'<button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="closeShopperRiderLocationModal();openCallModal(\''+(r.user.name||'Rider')+'\',\''+(r.user.phone||'')+'\',\'Rider\',\'🏍️\',\''+r.user.id+'\',\''+s.id+'\')">📞 Call</button>'
     +'</div>'
-    +'<button class="btn btn-outline" style="width:100%;" onclick="document.getElementById(\'shopper-rider-loc-modal\').remove()">Close</button>'
+    +'<button class="btn btn-outline" style="width:100%;" onclick="closeShopperRiderLocationModal()">Close</button>'
     +'</div></div>';
   document.body.insertAdjacentHTML('beforeend',html);
+}
+// Chat (z-index 2000) and Call (z-index 9950) both used to render BEHIND
+// this modal (z-index 10002), so tapping either from here looked like
+// nothing happened -- close this modal first so whichever real overlay
+// opens is actually the topmost thing on screen, not stacked under it.
+function closeShopperRiderLocationModal(){
+  var el=document.getElementById('shopper-rider-loc-modal');if(el)el.remove();
 }
 
 window._shopperSession = null;
@@ -6243,38 +6266,61 @@ function toggleSellerRegistrySeeMore(){
 // Fallback bank list, used whenever GET /users/banks fails or returns
 // empty (e.g. no PAYSTACK_SECRET_KEY configured on the backend) -- the
 // form should never be fully blocked just because a live bank-list fetch
-// didn't come back. Real Paystack bank codes where known; the "Other" row
-// below covers anything not in this list.
+// didn't come back. Real Paystack/NIBSS bank codes, cross-checked against
+// several independent published Nigerian-bank-code lists (Carbon was
+// previously mapped to 50931, which actually belongs to Bowen Microfinance
+// Bank -- fixed to Carbon's real code, 565). Expanded well beyond the
+// traditional commercial banks to cover the digital banks/fintechs and
+// payment service banks a large share of real Nigerian users actually
+// bank with day to day. The "Other" row below still covers anything not
+// in this list.
 var NIGERIAN_BANKS=[
   {code:'044',name:'Access Bank'},
   {code:'063',name:'Access Bank (Diamond)'},
   {code:'035A',name:'ALAT by Wema'},
   {code:'401',name:'ASO Savings and Loans'},
-  {code:'50931',name:'Carbon'},
+  {code:'565',name:'Carbon'},
   {code:'023',name:'Citibank Nigeria'},
   {code:'050',name:'Ecobank Nigeria'},
+  {code:'50126',name:'Eyowo'},
+  {code:'51318',name:'FairMoney Microfinance Bank'},
   {code:'011',name:'First Bank of Nigeria'},
   {code:'214',name:'First City Monument Bank (FCMB)'},
   {code:'070',name:'Fidelity Bank'},
+  {code:'00103',name:'Globus Bank'},
+  {code:'100022',name:'GoMoney'},
   {code:'058',name:'Guaranty Trust Bank (GTBank)'},
+  {code:'120002',name:'Hope Payment Service Bank'},
   {code:'030',name:'Heritage Bank'},
   {code:'301',name:'Jaiz Bank'},
   {code:'082',name:'Keystone Bank'},
   {code:'50211',name:'Kuda Bank'},
+  {code:'303',name:'Lotus Bank'},
   {code:'50515',name:'Moniepoint MFB'},
+  {code:'120003',name:'MTN MoMo Payment Service Bank'},
   {code:'999992',name:'OPay'},
   {code:'999991',name:'PalmPay'},
+  {code:'100002',name:'Paga'},
+  {code:'104',name:'Parallex Bank'},
   {code:'076',name:'Polaris Bank'},
+  {code:'105',name:'PremiumTrust Bank'},
   {code:'101',name:'Providus Bank'},
+  {code:'125',name:'Rubies MFB'},
+  {code:'51310',name:'Sparkle Microfinance Bank'},
   {code:'221',name:'Stanbic IBTC Bank'},
   {code:'068',name:'Standard Chartered Bank'},
   {code:'232',name:'Sterling Bank'},
   {code:'100',name:'Suntrust Bank'},
+  {code:'302',name:'TAJ Bank'},
+  {code:'51269',name:'Tangerine Money'},
+  {code:'102',name:'Titan Trust Bank'},
   {code:'032',name:'Union Bank of Nigeria'},
   {code:'033',name:'United Bank For Africa (UBA)'},
   {code:'215',name:'Unity Bank'},
   {code:'566',name:'VFD Microfinance Bank'},
   {code:'035',name:'Wema Bank'},
+  {code:'120004',name:'Airtel Smartcash PSB'},
+  {code:'120001',name:'9mobile 9Payment Service Bank'},
   {code:'057',name:'Zenith Bank'},
 ];
 async function openAddSellerModal(editIdx = null) {
@@ -7429,7 +7475,7 @@ function reportDeliveryIssue(){document.getElementById('delivery-confirm-modal')
 // sheet. Explicit z-index removes the DOM-order dependency entirely.
 function showProcedureModal(html){var ov=document.getElementById('procedure-ov');if(!ov){ov=document.createElement('div');ov.id='procedure-ov';ov.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9600;align-items:flex-end;justify-content:center;';ov.innerHTML='<div style="background:#1C1C1C;border-radius:22px 22px 0 0;width:100%;max-width:430px;max-height:80vh;overflow-y:auto;border-top:1px solid #2A2850;" id="procedure-body"></div>';document.body.appendChild(ov);}document.getElementById('procedure-body').innerHTML=html;ov.style.display='flex';}
 function closeProcedureModal(){var ov=document.getElementById('procedure-ov');if(ov)ov.style.display='none';}
-function showSOSProcedure(){showProcedureModal('<div style="padding:20px;"><div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#E8392E;margin-bottom:14px;">&#x1F198; Emergency SOS</div><div style="background:rgba(232,57,46,.1);border:1.5px solid rgba(232,57,46,.3);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:#F2EDE8;line-height:1.8;">When you tap SOS:<br>1. Your live location is sent to emergency contacts<br>2. CityChef support is notified immediately<br>3. Nigerian emergency services (199) are alerted<br>4. Your shopper and rider are notified<br>5. All session activity is recorded for safety</div><button onclick="closeProcedureModal();toast(\'SOS sent! Help is on the way.\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">&#x1F198; Send SOS Now</button><button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button></div>');}
+function showSOSProcedure(){showProcedureModal('<div style="padding:20px;"><div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#E8392E;margin-bottom:14px;">&#x1F198; Emergency SOS</div><div style="background:rgba(232,57,46,.1);border:1.5px solid rgba(232,57,46,.3);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:#F2EDE8;line-height:1.8;">When you tap SOS:<br>1. Your live location is sent to emergency contacts<br>2. Handa support is notified immediately<br>3. Nigerian emergency services (199) are alerted<br>4. Your shopper and rider are notified<br>5. All session activity is recorded for safety</div><button onclick="closeProcedureModal();toast(\'SOS sent! Help is on the way.\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#E8392E,#B52D24);color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">&#x1F198; Send SOS Now</button><button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button></div>');}
 function showShareProcedure(){showProcedureModal('<div style="padding:20px;"><div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#3B9FE8;margin-bottom:14px;">&#x1F4CD; Share Location</div><div style="font-size:13px;color:#9A9390;line-height:1.8;margin-bottom:14px;">Your live location will be shared with your emergency contacts, shopper, and rider. Only visible during the active session.</div><button onclick="closeProcedureModal();toast(\'Location shared with shopper and rider!\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#3B9FE8,#1a6fbf);color:#fff;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:8px;">&#x1F4CD; Share My Location</button><button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button></div>');}
 
 function showProfileSection(s){
@@ -8995,7 +9041,7 @@ function riderMapPhase1(){
   var shopperLoc=(s&&s.shopper&&(s.shopper.market||(s.shopper.user&&s.shopper.user.address)))||'';
   var pickupLabel='Shopper';
   var arrived=s&&s.riderArrivedShopperAt;
-  var pickupHeading=arrived?'Waiting to Collect From '+shopperName:'Heading to '+shopperName+'’s Location';
+  var pickupHeading=arrived?'Confirming Items with '+shopperName+' - To be collected for delivery':'Heading to '+shopperName+'’s Location';
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
@@ -9434,7 +9480,12 @@ async function doRegister(){
   if(!nm.trim()){showToast&&showToast('Enter your full name','warning');return;}
   if(!em.trim()){showToast&&showToast('Enter your email','warning');return;}
   if(!pw||pw.length<6){showToast&&showToast('Password must be at least 6 characters','warning');return;}
-  var bankName=(document.getElementById('r-bankname2')||document.getElementById('r-bankname')||{}).value||'';
+  var bankCodeSel=document.getElementById('r-bankcode');
+  var bankName='';
+  if(bankCodeSel){
+    if(bankCodeSel.value==='CUSTOM')bankName=(document.getElementById('r-bankname2-other')||{}).value||'';
+    else{var selOpt=bankCodeSel.selectedOptions&&bankCodeSel.selectedOptions[0];bankName=(selOpt&&selOpt.getAttribute('data-name'))||'';}
+  }
   var bankAcct=(document.getElementById('r-bankacct')||{}).value||'';
   var phone=(document.getElementById('r-phone')||{}).value||'';
   var addr=(document.getElementById('r-addr')||{}).value||'';
@@ -11987,7 +12038,16 @@ function buildRegForm(){
   };
   var sel=function(lb,id,opts){return '<label class="il">'+lb+'</label><select class="if" id="'+id+'" style="margin-bottom:12px">'+opts+'</select>';};
   var ta=function(lb,id,ph){return '<label class="il">'+lb+'</label><textarea class="if" id="'+id+'" rows="3" placeholder="'+ph+'" style="margin-bottom:12px"></textarea>';};
-  var bank=fld('Bank Account Name','&#x1F3E6;','r-bankname','Account holder name','')+fld('Bank Name','&#x1F3E6;','r-bankname2','e.g. GTBank, OPay','')+fld('Account Number','&#x1F4B3;','r-bankacct','10-digit account number','');
+  // Real Nigerian bank picker (NIGERIAN_BANKS, same list used by seller
+  // registration and the profile bank-linking form) instead of a free-text
+  // "type your bank name" field -- consistent spelling, no more "Gtb"/
+  // "gt bank"/"GTBank " variants landing in the same bankName column. An
+  // "Other" option keeps any bank not in the list from blocking signup.
+  var bankSelOpts='<option value="">Select Bank…</option>'+NIGERIAN_BANKS.map(function(b){return '<option value="'+b.code+'" data-name="'+b.name+'">'+b.name+'</option>';}).join('')+'<option value="CUSTOM">Other — type manually</option>';
+  var bank=fld('Bank Account Name','&#x1F3E6;','r-bankname','Account holder name','')
+    +'<label class="il">Bank Name</label><select class="if" id="r-bankcode" onchange="var cw=document.getElementById(\'r-bank-custom-wrap\');if(cw)cw.style.display=(this.value===\'CUSTOM\'?\'block\':\'none\');" style="margin-bottom:12px">'+bankSelOpts+'</select>'
+    +'<div id="r-bank-custom-wrap" style="display:none">'+fld('Bank Name (type manually)','&#x1F3E6;','r-bankname2-other','e.g. a bank not listed above','')+'</div>'
+    +fld('Account Number','&#x1F4B3;','r-bankacct','10-digit account number','');
   var addr=fld('Home Address','&#x1F4CD;','r-addr','Your home address','');
   var roleSwitchBar=['customer','cook','event_planner','rider','shopper'].map(function(r){
     var labels={customer:'🛍️ Customer',cook:'🧑‍🍳 Home Cook',event_planner:'🎊 Event Planner',rider:'🏍️ Rider',shopper:'🛒 Shopper'};

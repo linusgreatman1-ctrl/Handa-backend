@@ -995,12 +995,22 @@ async function riderArrivedCustomer(req, res, next) {
 async function startConfirmCall(req, res, next) {
   try {
     if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
-    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id }, include: { rider: { select: { userId: true } } } });
     if (!session) return res.status(404).json({ error: "Shop session not found." });
     if (session.shopperId !== req.user.shopperProfile.id) return res.status(403).json({ error: "You are not the shopper on this session." });
     if (session.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: `Session must be RIDER_ASSIGNED (currently ${session.status}).` });
 
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-invite", { sessionId: session.id });
+    // A live socket toast only reaches whoever is already sitting on this
+    // exact screen right now -- a real persisted notification means the
+    // customer/rider still find out even if they're elsewhere in the app
+    // (or offline) when the shopper starts the call, so it doesn't just
+    // ring silently on their end.
+    const io = req.app.get("io");
+    await notify(io, session.customerId, "ORDER_UPDATE", "3-way call starting", "Your shopper is starting a 3-way call with you and the rider to confirm your items — expect it any moment.", { sessionId: session.id }).catch(() => {});
+    if (session.rider?.userId) {
+      await notify(io, session.rider.userId, "ORDER_UPDATE", "3-way call starting", "The shopper is starting a 3-way call with you and the customer to confirm the items — expect it any moment.", { sessionId: session.id }).catch(() => {});
+    }
     res.json({ session });
   } catch (err) {
     next(err);
