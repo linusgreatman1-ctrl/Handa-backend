@@ -1210,6 +1210,17 @@ function connectSocket(){
     if(window._riderActiveSession) _socket.emit('shop-session:join',{sessionId:window._riderActiveSession.id});
     if(window._activeChatThreadId) _socket.emit('chat:join',{threadId:window._activeChatThreadId});
     if(window._openBookingDetailId) _socket.emit('booking:join',{bookingId:window._openBookingDetailId});
+    // The customer's own "Booking Confirmed" holding screen (cookBkRender/
+    // epBkRender('confirmed')) tracks a booking id the exact same way the
+    // detail sheet does above, but was missing from this reconnect rejoin
+    // -- a socket reconnect (brief network blip, tab backgrounded, idle
+    // timeout) silently drops room membership; without re-emitting
+    // booking:join here, the vendor's accept/decline push for that
+    // specific booking would never arrive again even though the socket
+    // shows "connected", so the screen just sat there forever. This is
+    // why it only happened "sometimes" -- only when a reconnect happened
+    // to land while this exact screen was open.
+    if(window._openBookingConfirmedOverlayId) _socket.emit('booking:join',{bookingId:window._openBookingConfirmedOverlayId});
   });
   confirmCallBindListeners();
   bindGlobalChatRequestListener();
