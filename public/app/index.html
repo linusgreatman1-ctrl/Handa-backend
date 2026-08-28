@@ -1170,14 +1170,17 @@ function connectSocket(){
   // declined, cancelled) -- previously only ever visible after a manual
   // reload. Refreshes whichever of these views is actually open right now;
   // a no-op for all the others (most of the time, nothing here is open at
-  // all). erv-body/my-requests-list/event-detail-body are real DOM ids
+  // all). erv-body/my-requests-list/sfm-bottom-sheet are real DOM ids
   // already used by the (non-live) initial renders above.
   _socket.on('event-request:updated', function(p){
     if(!p||!p.requestId)return;
     if(document.getElementById('event-requests-section')&&typeof loadOpenEventRequests==='function')loadOpenEventRequests();
     if(document.getElementById('my-requests-list')&&typeof loadMyEventRequestsList==='function')loadMyEventRequestsList();
     if(window._openEventRequestId===p.requestId){
-      var evOv=document.getElementById('event-detail-modal');
+      // openEventRequestDetailModal now renders into the shared
+      // sfm-bottom-sheet (same container as a real Booking Details
+      // screen) rather than its own dedicated modal id.
+      var evOv=document.getElementById('sfm-bottom-sheet');
       if(evOv&&typeof openEventRequestDetailModal==='function')openEventRequestDetailModal(p.requestId);
       var ervEl=document.getElementById('erv-body');
       var procOv=document.getElementById('procedure-ov');
@@ -1663,18 +1666,19 @@ async function loadMyEventRequestsList(){
     var statusColors={OPEN:'#F5A623',PROPOSAL_ACCEPTED:'#2ECC71',CANCELLED:'#9A9390'};
     list.innerHTML = res.requests.map(function(r){
       var sc = statusColors[r.status]||'#9A9390';
-      // Declining the whole request (not one vendor's proposal -- that's
-      // the per-proposal Decline already inside openEventRequestDetailModal)
-      // only makes sense while it's still OPEN; withdraws every pending
-      // proposal on it too (see cancelEventRequest).
-      var declineBtn = r.status==='OPEN'
-        ? '<button onclick="event.stopPropagation();declineMyEventRequest(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Decline Request</button>'
-        : '';
+      // Declining the whole request has no business sitting on this list
+      // card -- it now lives inside the detail sheet itself, the same
+      // place every other decision in this app lives (Open Booking ->
+      // Accept/Decline inside; Open Event Request -> Decline/Submit
+      // Proposal inside). The card's own action is just "go look," worded
+      // by whether there's actually anything to review yet.
+      var hasProposals=r._count.proposals>0;
+      var openBtn='<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(hasProposals?'Open Proposal':'Open Request')+'</button>';
       return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
         + '<div style="font-size:12px;color:#2ECC71;margin-top:4px;font-weight:700;">'+r._count.proposals+' proposal'+(r._count.proposals===1?'':'s')+' received</div>'
-        + declineBtn
+        + openBtn
         + '</div>';
     }).join('');
   }catch(err){
@@ -1684,76 +1688,88 @@ async function loadMyEventRequestsList(){
 function closeMyEventRequestsModal(){
   var el=document.getElementById('my-requests-modal'); if(el) el.remove();
 }
+// Declining the whole request now only ever happens from inside the
+// unified detail sheet (openEventRequestDetailModal) -- there's nothing
+// left to refresh behind it there, so this closes the sheet and lands
+// on History, matching how every other terminal action in this app ends.
 async function declineMyEventRequest(id){
   if(!confirm('Decline this event request? Every planner\'s proposal on it will be withdrawn.'))return;
   try{
     await api('/event-requests/'+id+'/cancel',{method:'POST'});
     showToast&&showToast('Event request declined','success');
-    loadMyEventRequestsList();
+    closeEventDetailModal();closeMyEventRequestsModal();
+    eGo('history');
   }catch(err){
     showToast&&showToast(err.message||'Could not decline this request','warning');
   }
 }
 
+// Reuses the exact same bottom sheet (showBottomSheet/closeBottomSheet)
+// and card styling as a real Booking Details screen -- not just visually
+// similar, the same shared container -- so this genuinely is "the same
+// screen" the request continues to live in once a proposal is accepted:
+// acceptEventProposal below already hands off straight into
+// openCustomerHistoryDetail('booking', ...) on that identical sheet.
 async function openEventRequestDetailModal(id){
   window._openEventRequestId=id;
-  var html = '<div id="event-detail-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;">'
-    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:480px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div style="font-weight:800;font-size:16px;color:#F2EDE8;">Proposals</div><button onclick="closeEventDetailModal()" style="background:none;border:none;color:#9A9390;font-size:20px;cursor:pointer;">✕</button></div>'
-    + '<div id="event-detail-body" style="font-size:13px;color:#9A9390;">Loading…</div>'
-    + '</div></div>';
-  var existing=document.getElementById('event-detail-modal'); if(existing) existing.remove();
-  document.body.insertAdjacentHTML('beforeend', html);
+  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
   try{
     var res = await api('/event-requests/'+id);
     var r = res.request;
-    var body = document.getElementById('event-detail-body');
-    var header = '<div style="background:#242424;border-radius:12px;padding:14px;margin-bottom:14px;">'
-      + '<b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b>'
-      + '<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.7;">📍 '+r.venue+'<br>📅 '+new Date(r.eventDate).toLocaleDateString()
-      + (r.guestCount?'<br>👥 '+r.guestCount+' guests':'')
-      + (r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
-      + '</div>'
-      + (r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
-      + (r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
-      + (r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">Note: '+r.notes+'</div>':'')
-      + '</div>';
+    var rows=[
+      ['Event Type', r.eventType],
+      ['Status', r.status.replace('_',' ')],
+      ['Date', new Date(r.eventDate).toLocaleDateString()],
+      ['Venue', r.venue||'Not set'],
+    ];
+    if(r.guestCount)rows.push(['Guests', r.guestCount]);
+    if(r.budgetKobo)rows.push(['Budget', N(Math.round(r.budgetKobo/100))]);
+    if(r.timeframe)rows.push(['Timeframe', r.timeframe]);
+    var infoCard='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
+      +rows.map(function(x){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+x[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+x[1]+'</span></div>';}).join('')
+      +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;">'+r.servicesRequested.join(', ')+'</div></div>':'')
+      +(r.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+r.notes+'</div></div>':'')
+      +'</div>';
+    var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Proposals ('+r.proposals.length+')</div>';
     if(!r.proposals.length){
-      body.innerHTML = header + '<div style="text-align:center;padding:20px;">No proposals yet — check back soon.</div>';
-      return;
+      proposalsHtml+='<div style="text-align:center;padding:20px;color:#9A9390;background:#242424;border-radius:13px;">No proposals yet — check back soon.</div>';
+    }else{
+      proposalsHtml+=r.proposals.map(function(p){
+        var canAccept = r.status==='OPEN' && p.status==='PENDING';
+        var statusColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
+        var sc = statusColors[p.status]||'#9A9390';
+        return '<div style="background:#242424;border:1.5px solid '+(p.status==='ACCEPTED'?'#2ECC71':'#2A2850')+';border-radius:13px;padding:14px;margin-bottom:10px;">'
+          + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><b style="color:#F2EDE8;font-size:14px;">'+(p.vendor?p.vendor.bizName:'Planner')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+p.status+'</span></div>'
+          + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">'+N(Math.round(p.priceKobo/100))+'</div>'
+          + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+p.servicesIncluded.join(', ')+'</div>':'')
+          + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
+          + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
+          + (canAccept?(
+            '<div style="display:flex;gap:8px;margin-top:8px;">'
+            +'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
+            +'<button onclick="declineEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;">✕ Decline</button>'
+            +'</div>'
+          // The EP's own side of this same acceptance already gets a direct
+          // "View Booking" link back into the real Booking it created (see
+          // _loadEventRequestJobAction) -- once accepted, this same request
+          // continues to live inside the real Booking Details sheet from
+          // here on, all the way through completion.
+          ):(p.status==='ACCEPTED'&&p.bookingId?(
+            '<button onclick="closeEventDetailModal();closeMyEventRequestsModal();openCustomerHistoryDetail(\'booking\',\''+p.bookingId+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">📋 View Booking</button>'
+          ):''))
+          + '</div>';
+      }).join('');
     }
-    body.innerHTML = header + r.proposals.map(function(p){
-      var canAccept = r.status==='OPEN' && p.status==='PENDING';
-      var statusColors={PENDING:'#F5A623',ACCEPTED:'#2ECC71',DECLINED:'#9A9390',WITHDRAWN:'#9A9390'};
-      var sc = statusColors[p.status]||'#9A9390';
-      return '<div style="background:#242424;border:1.5px solid '+(p.status==='ACCEPTED'?'#2ECC71':'#2A2850')+';border-radius:12px;padding:13px 14px;margin-bottom:10px;">'
-        + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><b style="color:#F2EDE8;font-size:14px;">'+(p.vendor?p.vendor.bizName:'Planner')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+p.status+'</span></div>'
-        + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(p.priceKobo/100)).toLocaleString()+'</div>'
-        + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+p.servicesIncluded.join(', ')+'</div>':'')
-        + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
-        + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
-        + (canAccept?(
-          '<div style="display:flex;gap:8px;margin-top:8px;">'
-          +'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
-          +'<button onclick="declineEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;">✕ Decline</button>'
-          +'</div>'
-        // The EP's own side of this same acceptance already gets a direct
-        // "View Booking" link back into the real Booking it created (see
-        // _loadEventRequestJobAction) -- the customer's side never had the
-        // same, so reopening this request later (after the initial
-        // acceptEventProposal redirect) showed the winning proposal with
-        // no way back into the booking it became.
-        ):(p.status==='ACCEPTED'&&p.bookingId?(
-          '<button onclick="closeEventDetailModal();closeMyEventRequestsModal();openCustomerHistoryDetail(\'booking\',\''+p.bookingId+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">📋 View Booking</button>'
-        ):''))
-        + '</div>';
-    }).join('');
+    var content=infoCard+proposalsHtml
+      +(r.status==='OPEN'?'<button onclick="declineMyEventRequest(\''+r.id+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Decline This Request</button>':'')
+      +'<button onclick="closeEventDetailModal();closeMyEventRequestsModal();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">🏠 Back Home</button>';
+    showBottomSheet('Booking Details', content);
   }catch(err){
-    document.getElementById('event-detail-body').textContent = err.message||'Could not load request';
+    showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load request')+'</div>');
   }
 }
 function closeEventDetailModal(){
-  var el=document.getElementById('event-detail-modal'); if(el) el.remove();
+  closeBottomSheet();
   window._openEventRequestId=null;
 }
 async function acceptEventProposal(requestId, proposalId){
