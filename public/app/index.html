@@ -11118,7 +11118,7 @@ function cookBkRender(phase){
         +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:12px"><span>&#x1F4F1;</span><input id="cb-phone" type="tel" class="if" style="border:none;flex:1;padding:13px 0" placeholder="+234 800 000 0000"></div>'
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Special Requests (optional)</label>'
         +'<textarea id="cb-notes" class="if" rows="3" placeholder="Any special instructions, dietary needs or preferences..." style="margin-bottom:20px;width:100%;display:block"></textarea>'
-        +'<button onclick="cookBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm Booking</button>'
+        +'<button id="cb-confirm-btn" onclick="cookBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm Booking</button>'
       +'</div>';
 
   }else if(phase==='confirmed'){
@@ -11426,6 +11426,13 @@ function cookBkProceedToPayment(){
 var PAY_METHOD_MAP={card:'CARD',wallet:'WALLET',transfer:'BANK_TRANSFER',ussd:'USSD',escrow:'CARD',cod:'CASH_ON_DELIVERY'};
 
 async function cookBkConfirmBooking(){
+  // Nothing here disabled the button while the POST was in flight -- on a
+  // slow connection a second tap (or an impatient double-tap, very easy
+  // to do with no visual feedback that anything's happening) fired this
+  // whole function again before the first request had even resolved,
+  // creating two real, separate bookings for one submit. Guarded the same
+  // way both EP and Cook now are.
+  if(_cb._submitting)return;
   var nm=(document.getElementById('cb-name')||{}).value||'';
   var addr=(document.getElementById('cb-addr')||{}).value||'';
   var date=(document.getElementById('cb-date')||{}).value||'';
@@ -11436,6 +11443,9 @@ async function cookBkConfirmBooking(){
   if(!addr.trim()){showToast&&showToast('Please enter the cooking address','warning');return;}
   if(!date){showToast&&showToast('Please select a date','warning');return;}
   if(!time){showToast&&showToast('Please select a time','warning');return;}
+  _cb._submitting=true;
+  var cbBtn=document.getElementById('cb-confirm-btn');
+  if(cbBtn){cbBtn.disabled=true;cbBtn.style.opacity='.6';cbBtn.style.cursor='default';cbBtn.textContent='Sending…';}
   _cb.details={name:nm,address:addr,date:date,time:time,phone:phone,notes:notes};
 
   var items=Object.keys(_cb.selected).map(function(id){return {menuItemId:id,qty:1};});
@@ -11463,6 +11473,7 @@ async function cookBkConfirmBooking(){
       eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes,
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
+    _cb._submitting=false;
     _cb.bookingNumber=res.booking.bookingNumber;
     _cb.total=Math.round(res.booking.totalKobo/100);
     _cb.booking=res.booking;
@@ -11483,6 +11494,8 @@ async function cookBkConfirmBooking(){
       if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
     });
   }catch(err){
+    _cb._submitting=false;
+    if(cbBtn){cbBtn.disabled=false;cbBtn.style.opacity='1';cbBtn.style.cursor='pointer';cbBtn.textContent='✅ Confirm Booking';}
     showToast&&showToast(err.message||'Could not create booking','warning');
   }
 }
@@ -11644,7 +11657,7 @@ function epBkRender(phase){
         +((_epb.selectedPkg&&_epb.selectedPkg.guestCount)?'<p style="color:#9A9390;font-size:11px;margin:-8px 0 12px">Up to '+_epb.selectedPkg.guestCount+' guests for this package</p>':'')
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Additional Requirements (optional)</label>'
         +'<textarea id="epb-notes" class="if" rows="3" placeholder="Special theme, requirements, preferred vendors..." style="margin-bottom:20px;width:100%;display:block;box-sizing:border-box"></textarea>'
-        +'<button onclick="epBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm Booking</button>'
+        +'<button id="epb-confirm-btn" onclick="epBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm Booking</button>'
       +'</div>';
 
   }else if(phase==='confirmed'){
@@ -11790,6 +11803,11 @@ function openShopChatModal(){
 function submitBankDetailsUpdate(){showToast&&showToast('Bank details updated!','success');}
 
 async function epBkConfirmBooking(){
+  // Same missing-guard bug as cookBkConfirmBooking -- nothing disabled
+  // this button while the POST was in flight, so a second tap before the
+  // first request resolved created two real, separate bookings for one
+  // submit.
+  if(_epb._submitting)return;
   var nm=(document.getElementById('epb-name')||{}).value||'';
   var dt=(document.getElementById('epb-date')||{}).value||'';
   var venue=(document.getElementById('epb-venue')||{}).value||'';
@@ -11799,6 +11817,9 @@ async function epBkConfirmBooking(){
   var time=(document.getElementById('epb-time')||{}).value||'';
   var guests=(document.getElementById('epb-guests')||{}).value||'';
   var type=(document.getElementById('epb-type')||{}).value||'';
+  _epb._submitting=true;
+  var epbBtn=document.getElementById('epb-confirm-btn');
+  if(epbBtn){epbBtn.disabled=true;epbBtn.style.opacity='.6';epbBtn.style.cursor='default';epbBtn.textContent='Sending…';}
   _epb.details={name:nm,date:dt,time:time,venue:venue,guests:guests,type:type};
 
   // _epb.selectedPkg.id is one of the 8 fixed package keys (basic/standard/
@@ -11810,7 +11831,11 @@ async function epBkConfirmBooking(){
   if(!vendorPkg&&pkgKey&&String(pkgKey).indexOf('custom_')===0){
     vendorPkg=((_epb.ep&&_epb.ep.pkgs&&_epb.ep.pkgs._custom)||[]).find(function(p){return p.key===pkgKey;});
   }
-  if(pkgKey&&!vendorPkg){showToast&&showToast('This planner does not offer that package.','warning');return;}
+  if(pkgKey&&!vendorPkg){
+    _epb._submitting=false;
+    if(epbBtn){epbBtn.disabled=false;epbBtn.style.opacity='1';epbBtn.style.cursor='pointer';epbBtn.textContent='✅ Confirm Booking';}
+    showToast&&showToast('This planner does not offer that package.','warning');return;
+  }
 
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
@@ -11818,6 +11843,7 @@ async function epBkConfirmBooking(){
       eventDate:dt, eventTime:time, venue:venue, guestCount:guests?parseInt(guests):undefined, notes:type,
       paymentMethod:PAY_METHOD_MAP[_epb.payMethod]||'CARD',
     })});
+    _epb._submitting=false;
     _epb.bookingNumber=res.booking.bookingNumber;
     _epb.booking=res.booking;
     epBkRender('confirmed');
@@ -11829,6 +11855,8 @@ async function epBkConfirmBooking(){
     if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
     showToast&&showToast('Booking sent to '+(_epb.ep?_epb.ep.nm:'planner')+'! Ref '+res.booking.bookingNumber,'success');
   }catch(err){
+    _epb._submitting=false;
+    if(epbBtn){epbBtn.disabled=false;epbBtn.style.opacity='1';epbBtn.style.cursor='pointer';epbBtn.textContent='✅ Confirm Booking';}
     showToast&&showToast(err.message||'Could not create booking','warning');
   }
 }
