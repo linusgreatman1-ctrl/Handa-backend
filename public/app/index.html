@@ -3415,12 +3415,12 @@ function renderShopPhase(phase) {
           <input class="inp" placeholder="e.g. ₦5,000 — shopper stays within this" id="shop-budget" type="tel">
         </div>
         <div class="inp-group">
-          <label class="inp-label">Special Instructions <span style="font-weight:400;color:#666;">(optional)</span></label>
-          <textarea class="inp" placeholder="e.g. Prefer big ripe tomatoes, no overripe onions..." style="resize:none;height:68px;"></textarea>
-        </div>
-        <div class="inp-group">
           <label class="inp-label">Delivery Address</label>
           <input class="inp" id="shop-delivery-addr" placeholder="Where should items be delivered to you?" value="${(S.myAddr||'').replace(/"/g,'&quot;')}">
+        </div>
+        <div class="inp-group">
+          <label class="inp-label">Special Instructions <span style="font-weight:400;color:#666;">(optional)</span></label>
+          <textarea class="inp" placeholder="e.g. Prefer big ripe tomatoes, no overripe onions..." style="resize:none;height:68px;"></textarea>
         </div>
       </div>
       <button class="btn btn-primary" style="background:linear-gradient(135deg,#6430C8,#5020A8);margin-bottom:32px;" onclick="depositAndFindShopper()">🔒 Deposit Budget &amp; Find Shopper</button>
