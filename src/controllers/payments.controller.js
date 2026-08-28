@@ -139,9 +139,17 @@ async function initializeCommissionPayment(req, res, next) {
   try {
     const period = await prisma.commissionPeriod.findUnique({ where: { id: req.params.id } });
     if (!period || period.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Commission period not found." });
-    if (period.status === "PAID") return res.status(409).json({ error: "This commission period is already paid." });
 
+    // A period already marked PAID can still accrue MORE due afterward --
+    // Event Planner commission (addBookingCommission) increments
+    // amountDueKobo every time a booking completes, with no upper bound
+    // tied to the period's own status. Gating on the stale `status` field
+    // alone permanently blocked paying off that newly-accrued balance
+    // until the period rolled over next week, even though a real amount
+    // was outstanding. The real, always-correct gate is the actual
+    // remaining balance.
     const amountKobo = period.amountDueKobo - period.amountPaidKobo;
+    if (amountKobo <= 0) return res.status(409).json({ error: "This commission period is already paid." });
     const reference = generateReference("COM");
 
     if (req.body.paymentMethod === "WALLET") {

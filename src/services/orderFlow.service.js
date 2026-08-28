@@ -132,7 +132,16 @@ async function confirmItemsTopUp(sessionId, amountKobo) {
 
 async function confirmCommissionPayment(commissionPeriodId, reference) {
   const period = await prisma.commissionPeriod.findUnique({ where: { id: commissionPeriodId } });
-  if (!period || period.status === "PAID") return period;
+  // Same real-outstanding-balance check as initializeCommissionPayment's
+  // own gate, not the stale `status` field -- a period already marked
+  // PAID can still have a real new balance due (addBookingCommission
+  // keeps incrementing amountDueKobo regardless of status). Skipping on
+  // `status === "PAID"` alone meant a repeat payment already past the
+  // caller's own guard would silently no-op here: the vendor's wallet
+  // still gets debited (see payments.controller.js), but this update
+  // never runs, so the period's amountPaidKobo never reflects it and the
+  // "due" balance stays stuck at the same figure forever.
+  if (!period || period.amountDueKobo - period.amountPaidKobo <= 0) return period;
   return prisma.commissionPeriod.update({
     where: { id: commissionPeriodId },
     data: { amountPaidKobo: period.amountDueKobo, status: "PAID", paidAt: new Date() },
