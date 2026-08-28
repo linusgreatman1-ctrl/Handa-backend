@@ -3536,6 +3536,14 @@ function renderShopPhase(phase) {
     </div>`;
     renderApprovalItems();
     if(window._sfmSession){
+      sfmJoinItemSyncRoom(window._sfmSession.id, function(freshSession){
+        if(!window._sfmSession||window._sfmSession.id!==freshSession.id)return;
+        shopItems = shopItems.map(function(x){
+          var fresh=(freshSession.items||[]).find(function(i){return i.id===x.id;});
+          return fresh?Object.assign({},x,{approved:fresh.approved,price:fresh.priceKobo!=null?Math.round(fresh.priceKobo/100):null}):x;
+        });
+        if(window._sfmPhase==='liveCall')renderApprovalItems();
+      });
       sfmStartCall(window._sfmSession.id, 'callee', null, 'rtc-remote-video');
       sfmStartLiveCallTimer(window._sfmSession.callStartedAt, 'sfm-call-timer');
       // Join the real chat thread's room proactively, not lazily on first
@@ -4563,6 +4571,27 @@ async function sfmEnsureChatThread(sessionId, otherUserId){
   if(_socket) _socket.emit('chat:join',{threadId:res.thread.id});
   return window._sfmChatThreadId;
 }
+
+// Joins the shop-session:{id} room immediately when the live-call screen
+// renders, deliberately BEFORE sfmStartCall's WebRTC setup below (which
+// waits on the real browser camera/mic permission prompt -- this can take
+// several seconds, or never resolve at all if the user ignores it). The
+// room join is a live-event SUBSCRIPTION, not a resync -- an item
+// approval/price/reset the other party sent while this side hadn't
+// joined yet used to be lost forever with nothing to re-deliver it once
+// the join finally happened, which is exactly what "the customer approved
+// but the shopper's screen still says waiting" turned out to be. Once
+// actually joined, re-fetch the session once to catch up on anything
+// that happened in that gap, then hand it to the caller to merge in.
+function sfmJoinItemSyncRoom(sessionId, onCaughtUp){
+  if(!_socket||!sessionId)return;
+  _socket.emit('shop-session:join',{sessionId:sessionId},function(ack){
+    if(!ack||!ack.joined)return;
+    api('/shop-sessions/'+sessionId).then(function(d){
+      if(d&&d.session&&onCaughtUp)onCaughtUp(d.session);
+    }).catch(function(){});
+  });
+}
 function sfmBindChatSocketListener(msgsElId, myUserId){
   if(!_socket||_socket._sfmChatBound)return;
   _socket._sfmChatBound=true;
@@ -5475,7 +5504,7 @@ function renderShopperPhase(phase) {
       <div class="sfm-livecall-content-col">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;margin-top:14px;">
           <div style="font-weight:800;font-size:14px;">Item Status:</div>
-          <div style="font-size:12px;color:#9A9390;" id="shopper-item-counter">0/3 approved by user</div>
+          <div style="font-size:12px;color:#9A9390;" id="shopper-item-counter">0/3 approved by customer</div>
         </div>
 
         <!-- Item cards — user's approval status mirrors back to shopper -->
@@ -5498,6 +5527,11 @@ function renderShopperPhase(phase) {
     shopperBindItemSocketListeners();
     renderShopperItemStatus();
     if(window._shopperSession){
+      sfmJoinItemSyncRoom(window._shopperSession.id, function(freshSession){
+        if(!window._shopperSession||window._shopperSession.id!==freshSession.id)return;
+        window._shopperSession.items=freshSession.items;
+        renderShopperItemStatus();
+      });
       sfmStartCall(window._shopperSession.id, 'caller', 'rtc-local-video', 'rtc-remote-video');
       sfmStartLiveCallTimer(window._shopperSession.callStartedAt, 'shopper-call-timer');
       // Same proactive room-join as the customer side -- see the matching
@@ -5814,18 +5848,18 @@ function renderShopperItemStatus() {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <span style="font-size:13px;font-weight:600;color:#F2EDE8;flex:1;">${item.text}${priced?' — ₦'+Number(Math.round(item.priceKobo/100)).toLocaleString():''}</span>
         ${item.approved
-          ? `<span style="color:#2ECC71;font-weight:800;font-size:13px;flex-shrink:0;">✓ User Approved</span>`
+          ? `<span style="color:#2ECC71;font-weight:800;font-size:13px;flex-shrink:0;">✓ Customer Approved</span>`
           : priced
-          ? `<span style="color:#9A9390;font-size:12px;flex-shrink:0;">⏳ Waiting for user...</span>`
+          ? `<span style="color:#9A9390;font-size:12px;flex-shrink:0;">⏳ Waiting for customer to approve...</span>`
           : `<div style="display:flex;gap:6px;flex-shrink:0;"><input type="number" placeholder="₦ price" id="price-inp-${item.id}" style="width:80px;padding:6px 8px;border-radius:8px;border:1.5px solid #2A2850;background:#1C1C1C;color:#F2EDE8;font-size:12px;"><button onclick="shopperSetItemPrice('${item.id}')" style="background:#F5A623;border:none;border-radius:8px;padding:6px 10px;color:#111;font-weight:700;font-size:12px;cursor:pointer;">Set</button></div>`}
       </div>
-      ${priced||item.approved?'':`<div style="font-size:11px;color:#9A9390;margin-top:4px;">Found it? Enter the price to send it to the user for approval.</div>`}
+      ${priced||item.approved?'':`<div style="font-size:11px;color:#9A9390;margin-top:4px;">Found it? Enter the price to send it to the customer for approval.</div>`}
     </div>`;
   }).join('');
 
   const approved = items.filter(x=>x.approved).length;
   const counter = document.getElementById('shopper-item-counter');
-  if(counter) counter.textContent = `${approved}/${items.length} approved by user`;
+  if(counter) counter.textContent = `${approved}/${items.length} approved by customer`;
   const doneBtn = document.getElementById('shopper-done-btn');
   if(doneBtn && items.length > 0 && items.every(x=>x.approved)) {
     doneBtn.style.opacity='1'; doneBtn.style.pointerEvents='auto';
@@ -5867,7 +5901,7 @@ function shopperBindItemSocketListeners(){
   _socket.on('shop-session:item-approved',function(p){
     if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
     var item=window._shopperSession.items.find(function(i){return i.id===p.itemId;});
-    if(item){item.approved=true;renderShopperItemStatus();showToast('User approved: '+item.text+' ✓','success');}
+    if(item){item.approved=true;renderShopperItemStatus();showToast('Customer approved: '+item.text+' ✓','success');}
   });
   // Customer rejected/disapproved an item (both are the same real reset,
   // see resetItemPricing) -- clears local approved/price so the price
