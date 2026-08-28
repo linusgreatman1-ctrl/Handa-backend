@@ -1221,6 +1221,30 @@ function connectSocket(){
     // why it only happened "sometimes" -- only when a reconnect happened
     // to land while this exact screen was open.
     if(window._openBookingConfirmedOverlayId) _socket.emit('booking:join',{bookingId:window._openBookingConfirmedOverlayId});
+    // Rejoining a room only fixes FUTURE pushes -- Socket.IO never
+    // replays/buffers events that were emitted while this socket was
+    // genuinely disconnected, so anything that changed during that gap
+    // (however brief) is otherwise only ever seen by manually refreshing.
+    // Catch up explicitly here instead, for every screen that's currently
+    // showing live-pushed data: re-fetch it once right on (re)connect.
+    // Harmless on the very first connect too (same fetch these screens'
+    // own open functions already do).
+    if(window._openBookingConfirmedOverlayId){
+      api('/bookings/'+window._openBookingConfirmedOverlayId).then(function(res){
+        if(res.booking&&['PAID','REQUESTED'].indexOf(res.booking.status)===-1){
+          window._openBookingConfirmedOverlayId=null;
+          if(typeof closeCookBooking==='function')closeCookBooking();
+          if(typeof closeEPBooking==='function')closeEPBooking();
+          if(S.curScreen!=='login')eGo('history');
+        }
+      }).catch(function(){});
+    }
+    if(window._openBookingDetailId){
+      if(window._openBookingDetailViewer==='vendor'&&typeof openVendorBookingDetail==='function')openVendorBookingDetail(window._openBookingDetailId);
+      else if(window._openBookingDetailViewer==='customer'&&typeof openCustomerHistoryDetail==='function')openCustomerHistoryDetail('booking',window._openBookingDetailId);
+    }
+    if(document.getElementById('history-list')&&typeof renderEHistory==='function')renderEHistory();
+    if(document.getElementById('vendor-bookings-list')&&typeof loadVendorBookingsList==='function')loadVendorBookingsList(window._vendorDashKind==='cook');
   });
   confirmCallBindListeners();
   bindGlobalChatRequestListener();
