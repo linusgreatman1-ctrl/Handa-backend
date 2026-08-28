@@ -1865,7 +1865,7 @@ async function openEventRequestDetailModal(id){
     var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Proposals</div>'
       +'<div style="font-size:13px;color:'+proposalsWriteupColor+';font-weight:700;margin-bottom:8px;">'+proposalsWriteup+'</div>';
     if(!activeProposals.length){
-      proposalsHtml+='<div style="text-align:center;padding:20px;color:#9A9390;background:#242424;border-radius:13px;">Waiting For Proposals</div>';
+      proposalsHtml+='<div style="text-align:center;padding:20px;color:#9A9390;background:#242424;border-radius:13px;">No Proposal Yet</div>';
     }else{
       proposalsHtml+=activeProposals.map(function(p){
         var canAccept = r.status==='OPEN' && p.status==='PENDING';
