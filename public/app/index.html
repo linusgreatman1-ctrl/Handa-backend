@@ -1724,15 +1724,20 @@ async function loadMyEventRequestsList(){
       // Proposal inside). The card's own action is just "go look," worded
       // by whether there's actually anything to review yet.
       var hasProposals=r._count.proposals>0;
-      // Once actually opened before, the button stops looking like a
-      // fresh, unhandled action item (green "Open ...") and reads as a
-      // plain re-view instead -- same neutral treatment the EP side
-      // already uses for "View Event Requests/Proposals" once there's
-      // nothing new left to act on.
+      // Green "Open Proposal" is reserved for exactly one moment: a
+      // proposal has landed and this customer hasn't looked at it yet --
+      // the one state that's actually new and worth drawing the eye to.
+      // Before any proposal exists, there's nothing to act on yet, so
+      // it's always a plain "View Request" (same neutral treatment the
+      // EP side already uses for "View Event Requests/Proposals"), and
+      // once the customer HAS opened a proposal, it downgrades to "View
+      // Proposal" the same way.
       var alreadyViewed=_isEventRequestViewed(r.id);
-      var openBtn=alreadyViewed
-        ? '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(hasProposals?'View Proposal':'View Request')+'</button>'
-        : '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(hasProposals?'Open Proposal':'Open Request')+'</button>';
+      var isFreshProposal=hasProposals&&!alreadyViewed;
+      var btnLabel=!hasProposals?'View Request':(isFreshProposal?'Open Proposal':'View Proposal');
+      var openBtn=isFreshProposal
+        ? '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>'
+        : '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
       return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
