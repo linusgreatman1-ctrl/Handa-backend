@@ -8530,33 +8530,17 @@ function showAddFundsModal(minKobo,onSuccess,priceContext){
   // different payment method instead.
   window._afMinKobo=minKobo||null;
   window._afPriceContext=priceContext||null;
+  // minKobo is always the raw price difference (new total minus old) --
+  // never netted against unrelated free wallet balance, the same figure
+  // regardless of which payment method ends up picked (see selectAfMethod)
+  // and the same figure debitWallet actually pulls once the edit applies.
   var prefill=minKobo?Math.ceil(minKobo/100):'';
-  // Card/Bank Transfer/USSD charge the FULL raw price difference, not the
-  // wallet-netted shortfall (prefill) -- paying the whole difference by a
-  // method that isn't the wallet means the pre-existing wallet balance is
-  // never touched at all (the later retry's own debitWallet call consumes
-  // exactly what was just added, nothing more). Only picking "Wallet
-  // Balance" explicitly nets off what's already free in there.
-  var rawDiffKobo=(priceContext&&priceContext.oldTotalKobo!=null&&priceContext.newTotalKobo!=null)?(priceContext.newTotalKobo-priceContext.oldTotalKobo):minKobo;
-  window._afRawDiffKobo=rawDiffKobo||null;
-  var rawDiffPrefill=rawDiffKobo?Math.ceil(rawDiffKobo/100):prefill;
   // minKobo means this was opened to cover a SPECIFIC shortfall (a booking
-  // edit's new total) -- that number is exact (the edit's own new total
-  // minus what's already held), not a suggestion, so this locks to it:
-  // no quick-pick amounts, no editable field, just that one figure and a
-  // "Pay ₦X" button. The generic "+ Add Funds" entry point (Profile/Wallet,
-  // no minKobo) keeps the free-amount picker -- there's no specific target
-  // to lock to there.
-  //
-  // priceContext (optional, {oldTotalKobo,newTotalKobo}) spells out WHY
-  // minKobo is smaller than the raw price difference -- without this, a
-  // customer editing ₦13,000 to ₦21,500 (a real +₦8,500 change) but who
-  // already has ₦7,000 free in their wallet sees only "You need ₦1,500"
-  // and reads that as a wrong/made-up number, since it doesn't match the
-  // price change they just saw on screen. Both figures are real: the
-  // price really changed by ₦8,500, and only ₦1,500 of that isn't already
-  // covered by the wallet's existing free balance -- showing both instead
-  // of just the netted one is what makes the smaller number make sense.
+  // edit's new total) -- that number is exact, not a suggestion, so this
+  // locks to it: no quick-pick amounts, no editable field, just that one
+  // figure and a "Pay ₦X" button. The generic "+ Add Funds" entry point
+  // (Profile/Wallet, no minKobo) keeps the free-amount picker -- there's
+  // no specific target to lock to there.
   // Just the two numbers, no explanation -- the "already covered by your
   // wallet"/"you need X more" prose read as unnecessary noise once the
   // Amount to Add field itself already shows the real figure up front.
@@ -8613,9 +8597,13 @@ function selectAfMethod(method){
   // entirely: it used to unconditionally overwrite #af-inp with 0 (no
   // minKobo to compute from), clobbering whatever the customer had
   // already picked or typed and making every method there look broken.
+  // Same one number regardless of method -- the raw shortfall (new total
+  // minus old), never netted against unrelated free wallet balance. That's
+  // literally what debitWallet pulls when the edit is actually applied, so
+  // it's the real, single, non-confusing figure to show no matter which
+  // method is picked.
   if(window._afMinKobo){
-    var kobo=isWallet?window._afMinKobo:(window._afRawDiffKobo||window._afMinKobo);
-    var naira=kobo?Math.ceil(kobo/100):0;
+    var naira=Math.ceil(window._afMinKobo/100);
     var inp=document.getElementById('af-inp');
     if(inp)inp.value=naira;
     var btn=document.getElementById('af-confirm-btn');

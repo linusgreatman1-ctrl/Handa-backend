@@ -308,7 +308,14 @@ async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRu
     // Wallet Balance, an honest retry against the real balance) that needs
     // to actually go through, not this initial detection being skipped.
     if (w.balanceKobo < diff) {
-      throw Object.assign(new Error("Your escrow wallet does not have enough to cover the new total. Add funds to continue."), { status: 400, shortfallKobo: diff - w.balanceKobo });
+      // shortfallKobo is the raw price difference (new total minus old),
+      // not netted against whatever free balance already happens to be in
+      // the wallet from something unrelated -- "Amount to Add" is meant to
+      // read as one plain number ("the booking went up by X, add X"), and
+      // debitWallet below always pulls the full raw diff regardless of
+      // what else is already in there, so that's the real number that
+      // needs to exist in the wallet for this to go through either way.
+      throw Object.assign(new Error("Your escrow wallet does not have enough to cover the new total. Add funds to continue."), { status: 400, shortfallKobo: diff });
     }
     if (!dryRun) {
       await walletSvc.debitWallet(booking.customerId, diff, "ESCROW_HOLD", { contextType: "BOOKING", contextId: booking.id, description: "Booking edit — added items" }, tx);
