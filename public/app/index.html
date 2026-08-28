@@ -1843,7 +1843,10 @@ async function openEventRequestForVendor(requestId){
         + '<div id="sp-svc-other-wrap" style="display:none;margin-bottom:4px;"><input id="sp-svc-other" placeholder="What else is included?" style="width:100%;box-sizing:border-box;padding:9px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:9px;color:#F2EDE8;font-size:13px;"></div>'
         + _arField('Timeline','sp-timeline','e.g. Ready within 2 weeks','')
         + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Notes to Customer</label><textarea id="sp-notes" rows="2" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;" placeholder="Why choose you"></textarea>'
-        + '<button onclick="submitProposalForRequest(\''+r.id+'\')" style="width:100%;margin-top:16px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Submit Proposal</button>';
+        + '<div style="display:flex;gap:10px;margin-top:16px;">'
+        + '<button onclick="declineEventRequestForVendor(\''+r.id+'\')" style="flex:1;padding:12px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline</button>'
+        + '<button onclick="submitProposalForRequest(\''+r.id+'\')" style="flex:1;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Submit Proposal</button>'
+        + '</div>';
     }
   }catch(err){
     var body2=document.getElementById('erv-body');
@@ -1867,6 +1870,24 @@ function _loadEventRequestJobAction(bookingId){
   var el=document.getElementById('erv-job-action');
   if(!el)return;
   el.innerHTML='<button onclick="closeProcedureModal();openVendorBookingDetail(\''+bookingId+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">📋 View Booking</button>';
+}
+// A planner passing on a request they never proposed on has no real
+// backend analog (only a submitted proposal can be declined) -- same
+// established pattern already used for a rider dismissing an available
+// delivery: a client-side-only dismiss, tracked per-device in
+// localStorage, that just stops this one request from sitting on THIS
+// vendor's own dashboard prompt. Every other planner still sees it as
+// open, and it stays visible in this vendor's own full "View Event
+// Requests/Proposals" list -- only the "needs your attention" nudge goes away.
+function declineEventRequestForVendor(id){
+  if(!confirm('Not interested in this request? It will stop showing on your dashboard.'))return;
+  var dismissed=[];
+  try{dismissed=JSON.parse(localStorage.getItem('handa_dismissed_event_requests')||'[]');}catch(e){}
+  if(dismissed.indexOf(id)===-1)dismissed.push(id);
+  try{localStorage.setItem('handa_dismissed_event_requests',JSON.stringify(dismissed));}catch(e){}
+  closeProcedureModal();
+  showToast&&showToast('Request declined','success');
+  if(document.getElementById('event-requests-section'))loadOpenEventRequests();
 }
 async function submitProposalForRequest(requestId){
   var price=(document.getElementById('sp-price')||{}).value||'';
@@ -6533,15 +6554,14 @@ async function loadOpenEventRequests(){
   el.innerHTML='<div style="font-size:12px;color:#9A9390;padding:8px 0;">Loading open event requests…</div>';
   try{
     var res=await api('/event-requests?as=vendor&status=OPEN');
-    // Was a plain small uppercase label + a thin ghost-bordered pill --
-    // easy to miss next to the Weekly Commission/Get Featured banners
-    // right above it on the same dashboard. Given the same gradient-card
-    // visual weight as those, with the action as a real full-width button
-    // instead of a tiny outline pill, so it actually reads as a banner.
-    var headerHtml='<div style="background:linear-gradient(135deg,rgba(46,204,113,.15),rgba(59,159,232,.08));border:1.5px solid rgba(46,204,113,.4);border-radius:16px;padding:16px;margin-bottom:12px;">'
-      +'<p style="color:#2ECC71;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 4px;">📢 Event Requests</p>'
-      +'<p style="color:#9A9390;font-size:12px;margin:0;">New requests from customers looking for a planner</p>'
-      +'<button onclick="openAllEventRequestsModal()" style="width:100%;margin-top:12px;padding:11px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">View Event Requests/Proposals</button>'
+    // Same compact card footprint as the Get Featured banner right below
+    // it -- label+subtitle and the action button sit in one row (a real
+    // grid, not stacked), the button sized to its own text instead of
+    // stretched full-width, and no green gradient -- just the same plain
+    // black card/white text every other banner on this dashboard uses.
+    var headerHtml='<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;">'
+      +'<div><p style="font-weight:700;font-size:14px;color:#F2EDE8;margin:0 0 2px;">📢 Event Requests</p><p style="color:#9A9390;font-size:12px;margin:0;">New requests from customers</p></div>'
+      +'<button onclick="openAllEventRequestsModal()" style="padding:10px 14px;background:#242424;color:#F2EDE8;border:1.5px solid #2A2850;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap;">View Event Requests/Proposals</button>'
       +'</div>';
     // The dashboard's own inline section is ONLY for genuinely new, never-
     // opened-and-proposed-on requests -- it's a "needs your attention" pop-
@@ -6550,8 +6570,14 @@ async function loadOpenEventRequests(){
     // out of here entirely and lives only inside "View Event Requests/
     // Proposals" (openAllEventRequestsModal, which already shows every
     // request regardless of state) -- it must not keep sitting on the
-    // dashboard with a status pill.
-    var newOnes=(res.requests||[]).filter(function(r){return !(r.proposals&&r.proposals[0]);});
+    // dashboard with a status pill. A request the vendor explicitly
+    // declined (declineEventRequestForVendor, client-side dismiss only --
+    // no backend concept of a vendor passing on a request they never
+    // proposed on) is filtered the same way, but stays visible in the full
+    // "View Event Requests/Proposals" list.
+    var dismissedIds=[];
+    try{dismissedIds=JSON.parse(localStorage.getItem('handa_dismissed_event_requests')||'[]');}catch(e){}
+    var newOnes=(res.requests||[]).filter(function(r){return !(r.proposals&&r.proposals[0])&&dismissedIds.indexOf(r.id)===-1;});
     if(!newOnes.length){ el.innerHTML=headerHtml; return; }
     el.innerHTML=headerHtml
       + newOnes.map(function(r){
