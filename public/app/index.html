@@ -1724,7 +1724,15 @@ async function loadMyEventRequestsList(){
       // Proposal inside). The card's own action is just "go look," worded
       // by whether there's actually anything to review yet.
       var hasProposals=r._count.proposals>0;
-      var openBtn='<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(hasProposals?'Open Proposal':'Open Request')+'</button>';
+      // Once actually opened before, the button stops looking like a
+      // fresh, unhandled action item (green "Open ...") and reads as a
+      // plain re-view instead -- same neutral treatment the EP side
+      // already uses for "View Event Requests/Proposals" once there's
+      // nothing new left to act on.
+      var alreadyViewed=_isEventRequestViewed(r.id);
+      var openBtn=alreadyViewed
+        ? '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(hasProposals?'View Proposal':'View Request')+'</button>'
+        : '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+(hasProposals?'Open Proposal':'Open Request')+'</button>';
       return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
@@ -1738,6 +1746,18 @@ async function loadMyEventRequestsList(){
 }
 function closeMyEventRequestsModal(){
   var el=document.getElementById('my-requests-modal'); if(el) el.remove();
+}
+// Same per-device localStorage pattern already used for _isRatingSkipped
+// -- no backend field needed, this is purely "has this browser looked at
+// it before" for the My Requests list's own button styling.
+function _isEventRequestViewed(id){
+  try{ return (JSON.parse(localStorage.getItem('handa_viewed_event_requests')||'[]')).indexOf(id)>-1; }catch(e){ return false; }
+}
+function _markEventRequestViewed(id){
+  try{
+    var list=JSON.parse(localStorage.getItem('handa_viewed_event_requests')||'[]');
+    if(list.indexOf(id)===-1){list.push(id);localStorage.setItem('handa_viewed_event_requests',JSON.stringify(list));}
+  }catch(e){}
 }
 // Declining the whole request now only ever happens from inside the
 // unified detail sheet (openEventRequestDetailModal) -- there's nothing
@@ -1763,6 +1783,7 @@ async function declineMyEventRequest(id){
 // openCustomerHistoryDetail('booking', ...) on that identical sheet.
 async function openEventRequestDetailModal(id){
   window._openEventRequestId=id;
+  _markEventRequestViewed(id);
   // The "My Event Requests" list overlay renders at z-index:9999, higher
   // than this bottom sheet's own 9500 -- left open, it sat in front of
   // the detail sheet that was supposed to be opening, so "Open Request"/
