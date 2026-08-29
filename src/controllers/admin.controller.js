@@ -4,6 +4,7 @@ const africastalking = require("../services/africastalking.service");
 const emailSvc = require("../services/email.service");
 const { notify } = require("../services/notifications.service");
 const supportCtrl = require("./support.controller");
+const appReviewsCtrl = require("./appReviews.controller");
 const manualPaymentsSvc = require("../services/manualPayments.service");
 
 // Headline numbers for the admin panel's landing dashboard — cheap
@@ -1415,6 +1416,9 @@ module.exports = {
   listCommissionsForAdmin,
   listEscrowHoldsForAdmin,
   listRatingsForAdmin,
+  listAppReviewsForAdmin: appReviewsCtrl.listReviewsForAdmin,
+  respondToAppReview: appReviewsCtrl.respondToReview,
+  setAppReviewHidden: appReviewsCtrl.setReviewHidden,
   listSubscriptionsForAdmin,
   extendSubscription,
   listAppSettings,

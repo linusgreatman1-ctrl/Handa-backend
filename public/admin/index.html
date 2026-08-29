@@ -89,6 +89,7 @@
     <button class="nav-item" data-tab="commissions" data-elevated="1" onclick="switchTab('commissions')">Commissions</button>
     <button class="nav-item" data-tab="escrow" data-elevated="1" onclick="switchTab('escrow')">Escrow</button>
     <button class="nav-item" data-tab="ratings" data-elevated="1" onclick="switchTab('ratings')">Ratings</button>
+    <button class="nav-item" data-tab="appreviews" data-elevated="1" onclick="switchTab('appreviews')">App Reviews</button>
     <button class="nav-item" data-tab="payments" data-elevated="1" onclick="switchTab('payments')">Payments</button>
     <button class="nav-item" data-tab="subscriptions" data-elevated="1" onclick="switchTab('subscriptions')">Subscriptions</button>
     <button class="nav-item" data-tab="tickets" onclick="switchTab('tickets')">Support Tickets</button>
@@ -335,7 +336,7 @@ function switchTab(tab) {
   if (window._codesDirty && !confirm('You have unsaved edits in the Codes tab. Leave without saving?')) return;
   window._codesDirty = false;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, manualpayments: renderManualPayments, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, bulksms: renderBulkSms, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
+  const renderers = { dashboard: renderDashboard, reports: renderReports, users: renderUsers, vendors: renderVendors, riders: renderRiders, shoppers: renderShoppers, bookings: renderBookings, commissions: renderCommissions, escrow: renderEscrow, ratings: renderRatings, appreviews: renderAppReviews, payments: renderPayments, subscriptions: renderSubscriptions, tickets: renderTickets, withdrawals: renderWithdrawals, shopsessions: renderShopSessions, activecodes: renderActiveCodes, manualpayments: renderManualPayments, codeeditor: renderCodeEditor, codes: renderCodes, livepreview: renderLivePreview, kyc: renderKycDocuments, appsettings: renderAppSettings, announcements: renderAnnouncements, bulkemail: renderBulkEmail, bulksms: renderBulkSms, aiconversations: renderAiConversations, chatthreads: renderChatThreads, admins: renderAdmins, auditlog: renderAuditLog };
   if (tab !== 'chatthreads') stopChatThreadAutoRefresh();
   if (tab === 'chatthreads') clearChatBadge();
   renderers[tab]();
@@ -1572,6 +1573,71 @@ async function renderRatings() {
       : '<div class="empty">No ratings submitted yet.</div>';
   } catch (e) {
     document.getElementById('ratings-table').textContent = e.message;
+  }
+}
+
+function _appReviewEsc(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+// Reviews of the Handa app/platform itself (distinct from the per-transaction
+// Ratings tab above) — one evolving review per user, with an admin response
+// thread and a hide/unhide moderation toggle.
+async function renderAppReviews() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<h2>App Reviews</h2><div id="appreviews-list" class="empty">Loading...</div>';
+  try {
+    const data = await api('/admin/app-reviews');
+    const list = document.getElementById('appreviews-list');
+    if (!data.reviews.length) {
+      list.className = 'empty';
+      list.textContent = 'No app reviews submitted yet.';
+      return;
+    }
+    list.className = '';
+    list.innerHTML = data.reviews.map(r => `
+      <div class="card" style="margin-bottom:12px;${r.hidden ? 'opacity:.55;' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="color:#f2b705;letter-spacing:2px;">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+          <span style="font-size:.8rem;color:#888;">${new Date(r.createdAt).toLocaleString()}${r.hidden ? ' · Hidden' : ''}</span>
+        </div>
+        <p>"${_appReviewEsc(r.comment)}"</p>
+        <p style="font-size:.85rem;color:#888;"><strong>${_appReviewEsc(r.user ? r.user.name : 'Unknown')}</strong>${r.user && r.user.email ? ' · ' + _appReviewEsc(r.user.email) : ''}</p>
+        ${r.response ? `<div style="background:#1a2436;border-left:3px solid #3b6bff;padding:10px 12px;margin:10px 0;font-size:.88rem;border-radius:0 8px 8px 0;"><strong>Your response</strong> · ${new Date(r.respondedAt).toLocaleString()}<br>${_appReviewEsc(r.response)}</div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <textarea id="appreview-respond-${r.id}" placeholder="${r.response ? 'Update your response…' : 'Write a response…'}" style="flex:1;min-height:44px;background:#2D2D2D;border:2px solid #333;border-radius:10px;padding:11px 13px;color:#F2EDE8;font-size:14px;font-family:inherit;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="action-btn" onclick="appReviewRespond('${r.id}')">${r.response ? 'Update response' : 'Send response'}</button>
+          <button class="action-btn" onclick="appReviewToggleHidden('${r.id}', ${!r.hidden})">${r.hidden ? 'Unhide' : 'Hide'}</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('appreviews-list').textContent = e.message;
+  }
+}
+
+async function appReviewRespond(id) {
+  const textarea = document.getElementById('appreview-respond-' + id);
+  const response = textarea.value.trim();
+  if (!response) return;
+  try {
+    await api('/admin/app-reviews/' + id + '/respond', { method: 'POST', body: JSON.stringify({ response }) });
+    renderAppReviews();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function appReviewToggleHidden(id, hidden) {
+  try {
+    await api('/admin/app-reviews/' + id + '/hide', { method: 'POST', body: JSON.stringify({ hidden }) });
+    renderAppReviews();
+  } catch (e) {
+    alert(e.message);
   }
 }
 

@@ -44,6 +44,9 @@ router.get("/bookings/:id", requireContentOrSuperAdmin, ctrl.getBookingDetailFor
 router.get("/commissions", requireContentOrSuperAdmin, ctrl.listCommissionsForAdmin);
 router.get("/escrow", requireContentOrSuperAdmin, ctrl.listEscrowHoldsForAdmin);
 router.get("/ratings", requireContentOrSuperAdmin, ctrl.listRatingsForAdmin);
+router.get("/app-reviews", requireContentOrSuperAdmin, ctrl.listAppReviewsForAdmin);
+router.post("/app-reviews/:id/respond", requireContentOrSuperAdmin, ctrl.respondToAppReview);
+router.post("/app-reviews/:id/hide", requireContentOrSuperAdmin, ctrl.setAppReviewHidden);
 
 // Rider-session monitoring — content admin or super admin.
 router.get("/shop-sessions", requireContentOrSuperAdmin, ctrl.listShopSessionsForAdmin);

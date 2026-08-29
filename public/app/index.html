@@ -647,9 +647,14 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
         <div style="flex:1;text-align:left"><div style="font-weight:700;font-size:14px;color:#F2EDE8">Favourites</div><div style="font-size:12px;color:#9A9390">Saved cooks & planners</div></div>
         <span style="color:#666">›</span>
       </button>
-      <button onclick="showProfileSection('help-support')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:14px 16px;cursor:pointer;font-family:'DM Sans',sans-serif">
+      <button onclick="showProfileSection('help-support')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:14px 16px;cursor:pointer;font-family:'DM Sans',sans-serif">
         <div style="width:38px;height:38px;border-radius:10px;background:rgba(46,204,113,.12);display:flex;align-items:center;justify-content:center;font-size:18px">❓</div>
         <div style="flex:1;text-align:left"><div style="font-weight:700;font-size:14px;color:#F2EDE8">Help & Support</div><div style="font-size:12px;color:#9A9390">Call support, disputes</div></div>
+        <span style="color:#666">›</span>
+      </button>
+      <button onclick="openAppReviewModal()" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:14px 16px;cursor:pointer;font-family:'DM Sans',sans-serif">
+        <div style="width:38px;height:38px;border-radius:10px;background:rgba(242,183,5,.12);display:flex;align-items:center;justify-content:center;font-size:18px">⭐</div>
+        <div style="flex:1;text-align:left"><div style="font-weight:700;font-size:14px;color:#F2EDE8">Rate Handa</div><div style="font-size:12px;color:#9A9390">Leave a review of the app</div></div>
         <span style="color:#666">›</span>
       </button>
     </div>
@@ -7379,8 +7384,10 @@ function renderVendorProfile(){
     +'<div class="card" style="overflow:hidden;margin-bottom:14px;padding:0;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;">'
     +'<button onclick="showProfileSection(\'notifications\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
     +'<span style="font-size:18px;">\ud83d\udd14</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Notifications</div></div><span style="color:#666">\u203a</span></button>'
-    +'<button onclick="showProfileSection(\'help-support\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<button onclick="showProfileSection(\'help-support\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
     +'<span style="font-size:18px;">\u2753</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Help &amp; Support</div></div><span style="color:#666">\u203a</span></button>'
+    +'<button onclick="openAppReviewModal()" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<span style="font-size:18px;">\u2b50</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Rate Handa</div></div><span style="color:#666">\u203a</span></button>'
     +'</div>'
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
@@ -7573,8 +7580,10 @@ function renderRiderProfile(){
     +'<div class="card" style="overflow:hidden;margin-bottom:14px;padding:0;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;">'
     +'<button onclick="showProfileSection(\'notifications\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
     +'<span style="font-size:18px;">🔔</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Notifications</div></div><span style="color:#666">›</span></button>'
-    +'<button onclick="showProfileSection(\'help-support\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<button onclick="showProfileSection(\'help-support\')" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2a2a;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
     +'<span style="font-size:18px;">❓</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Help &amp; Support</div></div><span style="color:#666">›</span></button>'
+    +'<button onclick="openAppReviewModal()" style="display:flex;align-items:center;gap:12px;width:100%;background:transparent;border:none;padding:13px 14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'
+    +'<span style="font-size:18px;">⭐</span><div style="flex:1;text-align:left"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Rate Handa</div></div><span style="color:#666">›</span></button>'
     +'</div>'
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:4px;">Sign Out</button>'
@@ -7767,6 +7776,58 @@ function _showHelpPanel(){
     +'<button onclick="closeProcedureModal();setTimeout(function(){openSupportChat();},200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:10px;">&#x1F3A7; Chat with Support</button>'
     +'<button onclick="closeProcedureModal();setTimeout(callSupport,200)" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;">&#x1F4DE; Call Support</button>'
     +'</div>');
+}
+
+// A review of the Handa app/platform itself (one evolving review per user,
+// upserted on submit) — distinct from the per-booking/session Rating flow
+// (star icons on a completed order). Reuses the same showProcedureModal
+// bottom sheet as Help & Support above.
+async function openAppReviewModal(){
+  showProcedureModal('<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
+    +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">&#x2B50; Rate Handa</div></div>'
+    +'<div id="app-review-body" style="text-align:center;color:#9A9390;font-size:13px;padding:20px 0;">Loading…</div>'
+    +'</div>');
+  var existing = null;
+  try { var res = await api('/app-reviews/mine'); existing = res.review; } catch (e) {}
+  window._appReviewRating = existing ? existing.rating : 0;
+  _renderAppReviewForm(existing);
+}
+
+function _arEsc(str) { var d = document.createElement('div'); d.textContent = str == null ? '' : String(str); return d.innerHTML; }
+
+function _renderAppReviewForm(existing) {
+  var stars = '';
+  for (var i = 1; i <= 5; i++) {
+    stars += '<button type="button" onclick="_setAppReviewRating(' + i + ')" id="ar-star-' + i + '" style="background:transparent;border:none;font-size:28px;cursor:pointer;color:' + (window._appReviewRating >= i ? '#F2B705' : '#3A3A3A') + ';">&#9733;</button>';
+  }
+  var html = '<p style="font-size:13px;color:#9A9390;margin-bottom:14px;">Tell us what you think of the app — we read every review and reply here.</p>'
+    + '<div style="display:flex;justify-content:center;gap:4px;margin-bottom:14px;">' + stars + '</div>'
+    + '<textarea id="ar-comment" placeholder="What do you like, or what should we fix?" style="width:100%;min-height:90px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;color:#F2EDE8;font-size:14px;font-family:\'DM Sans\',sans-serif;margin-bottom:14px;">' + (existing ? _arEsc(existing.comment) : '') + '</textarea>'
+    + '<button onclick="_submitAppReview()" style="width:100%;padding:13px;border-radius:13px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">' + (existing ? 'Update Review' : 'Submit Review') + '</button>'
+    + (existing && existing.response ? ('<div style="background:#1a2436;border-left:3px solid #3B9FE8;padding:12px 14px;margin-top:16px;border-radius:0 10px 10px 0;font-size:13px;"><strong style="color:#3B9FE8;">Handa\'s response</strong><div style="margin-top:4px;color:#F2EDE8;">' + _arEsc(existing.response) + '</div></div>') : '');
+  var el = document.getElementById('app-review-body');
+  if (el) { el.style.textAlign = ''; el.style.padding = ''; el.innerHTML = html; }
+}
+
+function _setAppReviewRating(n) {
+  window._appReviewRating = n;
+  for (var i = 1; i <= 5; i++) { var el = document.getElementById('ar-star-' + i); if (el) el.style.color = n >= i ? '#F2B705' : '#3A3A3A'; }
+}
+
+async function _submitAppReview() {
+  var rating = window._appReviewRating || 0;
+  var comment = ((document.getElementById('ar-comment') || {}).value || '').trim();
+  if (!rating) { toast('Please select a star rating.'); return; }
+  if (!comment) { toast('Please write a short review.'); return; }
+  try {
+    var res = await api('/app-reviews', { method: 'POST', body: JSON.stringify({ rating: rating, comment: comment }) });
+    toast('Thanks for your review!');
+    _renderAppReviewForm(res.review);
+  } catch (e) {
+    toast(e.message || 'Could not submit review.');
+  }
 }
 
 var _LEGAL_TERMS = [
@@ -9000,7 +9061,8 @@ function buildShopperProfile(){
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;overflow:hidden;margin-bottom:14px;">'
     +'<div onclick="showNotificationsProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F514;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Notifications</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
     +'<div onclick="showSafetyProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x1F6E1;&#xFE0F;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Safety & Security</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
-    +'<div onclick="showHelpProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;"><span style="font-size:20px;">&#x2753;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Help & Support</div><span style="color:#555;font-size:18px;">&#x203A;</span></div></div>'
+    +'<div onclick="showHelpProc()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;border-bottom:1px solid #2A2850;"><span style="font-size:20px;">&#x2753;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Help & Support</div><span style="color:#555;font-size:18px;">&#x203A;</span></div>'
+    +'<div onclick="openAppReviewModal()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;"><span style="font-size:20px;">&#x2B50;</span><div style="flex:1;font-size:14px;font-weight:600;color:#F2EDE8;">Rate Handa</div><span style="color:#555;font-size:18px;">&#x203A;</span></div></div>'
     +renderRoleSwitcher()
     +'<button onclick="logout()" style="width:100%;padding:13px;border-radius:13px;border:1.5px solid rgba(232,57,46,.25);background:rgba(232,57,46,.08);color:#E8392E;font-weight:800;font-size:14px;cursor:pointer;">Sign Out</button>';
   body.innerHTML=html;

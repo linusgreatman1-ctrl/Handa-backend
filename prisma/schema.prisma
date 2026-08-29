@@ -100,6 +100,8 @@ model User {
   favourites             Favourite[]
   appSettingsUpdated     AppSetting[]
   aiConversations        AiConversationLog[]
+  appReview              AppReview?              @relation("AppReviewUser")
+  appReviewResponses     AppReview[]             @relation("AppReviewResponder")
 
   @@index([role])
 }
@@ -997,6 +999,33 @@ model Rating {
   @@unique([bookingId, rateeRole])
   @@unique([shopSessionId, rateeRole])
   @@index([rateeId])
+}
+
+// A review of the Handa app/platform itself — distinct from Rating above,
+// which is peer-to-peer (customer rates a specific vendor/rider/shopper
+// after a specific booking/session). One evolving review per user (create
+// acts as an upsert), shown publicly on the marketing site and in-app,
+// with an admin response thread the same shape as SupportTicket's
+// resolution field.
+model AppReview {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation("AppReviewUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  rating  Int // 1-5
+  comment String
+
+  hidden Boolean @default(false) // admin moderation — hidden reviews are excluded from public listings but kept for the record
+
+  response           String?
+  respondedAt        DateTime?
+  respondedByAdminId String?
+  respondedByAdmin   User?     @relation("AppReviewResponder", fields: [respondedByAdminId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hidden])
 }
 
 enum TicketContext {
