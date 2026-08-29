@@ -4868,7 +4868,7 @@ function bcallStart(){
   var name=window._callName||'Contact',avatar=window._callAvatar||'👤',role=window._callRole||'';
   if(!otherUserId){showToast&&showToast('In-app call is not available here yet.','warning');return;}
   if(window._bcall||window._bcallIncoming){showToast&&showToast('You are already on a call.','warning');return;}
-  window._bcall={role:'caller',bookingId:bookingId,otherUserId:otherUserId,otherName:name,otherAvatar:avatar,otherRole:role,pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false};
+  window._bcall={role:'caller',bookingId:bookingId,otherUserId:otherUserId,otherName:name,otherAvatar:avatar,otherRole:role,pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false,_ts:Date.now()};
   renderBcallOverlay();
   if(bookingId&&_socket)_socket.emit('booking:join',{bookingId:bookingId});
   if(_socket)_socket.emit('bookingcall:invite',{toUserId:otherUserId,bookingId:bookingId,callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤',callerRole:S.role||''});
@@ -4884,7 +4884,7 @@ function bcallCancelOutgoing(){bcallEnd();}
 function bcallAccept(){
   var inc=window._bcallIncoming;if(!inc)return;
   window._bcallIncoming=null;
-  window._bcall={role:'callee',bookingId:inc.bookingId,otherUserId:inc.fromUserId,otherName:inc.callerName,otherAvatar:inc.callerAvatar,otherRole:inc.callerRole,pc:null,localStream:null,remoteSocketId:inc.fromSocketId,status:'connecting',startedAt:null,micMuted:false};
+  window._bcall={role:'callee',bookingId:inc.bookingId,otherUserId:inc.fromUserId,otherName:inc.callerName,otherAvatar:inc.callerAvatar,otherRole:inc.callerRole,pc:null,localStream:null,remoteSocketId:inc.fromSocketId,status:'connecting',startedAt:null,micMuted:false,_ts:Date.now()};
   renderBcallOverlay();
   if(inc.bookingId&&_socket)_socket.emit('booking:join',{bookingId:inc.bookingId});
   bcallSetupPeer().then(function(){
@@ -4943,10 +4943,25 @@ function bcallBindListeners(){
   _socket._bcallBound=true;
   _socket.on('bookingcall:incoming',function(p){
     if(!p)return;
-    if(window._bcall||window._bcallIncoming){
-      if(_socket)_socket.emit('bookingcall:decline',{toSocketId:p.fromSocketId,bookingId:p.bookingId});
+    // A leaked local call state (a missed cancel/end event across a
+    // reconnect, a crashed/backgrounded tab, two people calling this same
+    // user near-simultaneously, etc.) used to permanently auto-decline
+    // every future call to this user with no way to recover short of a
+    // full page reload -- "the rider declined" when they never touched
+    // anything. Anything not yet actually connected (still ringing/
+    // negotiating) past the real 30s window the caller itself gives up
+    // at is definitely stale, not a real ongoing call -- let a new
+    // invite through instead of busy-declining it forever.
+    var bc=window._bcall, inc=window._bcallIncoming;
+    var bcStale = bc && bc.status!=='connected' && bc._ts && (Date.now()-bc._ts)>40000;
+    var incStale = inc && inc._ts && (Date.now()-inc._ts)>40000;
+    var reallyBusy = (bc && !bcStale) || (inc && !incStale);
+    if(reallyBusy){
+      if(_socket)_socket.emit('bookingcall:decline',{toSocketId:p.fromSocketId,bookingId:p.bookingId,reason:'busy'});
       return;
     }
+    if(bcStale)bcallTeardown();
+    p._ts=Date.now();
     window._bcallIncoming=p;
     renderBcallOverlay();
   });
@@ -4970,7 +4985,14 @@ function bcallBindListeners(){
     var c=window._bcall;
     if(!c||c.role!=='caller'||c.otherUserId!==p.fromUserId)return;
     clearTimeout(_bcallRingTimer);
-    showToast&&showToast((c.otherName||'They')+' declined the call','warning');
+    // "busy" (they're already ringing/on another call) is a real, common,
+    // temporary state, not a real decline -- showing the same "declined
+    // the call" message for both used to read as a rejection nobody
+    // actually made whenever this fired for the busy reason instead.
+    var msg = p.reason==='busy'
+      ? (c.otherName||'They')+' is on another call right now — try again shortly'
+      : (c.otherName||'They')+' declined the call';
+    showToast&&showToast(msg,'warning');
     bcallTeardown();
   });
   _socket.on('bookingcall:cancelled',function(p){

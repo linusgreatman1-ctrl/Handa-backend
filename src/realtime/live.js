@@ -237,9 +237,9 @@ function attachLiveSocket(httpServer) {
       if (!toSocketId) return;
       io.to(toSocketId).emit("bookingcall:accepted", { fromUserId: user.id, fromSocketId: socket.id, bookingId: bookingId || null });
     });
-    socket.on("bookingcall:decline", ({ toSocketId, bookingId }) => {
+    socket.on("bookingcall:decline", ({ toSocketId, bookingId, reason }) => {
       if (!toSocketId) return;
-      io.to(toSocketId).emit("bookingcall:declined", { fromUserId: user.id, bookingId: bookingId || null });
+      io.to(toSocketId).emit("bookingcall:declined", { fromUserId: user.id, bookingId: bookingId || null, reason: reason || null });
     });
     socket.on("bookingcall:cancel", ({ toUserId, bookingId }) => {
       if (!toUserId) return;
