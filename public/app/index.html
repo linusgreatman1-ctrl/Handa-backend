@@ -3310,7 +3310,7 @@ async function restoreActiveShopSession(role) {
   try {
     if (role === 'shopper') {
       var rs = await api('/shop-sessions?as=shopper');
-      var activeS = (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED'].indexOf(s.status)>-1;});
+      var activeS = (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
       if (!activeS) return false;
       // GET /shop-sessions?as=... (list) uses a deliberately narrow include
       // (no user.id/phone on shopper, no rider at all) -- fine for a list
@@ -3319,7 +3319,12 @@ async function restoreActiveShopSession(role) {
       // (getSession's full include) before using it for anything real.
       var fullS = await api('/shop-sessions/'+activeS.id);
       window._shopperSession = fullS.session;
-      var sPhase = {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound'}[activeS.status]||'accepted';
+      // OUT_FOR_DELIVERY lands on 'escrowReleased' -- the shopper's own
+      // "rider is out delivering, track them" phase (Chat/Call/View Rider
+      // Location) -- by the time the session reaches this status the
+      // shopper has necessarily already been through handover+payouts, so
+      // there's no earlier shopper-side step left to resume into.
+      var sPhase = {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound',OUT_FOR_DELIVERY:'escrowReleased'}[activeS.status]||'accepted';
       afterShopperAuth();
       shopperBindItemSocketListeners();
       await _joinShopSessionRoom(activeS.id);
@@ -3572,7 +3577,10 @@ function renderShopPhase(phase) {
     // real details -- nothing's actually been handed over yet until the
     // shopper and rider finish the 3-way confirm call. Sub-branches the
     // copy on whether the rider has reached the shopper yet.
-    const waitingText = liveStatus==='RIDER_ASSIGNED'
+    const handoverDone = window._sfmSession&&window._sfmSession.handoverConfirmedAt;
+    const waitingText = handoverDone
+      ? 'Rider has confirmed and picked up items'
+      : liveStatus==='RIDER_ASSIGNED'
       ? (window._sfmSession&&window._sfmSession.riderArrivedShopperAt
           ? 'Your rider has arrived and is confirming items with '+shopperNm+' before heading to you'
           : 'A rider is on the way to '+shopperNm+' to collect your items')
@@ -3605,21 +3613,24 @@ function renderShopPhase(phase) {
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:11px 14px;margin-bottom:18px;text-align:left;">
         <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to ${shopperNm} after the rider confirms pickup of all your items.</div>
       </div>
-      ${(window._sfmSession&&window._sfmSession.deliveryCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:18px;text-align:center;">
+      ${(window._sfmSession&&window._sfmSession.deliveryCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;text-align:center;">
         <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Your Delivery Code</div>
         <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${window._sfmSession.deliveryCode}</div>
         <div style="font-size:11px;color:#9A9390;margin-top:6px;">Save this — give it to your rider once they arrive to deliver your items</div>
       </div>`:''}
+      ${(liveStatus==='RIDER_ASSIGNED'&&window._sfmSession&&window._sfmSession.riderArrivedShopperAt&&!handoverDone)?`<div style="background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);border-radius:13px;padding:12px 14px;margin-bottom:18px;text-align:left;">
+        <div style="font-size:12px;color:#3B9FE8;font-weight:700;">📞 ${shopperNm} will start a 3-way call with you and the rider shortly to confirm your items before handover — stay ready to join it.</div>
+      </div>`:''}
       <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-        <div style="font-size:32px;animation:float 2s ease-in-out infinite;flex-shrink:0;">🧑‍💼</div>
+        <div style="font-size:32px;${handoverDone?'':'animation:float 2s ease-in-out infinite;'}flex-shrink:0;">${handoverDone?'✅':'🧑‍💼'}</div>
         <div style="flex:1;">
-          <div style="font-weight:700;font-size:14px;">${waitingText}...</div>
-          <div style="font-size:12px;color:#9A9390;margin-top:3px;">This usually takes 2–5 minutes</div>
-          <div style="margin-top:8px;display:flex;gap:5px;">
+          <div style="font-weight:700;font-size:14px;">${waitingText}${handoverDone?'':'...'}</div>
+          ${handoverDone?'':'<div style="font-size:12px;color:#9A9390;margin-top:3px;">This usually takes 2–5 minutes</div>'}
+          ${handoverDone?'':`<div style="margin-top:8px;display:flex;gap:5px;">
             <div style="width:7px;height:7px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out 0s infinite;"></div>
             <div style="width:7px;height:7px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out .25s infinite;"></div>
             <div style="width:7px;height:7px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out .5s infinite;"></div>
-          </div>
+          </div>`}
         </div>
       </div>
       <div style="display:flex;gap:9px;margin-bottom:18px;">
@@ -4178,6 +4189,15 @@ function sfmSocketListeners(){
   _socket.on('shop-session:rider-fee-topup-required',function(p){
     if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
     promptRiderFeeTopUp(p.topUpRequiredKobo,p.distanceKm);
+  });
+  // Shopper confirmed handover to the rider (after the 3-way call) --
+  // flips the customer's waiting copy from "confirming items" to "rider
+  // has confirmed and picked up items" live, instead of them only finding
+  // out once the rider is already out for delivery.
+  _socket.on('shop-session:handover-confirmed',function(p){
+    if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
+    window._sfmSession.handoverConfirmedAt=new Date().toISOString();
+    if(window._sfmPhase==='packaging')renderShopPhase('packaging');
   });
   // The shopper priced/reset/removed an item on their own side (or the
   // shopper's UI needs to reflect the customer's own action bounced back
@@ -4930,11 +4950,35 @@ async function bcallSetupPeer(){
   };
   pc.onconnectionstatechange=function(){
     if(window._bcall!==c)return;
-    if(pc.connectionState==='connected'&&c.status!=='connected'){
-      c.status='connected';c.startedAt=Date.now();
-      renderBcallOverlay();
-      clearInterval(window._bcallTickTimer);
-      window._bcallTickTimer=setInterval(function(){if(window._bcall&&window._bcall.status==='connected')renderBcallOverlay();},1000);
+    if(pc.connectionState==='connected'){
+      clearTimeout(c._disconnectTimer);
+      if(c.status!=='connected'){
+        c.status='connected';c.startedAt=Date.now();
+        renderBcallOverlay();
+        clearInterval(window._bcallTickTimer);
+        window._bcallTickTimer=setInterval(function(){if(window._bcall&&window._bcall.status==='connected')renderBcallOverlay();},1000);
+      }
+      return;
+    }
+    // A real network drop (a rider moving through poor signal, etc.) used
+    // to leave window._bcall stuck at status:'connected' forever -- nothing
+    // ever detected the underlying media connection had actually died, so
+    // this side stayed permanently "busy" to any future caller with no way
+    // to recover short of a manual reload -- "the rider declined" when the
+    // rider's last call had simply dropped and nobody ever hung up.
+    // 'failed' is definitive; 'disconnected' can briefly self-recover (a
+    // short ICE hiccup), so give it a grace window before tearing down.
+    if(pc.connectionState==='failed'){
+      showToast&&showToast('Call connection lost','warning');
+      bcallTeardown();
+    }else if(pc.connectionState==='disconnected'){
+      clearTimeout(c._disconnectTimer);
+      c._disconnectTimer=setTimeout(function(){
+        if(window._bcall===c&&pc.connectionState!=='connected'){
+          showToast&&showToast('Call connection lost','warning');
+          bcallTeardown();
+        }
+      },8000);
     }
   };
 }
@@ -5058,6 +5102,7 @@ function bcallTeardown(){
   clearInterval(window._bcallTickTimer);
   var c=window._bcall;
   if(c){
+    clearTimeout(c._disconnectTimer);
     if(c.pc){try{c.pc.close();}catch(e){}}
     if(c.localStream){c.localStream.getTracks().forEach(function(t){try{t.stop();}catch(e){}});}
   }
@@ -6153,8 +6198,26 @@ function shopperRiderPhone(){
   var s=window._shopperSession;
   return (s&&s.rider&&s.rider.user&&s.rider.user.phone)||'';
 }
-function openShopperRiderChat(){
-  var s=window._shopperSession; var r=s&&s.rider;
+// window._shopperSession.rider can be genuinely missing here even after a
+// real rider IS assigned -- if this object was populated from an older
+// fetch (e.g. straight from shopperAcceptSession(), which only ever
+// returns a bare, relation-less update) and nothing since has refreshed
+// it, chat/call/location kept saying "not assigned yet" forever even with
+// a rider actively en route. One real re-fetch before giving up fixes it
+// without needing every single call site upstream to always remember to
+// keep this in sync.
+async function _shopperEnsureFreshSessionForRider(){
+  var s=window._shopperSession;
+  if(s&&s.rider&&s.rider.user)return s;
+  if(!s)return null;
+  try{
+    var res=await api('/shop-sessions/'+s.id);
+    window._shopperSession=res.session;
+    return res.session;
+  }catch(e){ return s; }
+}
+async function openShopperRiderChat(){
+  var s=await _shopperEnsureFreshSessionForRider(); var r=s&&s.rider;
   if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
   var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
   openChat({name:r.user.name||'Rider',em:'🏍️',phone:r.user.phone||'',otherUserId:r.user.id,contextType:'SHOP_SESSION',contextId:s.id});
@@ -6162,8 +6225,8 @@ function openShopperRiderChat(){
 // Lets the shopper check in on the rider's delivery progress after
 // handover, once they're already free to accept new sessions — same
 // decorative map treatment the customer's own tracking screen uses.
-function openShopperRiderLocationModal(){
-  var s=window._shopperSession; var r=s&&s.rider;
+async function openShopperRiderLocationModal(){
+  var s=await _shopperEnsureFreshSessionForRider(); var r=s&&s.rider;
   if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
   var arrived=s.riderArrivedCustomerAt;
   var html='<div id="shopper-rider-loc-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10002;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.remove()">'
@@ -6227,12 +6290,16 @@ function doShopRiderCall(type) {
   else toast('Opening WhatsApp call to Chidi \ud83d\udcac');
 }
 
-function shopperHandoverConfirmed() {
+async function shopperHandoverConfirmed() {
   const s = window._shopperSession;
   if(!s || !s.confirmCallCompletedAt) {
     showToast('Complete the 3-way confirm call with the rider and customer first 📞', 'warning');
     return;
   }
+  try{
+    var res=await api('/shop-sessions/'+s.id+'/handover-confirmed',{method:'POST'});
+    if(res&&res.session)window._shopperSession=Object.assign({},s,res.session);
+  }catch(err){ showToast&&showToast(err.message||'Could not confirm handover','warning'); return; }
   showToast('Handover confirmed! Now allocate payments to your sellers 💸','success');
   renderShopperPhase('sellerPayout');
 }
@@ -7388,6 +7455,16 @@ function riderBindDispatchListeners(){
   if(!_socket||_socket._riderDispatchBound)return;
   _socket._riderDispatchBound=true;
   _socket.on('dispatch:new-shop-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
+  // Shopper tapped "Confirm Handover to Rider" after the 3-way call --
+  // real-time flips the rider's screen from "confirming items" straight
+  // to "handed over, press Items Collected" instead of them having to
+  // guess or reload to find out.
+  _socket.on('shop-session:handover-confirmed',function(p){
+    var s=window._riderActiveSession;
+    if(!s||p.sessionId!==s.id)return;
+    s.handoverConfirmedAt=new Date().toISOString();
+    if(S.curScreen==='rider')riderMapPhase1();
+  });
 }
 
 // Re-tapping the Map tab used to always show a static fake "Mamas Kitchen,
@@ -7577,6 +7654,25 @@ async function submitReport(){
     toast('Report submitted! Our team will contact you within 30 mins.');
     if(wasOrderLive){
       var rm=document.getElementById('rating-modal');if(rm)rm.style.display='flex';
+    }else if(_eRole==='customer'&&(_reportContext==='shopper_session'||_reportContext==='rider')&&_reportContextId){
+      // A Shop-For-Me session has two separately-reportable parties
+      // (shopper and rider) shown as two buttons on the same screen --
+      // unconditionally leaving for home the instant either one was filed
+      // meant the other button was gone the moment you might still want
+      // it. Only actually leave once both have real filed tickets;
+      // otherwise land back on the same detail with whichever Report
+      // button is still open still right there.
+      try{
+        var freshSess=await api('/shop-sessions/'+_reportContextId);
+        var bothReported=!!freshSess.shopperReportTicket&&!!freshSess.riderReportTicket;
+        if(bothReported){
+          eGo('home');
+        }else if(window._sfmPhase==='done'){
+          renderShopPhase('done');
+        }else{
+          openCustomerHistoryDetail('session',_reportContextId);
+        }
+      }catch(e){ eGo('home'); }
     }else{
       eGo(_eRole==='customer'?'home':_eRole);
     }
@@ -7733,10 +7829,22 @@ async function showRiderRideDetail(id){
   try{ s=(await api('/shop-sessions/'+id)).session; }
   catch(err){ body.innerHTML='<div style="padding:52px 16px 24px;"><div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load delivery')+'</div></div>'; return; }
   var earned=Math.round((s.riderFeeKobo||0)*0.8/100);
+  // Session/delivery details first, Report Customer + Report Shopper
+  // together underneath -- was interleaved (a contact card + its own
+  // report button, repeated per party, details last), not this order.
   body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="showRiderRideHistory()" class="ibtn">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Delivery #'+s.id.slice(0,8)+'</h2></div>'
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F464; Customer</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+((s.customer&&s.customer.name)||'—')+'</div><button onclick="showReportIssue(\'customer\',\''+s.id+'\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button></div>'
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F6D2; Shopper</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+((s.shopper&&s.shopper.user&&s.shopper.user.name)||'—')+'</div><button onclick="showReportIssue(\'shopper_session\',\''+s.id+'\')" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">&#x26A0;&#xFE0F; Report Shopper</button></div>'
-    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:8px;">&#x1F4E6; Delivery</div><div style="font-size:11px;color:#9A9390;margin-bottom:4px;">'+s.status.replace(/_/g,' ')+' &#x2022; Earned: '+N(earned)+'</div><div style="font-size:12px;color:#9A9390;">'+(s.deliveryAddress||'Address not recorded')+'</div></div>';
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
+    +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:10px;">&#x1F4E6; Delivery</div>'
+    +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Status</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+s.status.replace(/_/g,' ')+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Customer</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((s.customer&&s.customer.name)||'—')+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Shopper</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+((s.shopper&&s.shopper.user&&s.shopper.user.name)||'—')+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Delivery Address</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+(s.deliveryAddress||'Address not recorded')+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:7px 0;"><span style="font-size:12px;color:#9A9390;">Earned</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">'+N(earned)+'</span></div>'
+    +'</div>'
+    +'<div style="display:flex;gap:10px;">'
+    +'<button onclick="showReportIssue(\'customer\',\''+s.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button>'
+    +'<button onclick="showReportIssue(\'shopper_session\',\''+s.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x26A0;&#xFE0F; Report Shopper</button>'
+    +'</div>';
 }
 
 function openAddSellerToPayoutModal(){
@@ -8309,7 +8417,7 @@ function renderShopperHome() {
             <div style="width:8px;height:8px;border-radius:50%;background:#2ECC71;animation:pulse 1s infinite;"></div>
           </div>
           <div style="font-size:13px;color:#9A9390;" id="active-session-summary"></div>
-          <button class="btn btn-primary" style="margin-top:12px;background:#2ECC71;font-size:13px;padding:10px;" onclick="renderShopperPhase('liveCall')">▶ Return to Live Session</button>
+          <button class="btn btn-primary" style="margin-top:12px;background:#2ECC71;font-size:13px;padding:10px;" onclick="restoreActiveShopSession('shopper')">▶ Track This Delivery</button>
         </div>
       </div>
 
@@ -8362,6 +8470,29 @@ function renderShopperHome() {
     var w=document.getElementById('shopper-week-display'); if(w)w.textContent='₦'+Number(Math.round(res.earnings.weeklyKobo/100)).toLocaleString();
   }).catch(function(){});
   if(isShopperOnline)loadShopperAvailableSessions();
+  refreshShopperActiveSessionBanner();
+}
+// The active-session banner used to only ever get switched on once, at the
+// moment shopperAcceptSession() ran, by directly patching the DOM -- since
+// renderShopperHome() rebuilds #shopper-body from scratch on every visit
+// (nav tab, logout/login, a real page reload), that one-time patch was
+// gone the next time the shopper simply came back to their own home
+// screen, even mid-delivery -- exactly "I went home and lost my way back
+// to the rider." Re-checked for real, every time home renders, and now
+// covers OUT_FOR_DELIVERY too so it stays up until the rider actually
+// delivers, not just until handover.
+async function refreshShopperActiveSessionBanner(){
+  var banner=document.getElementById('active-session-banner');
+  if(!banner)return;
+  try{
+    var rs=await api('/shop-sessions?as=shopper');
+    var active=(rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
+    banner=document.getElementById('active-session-banner');if(!banner)return; // home may have re-rendered while this was in flight
+    if(!active){banner.style.display='none';return;}
+    banner.style.display='block';
+    var sum=document.getElementById('active-session-summary');
+    if(sum)sum.textContent=(active.customer?active.customer.name:'Customer')+' • '+(active.deliveryAddress||'Address pending')+' • '+active.status.replace(/_/g,' ');
+  }catch(e){}
 }
 
 // ── Shopper session flow (mirrors customer phases exactly) ──────────────
@@ -9171,7 +9302,8 @@ function riderMapPhase1(){
   var shopperLoc=(s&&s.shopper&&(s.shopper.market||(s.shopper.user&&s.shopper.user.address)))||'';
   var pickupLabel='Shopper';
   var arrived=s&&s.riderArrivedShopperAt;
-  var pickupHeading=arrived?'Confirming Items with '+shopperName+' - To be collected for delivery':'Heading to '+shopperName+'’s Location';
+  var handoverDone=s&&s.handoverConfirmedAt;
+  var pickupHeading=handoverDone?'Items have been handed over to you - press Items Collected':(arrived?'Confirming Items with '+shopperName+' - To be collected for delivery':'Heading to '+shopperName+'’s Location');
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
@@ -9194,16 +9326,21 @@ function riderMapPhase1(){
     +'<button class="btn" style="flex:1;padding:9px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;font-size:12px;" onclick="riderCallShopper()">📞 Call</button>'
     +'</div>'
     +'</div>'
-    +(arrived?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ You marked arrival — waiting for handover</div>'
+    +(handoverDone
+      ?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Items handed over — press Items Collected below to head to the customer</div>'
+      :arrived
+      ?'<div style="background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#3B9FE8;font-weight:700;font-size:13px;">✅ You marked arrival — '+shopperName+' will start a 3-way call with you and the customer to confirm the items. Stay ready to join it, then wait for handover.</div>'
       :'<button onclick="riderMarkArrivedAtShopper()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F5A623;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
     // Customer's own details/chat/call only make sense once the rider is
     // actually heading to deliver to them (riderMapPhase2) -- showing them
     // here, while still heading to (or waiting at) the shopper with
     // nothing collected yet, let the rider "contact the customer" about a
-    // delivery that hasn't even started. Same reasoning gates the confirm
-    // button below on having arrived first.
-    +'<button onclick="riderConfirmPickup()" '+(arrived?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;'+(arrived?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Items Collected — Head to Customer</button>'
-    +(arrived?'':'<div style="text-align:center;color:#9A9390;font-size:11px;margin-top:6px;">Mark "I\'ve Arrived" above once you\'re at '+shopperName+'\'s location</div>')
+    // delivery that hasn't even started. The confirm button below now
+    // gates on the shopper's real handover confirmation, not just the
+    // rider's own arrival -- pressing it before the shopper has actually
+    // handed anything over never made sense.
+    +'<button onclick="riderConfirmPickup()" '+(handoverDone?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;'+(handoverDone?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Items Collected — Head to Customer</button>'
+    +(handoverDone?'':'<div style="text-align:center;color:#9A9390;font-size:11px;margin-top:6px;">'+(arrived?shopperName+' still needs to confirm handover':'Mark "I\'ve Arrived" above once you\'re at '+shopperName+'\'s location')+'</div>')
     +'</div>';
 }
 // A rider only ever has two people they'd be reporting mid-delivery — the
@@ -9223,18 +9360,23 @@ function riderMapPhase2(){
   if(!body)return;
   var s=window._riderActiveSession;
   var customerName=(s&&s.customer&&s.customer.name)||'the customer';
+  var shopperName=(s&&s.shopper&&s.shopper.user&&s.shopper.user.name)||'the shopper';
+  var arrivedAtCustomer=s&&s.riderArrivedCustomerAt;
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
-    +'<div style="width:10px;height:10px;border-radius:50%;background:#2ECC71;flex-shrink:0;animation:pulse .8s infinite;"></div>'
-    +'<div style="font-family:\'Playfair Display\',serif;font-size:17px;font-weight:900;color:#2ECC71;">Items Collected &mdash; Heading to Customer</div>'
+    // Once arrived, there's nothing left to "track" -- freeze the live-
+    // motion cues (pulsing dot, LIVE badge) instead of implying the map is
+    // still updating a position that's no longer changing.
+    +'<div style="width:10px;height:10px;border-radius:50%;background:#2ECC71;flex-shrink:0;'+(arrivedAtCustomer?'':'animation:pulse .8s infinite;')+'"></div>'
+    +'<div style="font-family:\'Playfair Display\',serif;font-size:17px;font-weight:900;color:#2ECC71;">'+(arrivedAtCustomer?'Arrived at Customer':'Items Collected &mdash; Heading to Customer')+'</div>'
     +'</div></div>'
     +'<div class="mapbox" style="margin:0 16px 14px;border-radius:18px;height:220px;">'
     +'<div class="mgrid"></div><div class="mroad"></div>'
     +'<div class="mpin" style="left:10%"><div class="mpc" style="width:36px;height:36px;background:#555;opacity:.5;">&#x1F6D2;</div><div class="mpl" style="color:#555;">Done</div></div>'
-    +'<div class="mpin mrider" style="left:60%"><div class="mpc" style="width:48px;height:48px;background:#2ECC71;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#2ECC71;font-weight:800;">You</div></div>'
+    +'<div class="mpin mrider" style="left:'+(arrivedAtCustomer?'88%':'60%')+';"><div class="mpc" style="width:48px;height:48px;background:#2ECC71;border:3px solid #111;">&#x1F6F5;</div><div class="mpl" style="color:#2ECC71;font-weight:800;">You</div></div>'
     +'<div class="mpin" style="right:5%"><div class="mpc" style="width:40px;height:40px;background:#3B9FE8;">&#x1F3E0;</div><div class="mpl" style="color:#3B9FE8;">'+customerName.split(' ')[0]+'</div></div>'
-    +'<div class="mlive">&#x25CF; LIVE</div>'
+    +'<div class="mlive" style="'+(arrivedAtCustomer?'color:#9A9390;background:rgba(154,147,144,.12);border-color:rgba(154,147,144,.3);':'')+'">'+(arrivedAtCustomer?'&#x25CF; ARRIVED':'&#x25CF; LIVE')+'</div>'
     +'</div>'
     +'<div style="padding:0 16px;">'
     +'<div style="background:#1C1C1C;border:1.5px solid rgba(46,204,113,.4);border-radius:14px;padding:14px;margin-bottom:12px;">'
@@ -9245,7 +9387,20 @@ function riderMapPhase2(){
     +'<button class="btn" style="flex:1;padding:9px;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;font-size:12px;" onclick="riderCallCustomer()">📞 Call</button>'
     +'</div>'
     +'</div>'
-    +(s&&s.riderArrivedCustomerAt?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Arrival marked — enter the code below to confirm</div>'
+    // The rider might struggle to find the customer's address and need to
+    // ask the shopper (who knows the delivery context) for help -- but the
+    // only way to reach the shopper was previously back on the pickup
+    // screen, long gone by this point. Real means to reach them, same as
+    // the customer card above.
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
+    +'<div style="font-size:12px;color:#9A9390;margin-bottom:2px;">Need help finding the customer? Reach the shopper</div>'
+    +'<div style="font-weight:700;color:#F2EDE8;margin-bottom:8px;">'+shopperName+'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;font-size:12px;" onclick="riderChatWithShopper()">💬 Chat</button>'
+    +'<button class="btn" style="flex:1;padding:9px;background:rgba(245,166,35,0.10);border:1.5px solid rgba(245,166,35,.4);color:#F5A623;font-size:12px;" onclick="riderCallShopper()">📞 Call</button>'
+    +'</div>'
+    +'</div>'
+    +(arrivedAtCustomer?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Arrival marked — enter the code below to confirm</div>'
       :'<button onclick="riderMarkArrivedAtCustomer()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(46,204,113,.4);background:rgba(46,204,113,.08);color:#2ECC71;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
     +'<button onclick="finishDelivery()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Confirm Delivery Complete</button>'
     +'</div>';

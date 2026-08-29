@@ -662,6 +662,13 @@ model ShopSession {
   // pickup/delivery OTP codes.
   confirmCallCompletedAt DateTime?
 
+  // Set the moment the shopper taps "Confirm Handover to Rider" (after the
+  // 3-way call), purely a live progress signal for the rider's and
+  // customer's own screens ("items handed over") -- distinct from the real
+  // pickup transition, which still only happens once the rider actually
+  // enters the pickup code via markOutForDelivery.
+  handoverConfirmedAt DateTime?
+
   createdAt   DateTime  @default(now())
   matchedAt   DateTime?
   deliveredAt DateTime?

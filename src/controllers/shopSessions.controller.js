@@ -961,6 +961,15 @@ const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
     if (req.user.riderProfile) {
       await prisma.riderProfile.update({ where: { id: req.user.riderProfile.id }, data: { deliveries: { increment: 1 } } });
     }
+    // Nothing told the shopper delivery actually happened -- their own
+    // involvement doesn't end until this fires, and the home-screen
+    // "track this delivery" banner relies on a real DELIVERED status to
+    // know when to stop showing itself.
+    const io = req.app.get("io");
+    if (session.shopperId) {
+      const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+      if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Delivery complete", "Your rider has delivered the items to the customer.", { sessionId: session.id }).catch(() => {});
+    }
   },
 });
 
@@ -1034,6 +1043,31 @@ async function completeConfirmCall(req, res, next) {
       : await prisma.shopSession.update({ where: { id: session.id }, data: { confirmCallCompletedAt: new Date() } });
 
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-completed", { sessionId: session.id });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Shopper taps "Confirm Handover to Rider" after the 3-way call -- purely a
+// live progress signal for the rider's and customer's own screens ("items
+// handed over") so their copy updates for real instead of staying frozen
+// on "confirming items" forever. The actual pickup transition still only
+// happens once the rider enters the real pickup code via markOutForDelivery
+// below -- this doesn't touch session.status at all.
+async function confirmHandover(req, res, next) {
+  try {
+    if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    if (session.shopperId !== req.user.shopperProfile.id) return res.status(403).json({ error: "You are not the shopper on this session." });
+    if (!session.confirmCallCompletedAt) return res.status(409).json({ error: "Complete the 3-way confirm call first." });
+
+    const updated = session.handoverConfirmedAt
+      ? session
+      : await prisma.shopSession.update({ where: { id: session.id }, data: { handoverConfirmedAt: new Date() } });
+
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:handover-confirmed", { sessionId: session.id });
     res.json({ session: updated });
   } catch (err) {
     next(err);
@@ -1283,6 +1317,7 @@ module.exports = {
   riderArrivedCustomer,
   startConfirmCall,
   completeConfirmCall,
+  confirmHandover,
   confirmSession,
   finalizeAutoReleasedSessions,
   cancelSession,
