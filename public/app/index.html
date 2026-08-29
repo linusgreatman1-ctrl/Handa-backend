@@ -1187,6 +1187,16 @@ function connectSocket(){
     if(n.data&&(n.data.bookingId||n.data.sessionId)&&document.getElementById('history-list')&&typeof renderEHistory==='function'){
       renderEHistory();
     }
+    // Same gap on the shopper's own home banner -- it's only ever
+    // refetched when renderShopperHome() itself runs (nav away and back,
+    // reload), so a shopper sitting on their own home screen when the
+    // rider arrives/delivers saw stale text or a banner that lingered for
+    // however long they happened to stay put, instead of updating the
+    // moment the real notify() for it already arrives (both
+    // rider-arrived-customer and markDelivered above carry sessionId).
+    if(n.data&&n.data.sessionId&&document.getElementById('active-session-banner')&&typeof refreshShopperActiveSessionBanner==='function'){
+      refreshShopperActiveSessionBanner();
+    }
     // A new chat message's own real-time push (chat:message) only ever
     // reaches a socket that's already joined chat:{threadId} -- which
     // never happens for a brand-new conversation the recipient hasn't
