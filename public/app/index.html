@@ -1192,7 +1192,16 @@ function connectSocket(){
     // rides the same personal user:{id} room every push already uses
     // (always delivered, no extra room-join needed), so trigger the same
     // banner from here instead.
-    if(n.type==='CHAT'&&n.data&&n.data.threadId&&n.data.threadId!==window._activeChatThreadId){
+    // Same embedded-live-call-chat suppression as the chat:message listener
+    // below -- this notification:new push is a SEPARATE delivery path (see
+    // its own comment above) that was missing this guard entirely, so a
+    // message sent from the live-call chat panel silently reached the
+    // recipient's own copy of the panel via chat:message (correctly
+    // suppressed there) but STILL popped the "wants to chat with you"
+    // banner from here, since this listener never checked _sfmChatThreadId
+    // or the panel's DOM presence at all.
+    if(n.type==='CHAT'&&n.data&&n.data.threadId&&n.data.threadId!==window._activeChatThreadId
+      &&!(n.data.threadId===window._sfmChatThreadId&&(document.getElementById('live-chat-msgs')||document.getElementById('shopper-chat-msgs')))){
       var roleWord={CUSTOMER:'Customer',VENDOR:'Vendor',RIDER:'Rider',SHOPPER:'Shopper',ADMIN:'Support'}[n.data.senderRole]||'Someone';
       var name=n.data.senderRole==='ADMIN'?'Handa Support':(n.data.senderName||roleWord);
       showChatRequestBanner(name,roleWord,n.data.threadId);
@@ -3712,9 +3721,9 @@ function renderShopPhase(phase) {
           <line x1="0" y1="38%" x2="100%" y2="38%" stroke="rgba(100,48,200,.1)" stroke-width="3"/>
           <line x1="32%" y1="0" x2="32%" y2="100%" stroke="rgba(100,48,200,.1)" stroke-width="3"/>
         </svg>
-        <div style="position:absolute;top:32%;left:27%;font-size:22px;animation:carPulse 2s ease-in-out infinite;">
+        <div style="position:absolute;top:32%;left:${_riderAtCustomer?'70%':'27%'};font-size:22px;${_riderAtCustomer?'':'animation:carPulse 2s ease-in-out infinite;'}transition:left 1s;">
           🏍️
-          <div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid #6430C8;animation:pingAnim 1.4s ease-in-out infinite;"></div>
+          ${_riderAtCustomer?'':'<div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid #6430C8;animation:pingAnim 1.4s ease-in-out infinite;"></div>'}
         </div>
         <div style="position:absolute;top:8%;right:14%;font-size:20px;">📍</div>
         <div class="map-overlay-bottom"></div>
@@ -5640,6 +5649,14 @@ function renderShopperPhase(phase) {
         <div style="font-size:12px;color:#9A9390;">Package the items, then find a rider below. You will allocate seller payments in the app after the rider confirms pickup.</div>
       </div>
       <button class="btn btn-primary" onclick="renderShopperPhase('findRider')">🏍️ Find a Rider for Delivery</button>
+      <div class="card" style="text-align:left;margin-top:14px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px;">👤 ${shopperCustomerName()}</div>
+        <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Any issue while packaging? Reach your customer</div>
+        <div style="display:flex;gap:9px;">
+          <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="shopperChatCustomer()">💬 Chat</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="shopperCallCustomer()">📞 Call</button>
+        </div>
+      </div>
     </div>`;
 
   // PHASE D: Find a Rider (shopper uses app to request delivery)
@@ -5883,7 +5900,7 @@ function renderShopperPhase(phase) {
         <div style="font-size:13px;color:#9A9390;margin-bottom:10px;">You'll be notified once ${custNm} confirms the delivery is complete</div>
         <div style="display:flex;gap:9px;">
           <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="openShopperRiderChat()">💬 Chat</button>
-          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openCallModal('${rdrNm}','${shopperRiderPhone()}','Rider','🏍️','${shopperRiderUserId()}','${(window._shopperSession&&window._shopperSession.id)||''}')">📞 Call</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openShopperRiderCall()">📞 Call</button>
         </div>
         <button class="btn btn-outline" style="width:100%;margin-top:9px;" onclick="openShopperRiderLocationModal()">📍 View Rider Location</button>
       </div>
@@ -6221,6 +6238,16 @@ async function openShopperRiderChat(){
   if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
   var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
   openChat({name:r.user.name||'Rider',em:'🏍️',phone:r.user.phone||'',otherUserId:r.user.id,contextType:'SHOP_SESSION',contextId:s.id});
+}
+// Mirrors openShopperRiderChat's fresh-session guard -- the Payments Sent
+// screen's Call button used to read shopperRiderUserId() synchronously off
+// whatever window._shopperSession already held, which can be stale/missing
+// the rider relation, silently dropping the in-app call option from
+// openCallModal (it only shows in-app when otherUserId is non-empty).
+async function openShopperRiderCall(){
+  var s=await _shopperEnsureFreshSessionForRider(); var r=s&&s.rider;
+  if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
+  openCallModal(r.user.name||'Rider',r.user.phone||'','Rider','🏍️',r.user.id,s.id);
 }
 // Lets the shopper check in on the rider's delivery progress after
 // handover, once they're already free to accept new sessions — same
@@ -8491,7 +8518,9 @@ async function refreshShopperActiveSessionBanner(){
     if(!active){banner.style.display='none';return;}
     banner.style.display='block';
     var sum=document.getElementById('active-session-summary');
-    if(sum)sum.textContent=(active.customer?active.customer.name:'Customer')+' • '+(active.deliveryAddress||'Address pending')+' • '+active.status.replace(/_/g,' ');
+    if(sum)sum.textContent=active.riderArrivedCustomerAt
+      ? 'Rider has arrived — waiting for confirmation'
+      : (active.customer?active.customer.name:'Customer')+' • '+(active.deliveryAddress||'Address pending')+' • '+active.status.replace(/_/g,' ');
   }catch(e){}
 }
 
