@@ -616,10 +616,7 @@ async function startPackaging(req, res, next) {
 
     const callEndedAt = session.callEndedAt || new Date();
     const pausedMs = session.callPausedTotalMs + (session.callPausedAt ? Date.now() - session.callPausedAt.getTime() : 0);
-    // TEMP TEST OVERRIDE (revert before finishing): 1000 instead of 60000 so
-    // real seconds stand in for "minutes" to live-test the >30min tier
-    // without waiting 30 real minutes. MUST be reverted to 60000.
-    const durationMinutes = Math.max(1, Math.ceil(((callEndedAt - session.callStartedAt) - pausedMs) / 1000));
+    const durationMinutes = Math.max(1, Math.ceil(((callEndedAt - session.callStartedAt) - pausedMs) / 60000));
     const realFeeKobo = sessionFeeForDuration(durationMinutes);
 
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "PACKAGING", callEndedAt, sessionFeeKobo: realFeeKobo } });
