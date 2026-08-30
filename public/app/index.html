@@ -3768,6 +3768,22 @@ function renderShopPhase(phase) {
         </div>
       </div>
 
+      <!-- Shopper stays reachable too -- the rider being on the way doesn't
+      mean an issue with the shopper's side can't still come up. -->
+      <div class="card" style="margin-bottom:12px;">
+        <div style="display:flex;gap:12px;align-items:center;">
+          <div style="width:52px;height:52px;background:rgba(245,166,35,0.10);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">🧑‍💼</div>
+          <div style="flex:1;">
+            <div style="font-weight:800;font-size:15px;">${sfmShopperName()}</div>
+            <div style="font-size:12px;color:#9A9390;margin-top:2px;">Your shopper</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;">
+            <button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="customerCallShopper()">📞</button>
+            <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(26,95,212,.4);" onclick="customerChatShopper()">💬</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Delivery code — give this to the rider on arrival -->
       <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;text-align:center;">
         <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Delivery Code</div>
@@ -3861,8 +3877,6 @@ function renderShopPhase(phase) {
       </div>
       <!-- Confirm all button -->
       <button class="btn btn-primary" id="shop-confirm-all-btn" style="background:linear-gradient(135deg,#2ECC71,#0F6035);margin-bottom:9px;" onclick="shopConfirmAllPayments()">✅ All Confirmed — Complete Order</button>
-      <!-- Report Issue AFTER payment — does not pause timer -->
-      <button class="btn btn-outline" style="color:#E8392E;border-color:rgba(232,57,46,0.10);" onclick="openShopReportIssueModal()">⚠️ Report an Issue</button>
     </div>`;
 
   // Start 90s auto-release timer for shop delivered
@@ -5926,6 +5940,17 @@ function renderShopperPhase(phase) {
           <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="openShopperRiderCall()">📞 Call</button>
         </div>
         <button class="btn btn-outline" style="width:100%;margin-top:9px;" onclick="openShopperRiderLocationModal()">📍 View Rider Location</button>
+      </div>
+
+      <!-- Customer stays reachable too -- the rider being on the way doesn't
+      mean an issue with the customer's side can't still come up. -->
+      <div class="card" style="margin-bottom:16px;text-align:left;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">👤 ${custNm}</div>
+        <div style="font-size:13px;color:#9A9390;margin-bottom:10px;">Reach your customer any time while the delivery is in progress</div>
+        <div style="display:flex;gap:9px;">
+          <button class="btn" style="flex:1;background:rgba(59,159,232,0.10);border:1.5px solid rgba(59,159,232,.4);color:#3B9FE8;" onclick="shopperChatCustomer()">💬 Chat</button>
+          <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="shopperCallCustomer()">📞 Call</button>
+        </div>
       </div>
 
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.25);border-radius:13px;padding:13px 15px;margin-bottom:18px;text-align:left;">
@@ -8329,33 +8354,6 @@ async function shopConfirmAllPayments(auto){
       : (err.message||'Could not release escrow'),'warning');
   }
 }
-var _selectedShopIssue='';
-function selectShopIssue(label){
-  _selectedShopIssue=label;
-  var disp=document.getElementById('shop-issue-selected');
-  if(disp){disp.style.display='block';disp.textContent='Selected: '+label;}
-}
-async function submitShopReport(){
-  if(!_selectedShopIssue){toast('Please select an issue category');return;}
-  var refundEl=document.getElementById('shop-issue-refund');
-  var refundNaira=refundEl?parseFloat(refundEl.value):NaN;
-  var evidenceEl=document.getElementById('shop-issue-evidence');
-  try{
-    var res = await api('/support/tickets',{method:'POST',body:JSON.stringify({
-      context:'SHOP_SESSION',
-      category:_selectedShopIssue,
-      contextId:window._sfmSession?window._sfmSession.id:undefined,
-      isDispute: !!(refundNaira>0 || (evidenceEl&&evidenceEl.files&&evidenceEl.files[0])),
-      requestedRefundKobo: refundNaira>0 ? Math.round(refundNaira*100) : undefined,
-    })});
-    if(evidenceEl&&evidenceEl.files&&evidenceEl.files[0]) await uploadTicketEvidence(res.ticket.id, evidenceEl);
-    closeBottomSheet();
-    toast('Report submitted. Support will contact you within 1 hour.');
-  }catch(err){
-    toast(err.message||'Could not submit report');
-  }
-  _selectedShopIssue='';
-}
 function showBottomSheet(title,content){
   var existing=document.getElementById('sfm-bottom-sheet');
   if(existing)existing.remove();
@@ -8381,25 +8379,6 @@ function closeBottomSheet(){
   if(el)el.remove();
   window._openBookingDetailId=null;window._openBookingDetailViewer=null;
 }
-function openShopReportIssueModal(){
-  var issues=[['Wrong/Missing Items','#E8392E'],['Damaged Items','#E8392E'],
-    ['Overcharged','#F5A623'],['Excessive Delay','#F5A623'],
-    ['Wrong Address','#3B9FE8'],['Rider Unreachable','#3B9FE8']];
-  var issueHtml=issues.map(function(p){
-    return '<button onclick="selectShopIssue(this.textContent)" style="background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:10px;cursor:pointer;font-size:12px;font-weight:700;color:'+p[1]+';text-align:left;display:block;width:100%;margin-bottom:6px;">'+p[0]+'</button>';
-  }).join('');
-  showBottomSheet('Report an Issue',
-    '<div style="background:rgba(232,57,46,.1);border:1.5px solid rgba(232,57,46,.25);border-radius:13px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#9A9390;">Reporting will pause auto-payment. Support reviews within 1 hour.</div>'
-    +'<div id="shop-issue-selected" style="display:none;background:rgba(46,204,113,.1);border:1.5px solid rgba(46,204,113,.3);border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:13px;color:#2ECC71;font-weight:700;"></div>'
-    +issueHtml
-    +'<textarea id="shop-issue-detail" placeholder="Additional details (optional)..." rows="3" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:10px;color:#F2EDE8;font-size:13px;resize:none;margin-bottom:12px;box-sizing:border-box;"></textarea>'
-    +'<input id="shop-issue-refund" type="number" placeholder="₦ refund requested (optional)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:10px;color:#F2EDE8;font-size:13px;margin-bottom:12px;box-sizing:border-box;">'
-    +'<input id="shop-issue-evidence" type="file" accept="image/*" style="width:100%;color:#9A9390;font-size:12px;margin-bottom:12px;">'
-    +'<button onclick="submitShopReport()" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-bottom:8px;">Submit Report</button>'
-    +'<button onclick="closeBottomSheet()" style="width:100%;background:transparent;border:1.5px solid #2A2850;border-radius:14px;padding:13px;font-size:14px;font-weight:700;color:#9A9390;cursor:pointer;">Back to Payment</button>'
-  );
-}
-
 // ═══════════════════════════════════════════════════════
 // SHOPPER PAGE — Complete rewrite, all CityChef native
 // ═══════════════════════════════════════════════════════
@@ -8643,7 +8622,8 @@ async function openShopperSessionDetail(id) {
         <div style="flex:1;"><div style="font-weight:700;font-size:14px;">${s.rider.user.name}</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">${s.rider.vehicleType||''}${s.rider.plateNumber?' • '+s.rider.plateNumber:''}</div></div>
       </div>` : `<div style="font-size:12px;color:#9A9390;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #2A2850;">No rider assigned yet</div>`}
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Items Cost</span><span style="font-weight:800;">₦${Math.round((s.itemsTotalKobo||0)/100).toLocaleString()}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Your Session Fee</span><span style="font-weight:800;color:#F5A623;">₦${Math.round((s.sessionFeeKobo||0)*0.8/100).toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Session Fee (by call duration)</span><span style="font-weight:700;">₦${Math.round((s.sessionFeeKobo||0)/100).toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="color:#9A9390;font-size:13px;">Your Earnings (80% of fee)</span><span style="font-weight:800;color:#F5A623;">₦${Math.round((s.sessionFeeKobo||0)*0.8/100).toLocaleString()}</span></div>
     </div>
     ${canReport?`
     <div style="display:flex;gap:9px;">
@@ -8815,7 +8795,7 @@ async function renderShopperHistory() {
               <div style="font-weight:800;font-size:13px;color:#3B9FE8;">₦${Math.round((s.itemsTotalKobo||0)/100).toLocaleString()}</div>
             </div>
             <div style="background:#1C1C1C;border-radius:10px;padding:8px;text-align:center;">
-              <div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Your Fee</div>
+              <div style="font-size:10px;color:#9A9390;margin-bottom:2px;">Your Earnings</div>
               <div style="font-weight:800;font-size:13px;color:#F5A623;">₦${Math.round((s.sessionFeeKobo||0)*0.8/100).toLocaleString()}</div>
             </div>
           </div>
@@ -9947,6 +9927,14 @@ async function tryRestoreSession(attempt){
       var resumedShopper=await restoreActiveShopSession('shopper');
       if(!resumedShopper)afterShopperAuth();
       var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}
+      // This whole branch bypasses eGo() (calls restoreActiveShopSession/
+      // afterShopperAuth directly instead), so eGo()'s own "show the
+      // notif bell for any non-login screen" line never ran for a shopper
+      // restoring their session -- which is the normal path on every
+      // return visit/reload, not an edge case. Every other role either
+      // goes through eGo() directly or falls back to it, so only shopper
+      // was actually missing this.
+      var nb0=document.getElementById('notif-bell');if(nb0)nb0.style.display='flex';
     }
     else if(_eRole==='cook'){eGo('cook');}
     else if(_eRole==='event_planner'){eGo('event_planner');}
