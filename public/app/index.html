@@ -806,7 +806,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       </button>
     </div>
     <button id="escrow-confirm-btn" onclick="confirmEscrowPayment()" style="width:100%;padding:14px;border-radius:13px;border:none;background:#E8392E;color:#fff;font-family:'DM Sans',sans-serif;font-weight:800;font-size:15px;cursor:pointer;opacity:.4;pointer-events:none;transition:all .2s;">🔒 Pay With Escrow & Place Order</button>
-    <button onclick="document.getElementById('escrow-modal').style.display='none'" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">Cancel</button>
+    <button onclick="cancelEscrowModal()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">Cancel</button>
   </div>
 </div>
 
@@ -3768,7 +3768,9 @@ function renderShopPhase(phase) {
     body.innerHTML = `<div class="fi">
       ${_riderAtCustomer?`<div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
         <span style="font-size:20px;">✅</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">${riderNm} has arrived — give them your delivery code below</span>
-      </div>`:''}
+      </div>`:`<div style="background:rgba(100,48,200,0.10);border:1.5px solid rgba(100,48,200,.3);border-radius:13px;padding:12px 15px;margin-bottom:14px;display:flex;gap:9px;align-items:center;">
+        <span style="font-size:20px;">🏍️</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">${riderNm} is on the way to deliver your items</span>
+      </div>`}
       <div class="map-box" style="height:160px;margin-bottom:14px;">
         <div class="map-grid"></div>
         <svg style="position:absolute;inset:0;width:100%;height:100%;">
@@ -4628,22 +4630,43 @@ async function depositAndFindShopper() {
   const addrEl=document.getElementById('shop-delivery-addr');
   if(!addrEl||!addrEl.value.trim()){showToast('Please enter a delivery address','warning');return;}
 
-  showPaymentModal('Deposit Budget into Escrow', async function(){
-    try{
-      var createRes=await api('/shop-sessions',{method:'POST',body:JSON.stringify({
-        deliveryAddress:addrEl.value.trim(),
-        items:validItems.map(function(i){return {text:i.text};}),
-      })});
-      window._sfmSession=createRes.session;
-      // Real items now have real backend ids — swap the client-side
-      // Date.now()-based ids for them so later approve/price calls (which
-      // reference item.id) hit the right row.
-      shopItems=createRes.session.items.map(function(it){return {id:it.id,text:it.text,approved:it.approved,price:it.priceKobo?Math.round(it.priceKobo/100):null};});
-      await payForShopSessionDeposit(budgetKobo);
-    }catch(err){
-      showToast(err.message||'Could not start your session','warning');
-    }
-  });
+  // The session is created FIRST (not inside the escrow modal's confirm
+  // callback, like before) specifically so the real sessionFeeKobo/
+  // riderFeeKobo it gets stamped with at creation are known before the
+  // customer ever sees a total -- paySession charges budgetKobo PLUS
+  // both of those together as one deposit, but the modal used to only
+  // ever show/confirm the raw budget number typed into the field, so
+  // what got debited was always more than what was shown and confirmed.
+  // If the customer cancels here, the just-created (still unpaid, real
+  // status default SEARCHING) session is explicitly cancelled instead of
+  // left orphaned -- same real cancel endpoint used everywhere else,
+  // harmless no-op refund since nothing was ever actually paid into it.
+  try{
+    var createRes=await api('/shop-sessions',{method:'POST',body:JSON.stringify({
+      deliveryAddress:addrEl.value.trim(),
+      items:validItems.map(function(i){return {text:i.text};}),
+    })});
+    window._sfmSession=createRes.session;
+    // Real items now have real backend ids — swap the client-side
+    // Date.now()-based ids for them so later approve/price calls (which
+    // reference item.id) hit the right row.
+    shopItems=createRes.session.items.map(function(it){return {id:it.id,text:it.text,approved:it.approved,price:it.priceKobo?Math.round(it.priceKobo/100):null};});
+    var sessionFeeKobo=createRes.session.sessionFeeKobo||0, riderFeeKobo=createRes.session.riderFeeKobo||0;
+    var totalKobo=budgetKobo+sessionFeeKobo+riderFeeKobo;
+    openEscrowModal(Math.round(totalKobo/100), function(){
+      payForShopSessionDeposit(budgetKobo);
+    }, [
+      ['Items Budget', Math.round(budgetKobo/100)],
+      ['Shopper Session Fee', Math.round(sessionFeeKobo/100)],
+      ['Rider Delivery Fee', Math.round(riderFeeKobo/100)],
+    ], function(){
+      var sid=window._sfmSession&&window._sfmSession.id;
+      window._sfmSession=null;
+      if(sid)api('/shop-sessions/'+sid+'/cancel',{method:'POST'}).catch(function(){});
+    });
+  }catch(err){
+    showToast(err.message||'Could not start your session','warning');
+  }
 }
 
 // Real chat thread scoped to this Shop-For-Me session — one thread shared
@@ -6320,7 +6343,20 @@ async function openShopperRiderChat(){
   var s=await _shopperEnsureFreshSessionForRider(); var r=s&&s.rider;
   if(!r||!r.user){showToast&&showToast('Rider not assigned yet','warning');return;}
   var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
-  openChat({name:r.user.name||'Rider',em:'🏍️',phone:r.user.phone||'',otherUserId:r.user.id,contextType:'SHOP_SESSION',contextId:s.id});
+  // '-shopper-rider' suffix keeps this pair's thread distinct from the
+  // customer<->shopper thread (bare session id, already used by the
+  // live-call embedded chat) and the customer<->rider thread ('-rider'
+  // suffix, see openShopChatModal) -- all three pairs share the same
+  // sessionId, and openThread's own lookup is scoped to "a thread with
+  // this contextId that *I* (the requester) am already a participant
+  // of", not the full participant set. Reusing the bare id here meant a
+  // shopper who'd already been in the customer<->shopper thread got that
+  // SAME thread handed back for "chat with rider" too (their own lookup
+  // matched it), silently sending shopper<->rider messages into the
+  // customer's own conversation instead -- no visible error, since the
+  // shopper really is a participant of what got reused, just not the
+  // thread they meant to be in.
+  openChat({name:r.user.name||'Rider',em:'🏍️',phone:r.user.phone||'',otherUserId:r.user.id,contextType:'SHOP_SESSION',contextId:s.id+'-shopper-rider'});
 }
 // Mirrors openShopperRiderChat's fresh-session guard -- the Payments Sent
 // screen's Call button used to read shopperRiderUserId() synchronously off
@@ -6859,12 +6895,35 @@ async function confirmSellerPayouts() {
 
 // ── Generic modal helper (for seller picker) ──────────────────────────────────
 
-function openEscrowModal(total,cb){
-  _escrowTotal=total;_escrowCallback=cb;_escrowMethod=null;
+// breakdown (optional): [[label, amountNaira], ...] -- shown under the
+// total so a charge made up of more than one part (e.g. Shop-For-Me's
+// items budget + session fee + rider fee, all collected in one deposit)
+// is actually itemized instead of the customer only ever seeing one lump
+// number that doesn't match what gets debited. onCancel (optional) runs
+// when Cancel is tapped, in addition to just hiding the modal -- lets a
+// caller that already created a real (unpaid) record before opening this
+// clean it up instead of leaving an orphan.
+function openEscrowModal(total,cb,breakdown,onCancel){
+  _escrowTotal=total;_escrowCallback=cb;_escrowMethod=null;_escrowOnCancel=onCancel||null;
   document.querySelectorAll('#escrow-pay-methods button').forEach(function(b){b.style.borderColor='#2A2850';b.style.background='#242424';});
   var btn=document.getElementById('escrow-confirm-btn');if(btn){btn.style.opacity='.4';btn.style.pointerEvents='none';}
   var amt=document.getElementById('escrow-amount');if(amt)amt.textContent='\u20a6'+Number(total).toLocaleString();
+  var summary=document.getElementById('escrow-order-summary');
+  var bd=document.getElementById('escrow-breakdown');
+  if(breakdown&&breakdown.length){
+    if(!bd&&summary){bd=document.createElement('div');bd.id='escrow-breakdown';bd.style.cssText='margin-top:10px;padding-top:10px;border-top:1px solid #2A2850;';summary.appendChild(bd);}
+    if(bd){
+      bd.style.display='block';
+      bd.innerHTML=breakdown.map(function(row){
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;"><span style="color:#9A9390;">'+row[0]+'</span><span style="color:#F2EDE8;font-weight:700;">\u20a6'+Number(row[1]).toLocaleString()+'</span></div>';
+      }).join('');
+    }
+  }else if(bd){bd.style.display='none';}
   document.getElementById('escrow-modal').style.display='flex';
+}
+function cancelEscrowModal(){
+  document.getElementById('escrow-modal').style.display='none';
+  if(_escrowOnCancel){var fn=_escrowOnCancel;_escrowOnCancel=null;fn();}
 }
 function selectEscrowMethod(btn,method){
   _escrowMethod=method;
@@ -6874,6 +6933,7 @@ function selectEscrowMethod(btn,method){
 }
 function confirmEscrowPayment(){
   document.getElementById('escrow-modal').style.display='none';
+  _escrowOnCancel=null;
   toast('\u20a6'+Number(_escrowTotal).toLocaleString()+' locked in escrow');
   if(_escrowCallback){_escrowCallback();_escrowCallback=null;}
 }
@@ -8068,13 +8128,6 @@ function showVendorTrackModal(riderName,eta){
 
 
 function goShopForMe(){buildShop();}
-
-function showPaymentModal(label, callback){
-  var budgetEl=document.getElementById('shop-budget');
-  var raw=budgetEl?budgetEl.value.replace(/[^0-9.]/g,''):'';
-  var amount=parseFloat(raw)||5000;
-  openEscrowModal(amount, callback);
-}
 
 function showToast(msg,type){
   toast(((type==="error"||type==="warning"||type==="success")?({"error":"🚨 ","warning":"⚠️ ","success":"✅ "}[type]):"")+(msg||""));
@@ -9369,7 +9422,10 @@ function riderChatWithShopper(){
   var s=window._riderActiveSession; var u=s&&s.shopper&&s.shopper.user;
   if(!u){showToast&&showToast('Shopper not available yet','warning');return;}
   var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
-  openChat({name:u.name||'Shopper',em:'🧑‍🦱',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id});
+  // '-shopper-rider' suffix -- must match openShopperRiderChat's own
+  // contextId exactly, see the comment there for why the bare session id
+  // isn't safe to reuse for this pair.
+  openChat({name:u.name||'Shopper',em:'🧑‍🦱',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id+'-shopper-rider'});
 }
 function riderCallShopper(){
   var s=window._riderActiveSession; var u=s&&s.shopper&&s.shopper.user;
@@ -9380,7 +9436,10 @@ function riderChatWithCustomer(){
   var s=window._riderActiveSession; var u=s&&s.customer;
   if(!u){showToast&&showToast('Customer not available yet','warning');return;}
   var ov=document.getElementById('chat-ov');if(ov)ov.style.zIndex='9600';
-  openChat({name:u.name||'Customer',em:'🏠',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id});
+  // '-rider' suffix -- must match the customer's own openShopChatModal
+  // contextId exactly (s.id+'-rider'), or each side ends up looking up a
+  // different thread for what's supposed to be the same conversation.
+  openChat({name:u.name||'Customer',em:'🏠',phone:u.phone||'',otherUserId:u.id,contextType:'SHOP_SESSION',contextId:s.id+'-rider'});
 }
 function riderCallCustomer(){
   var s=window._riderActiveSession; var u=s&&s.customer;
