@@ -3963,8 +3963,12 @@ function renderShopPhase(phase) {
         </div>
       </div>`)}
       <div style="display:flex;gap:10px;width:100%;margin-bottom:10px;">
-        <button onclick="showReportIssue('shopper_session','${done.id||''}')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">⚠️ Report Shopper</button>
-        <button onclick="showReportIssue('rider','${done.id||''}')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">⚠️ Report Rider</button>
+        ${done.shopperReportTicket
+          ?'<div style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(245,166,35,.35);background:rgba(245,166,35,.08);color:#F5A623;font-weight:700;font-size:12px;text-align:center;">Shopper reported — under review</div>'
+          :'<button onclick="showReportIssue(\'shopper_session\',\''+(done.id||'')+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Shopper</button>'}
+        ${done.riderReportTicket
+          ?'<div style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(245,166,35,.35);background:rgba(245,166,35,.08);color:#F5A623;font-weight:700;font-size:12px;text-align:center;">Rider reported — under review</div>'
+          :'<button onclick="showReportIssue(\'rider\',\''+(done.id||'')+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Rider</button>'}
       </div>
       <button class="btn btn-primary" style="width:100%;" onclick="go('home')">Back to Home 🏠</button>
     </div>`;
@@ -7778,6 +7782,14 @@ async function submitReport(){
         if(bothReported){
           eGo('home');
         }else if(window._sfmPhase==='done'){
+          // renderShopPhase('done') reads shopperReportTicket/riderReportTicket
+          // straight off window._sfmSession to decide whether to show "already
+          // reported" instead of the plain button again -- without merging
+          // them in here first, the screen looked completely unchanged after
+          // a real, successful submit (still two live "Report X" buttons,
+          // no confirmation either was ever filed), which is indistinguishable
+          // from the flow silently doing nothing.
+          if(window._sfmSession)window._sfmSession=Object.assign({},window._sfmSession,{shopperReportTicket:freshSess.shopperReportTicket,riderReportTicket:freshSess.riderReportTicket});
           renderShopPhase('done');
         }else{
           openCustomerHistoryDetail('session',_reportContextId);
