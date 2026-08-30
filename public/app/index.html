@@ -3373,7 +3373,21 @@ async function restoreActiveShopSession(role) {
       // Location) -- by the time the session reaches this status the
       // shopper has necessarily already been through handover+payouts, so
       // there's no earlier shopper-side step left to resume into.
-      var sPhase = {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound',OUT_FOR_DELIVERY:'escrowReleased'}[activeS.status]||'accepted';
+      //
+      // RIDER_ASSIGNED alone is ambiguous, though -- it covers BOTH
+      // "rider hasn't arrived/confirmed items yet" AND "shopper already
+      // confirmed handover and finished seller payouts, just waiting for
+      // the rider to actually leave" (status only flips to
+      // OUT_FOR_DELIVERY once the rider separately enters the pickup
+      // code -- a completely independent action from the shopper's own
+      // handover/payout flow). Mapping RIDER_ASSIGNED straight to
+      // 'riderFound' (the pre-handover 3-way-call/confirm-items screen)
+      // sent an already-done shopper backwards to "Confirming Items"
+      // every time they used Track This Delivery from their dashboard.
+      // handoverConfirmedAt is the real signal for "nothing left to do
+      // here" regardless of the raw status.
+      var sPhase = fullS.session.handoverConfirmedAt ? 'escrowReleased'
+        : {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound',OUT_FOR_DELIVERY:'escrowReleased'}[activeS.status]||'accepted';
       afterShopperAuth();
       shopperBindItemSocketListeners();
       await _joinShopSessionRoom(activeS.id);
