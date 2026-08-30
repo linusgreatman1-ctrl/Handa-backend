@@ -132,7 +132,10 @@ async function createSession(req, res, next) {
       include: { items: true },
     });
 
-    req.app.get("io")?.to("dispatch:shoppers").emit("shop-session:new", { sessionId: session.id });
+    // No dispatch:shoppers broadcast here -- the customer hasn't paid yet
+    // at this point (createSession only records what they want to shop
+    // for). Shoppers are only told about the session once the deposit
+    // actually lands, in orderFlow.confirmShopSessionPayment.
     res.status(201).json({ session });
   } catch (err) {
     next(err);
@@ -156,7 +159,10 @@ async function listSessions(req, res, next) {
         // riders get when a shopper calls POST /:id/find-rider.
         where = { status: "FINDING_RIDER", riderId: null };
       } else if (req.user.shopperProfile) {
-        where = { status: "SEARCHING", shopperId: null };
+        // depositKobo>0 excludes a session the customer created but hasn't
+        // actually paid for yet -- see the note in createSession/
+        // confirmShopSessionPayment.
+        where = { status: "SEARCHING", shopperId: null, depositKobo: { gt: 0 } };
       } else {
         return res.status(403).json({ error: "No shopper or rider profile found." });
       }
@@ -450,7 +456,7 @@ async function paySession(req, res, next) {
       await prisma.$transaction(async (tx) => {
         await walletSvc.debitWallet(req.user.id, amountKobo, "ESCROW_HOLD", { contextType: "SHOP_SESSION", contextId: session.id, description: "Shop-For-Me deposit" }, tx);
       });
-      const updated = await orderFlow.confirmShopSessionPayment(session.id, amountKobo);
+      const updated = await orderFlow.confirmShopSessionPayment(session.id, amountKobo, null, req.app.get("io"));
       return res.json({ session: updated, paid: true });
     }
 

@@ -78,7 +78,7 @@ async function applyVerifiedPayment(data, io) {
     return { purpose, bookingId: data.metadata.bookingId };
   }
   if (purpose === "SHOP_SESSION_PAYMENT") {
-    await orderFlow.confirmShopSessionPayment(data.metadata.sessionId, data.amount, data.reference);
+    await orderFlow.confirmShopSessionPayment(data.metadata.sessionId, data.amount, data.reference, io);
     return { purpose, sessionId: data.metadata.sessionId };
   }
   if (purpose === "SHOP_SESSION_CALL_TOPUP") {

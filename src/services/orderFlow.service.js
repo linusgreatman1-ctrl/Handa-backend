@@ -42,12 +42,23 @@ async function confirmBookingPayment(bookingId, reference, io) {
 // A ShopSession's deposit covers the session fee (released to the shopper
 // once matched) plus a shopping budget later disbursed to market sellers
 // via SellerPayout — see shopSessions.controller for that split.
-async function confirmShopSessionPayment(sessionId, amountKobo, reference) {
+//
+// This is also the one place, across all three payment methods (WALLET
+// immediate, Paystack verify/webhook, admin-confirmed manual bank
+// transfer — all three funnel into this function), where a session
+// actually becomes visible to shoppers. createSession itself does NOT
+// broadcast or list the session as available — a customer who has only
+// created the session but not yet paid must not have shoppers already
+// being asked to accept/decline it.
+async function confirmShopSessionPayment(sessionId, amountKobo, reference, io) {
   const session = await prisma.shopSession.findUnique({ where: { id: sessionId } });
   if (!session) throw Object.assign(new Error("Shop session not found."), { status: 404 });
 
   const updated = await prisma.shopSession.update({ where: { id: sessionId }, data: { depositKobo: { increment: amountKobo } } });
   await ensureShopperFeeHold(updated);
+  if (updated.status === "SEARCHING" && !updated.shopperId) {
+    io?.to("dispatch:shoppers").emit("shop-session:new", { sessionId: updated.id });
+  }
   return updated;
 }
 
