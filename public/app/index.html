@@ -4595,16 +4595,23 @@ async function payForShopSessionDeposit(budgetKobo){
   if(payRes.authorizationUrl){
     window.open(payRes.authorizationUrl,'_blank');
     showToast('Complete payment in the new tab, then return here.','success');
-    // Real Paystack redirect for card/USSD — the session isn't matched
-    // to a shopper until the deposit clears. Actively verify (the
-    // webhook alone may not be configured in this environment) so the
-    // deposit actually lands; proceedToFinding()'s own status poll
-    // below picks up the resulting SEARCHING→MATCHED transition on
-    // its own once it does.
+    // Real Paystack redirect for card/USSD — don't show "searching for a
+    // shopper" (and don't let the session become visible to shoppers,
+    // which only happens once the deposit actually lands) until the
+    // customer has genuinely completed payment in that tab. Previously
+    // this called proceedToFinding() immediately on merely opening the
+    // tab, showing "searching" regardless of whether the customer ever
+    // finished paying — the same premature-progress bug already fixed for
+    // Bank Transfer. Checks depositKobo>0 (payment landed), not just
+    // status!=='SEARCHING' (which only flips once a shopper has ALSO
+    // already matched — too late a signal for "did the payment go
+    // through").
     pollPaystackVerify(payRes.reference, async function(){
       var r=await api('/shop-sessions/'+window._sfmSession.id);
-      return r.session.status!=='SEARCHING';
-    }, function(){});
+      if(r.session.depositKobo>0)window._sfmSession=r.session;
+      return r.session.depositKobo>0;
+    }, proceedToFinding);
+    return;
   }
 
   proceedToFinding();
@@ -6977,15 +6984,27 @@ function cancelManualBankTransferModal(){
   if(onCancel){ onCancel(); }
   else { closeProcedureModal(); }
 }
-function confirmManualBankTransfer(requestId){
+async function confirmManualBankTransfer(requestId){
   var btn=document.getElementById('mbt-confirm-btn');if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Waiting for confirmation\u2026';}
   var statusEl=document.getElementById('mbt-status');
   // Dev/testing convenience: if DEV_BYPASS_PAYMENTS is on, this confirms
   // the request immediately (same effect as an admin clicking Confirm) --
   // 403s harmlessly in production, where the poll below just waits for a
   // real admin as normal. Only fires on this explicit "I've Made the
-  // Transfer" tap, never at request-creation time.
-  api('/payments/manual-request/'+requestId+'/dev-confirm',{method:'POST'}).catch(function(){});
+  // Transfer" tap, never at request-creation time. Awaited directly (not
+  // fire-and-forgotten into the poll below) so a successful dev-confirm
+  // advances the customer's own screen in the exact same tick the shopper
+  // is notified, instead of leaving the customer's UI up to one 4s poll
+  // cycle behind the shopper seeing the request.
+  try{
+    var devRes=await api('/payments/manual-request/'+requestId+'/dev-confirm',{method:'POST'});
+    if(devRes.request&&devRes.request.status==='CONFIRMED'){
+      closeProcedureModal();
+      showToast&&showToast('Payment confirmed!','success');
+      if(window._mbtOnConfirmed)window._mbtOnConfirmed();
+      return;
+    }
+  }catch(e){ /* dev bypass not enabled (production) -- fall through to the real admin-confirmation poll below */ }
   var tries=0;
   var iv=setInterval(async function(){
     tries++;
