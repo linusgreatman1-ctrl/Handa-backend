@@ -25,9 +25,21 @@ async function createManualPaymentRequest(userId, purpose, targetId, amountKobo,
   // before treating the app as production -- a real bank transfer must
   // stay admin-confirmed, since nothing here actually verifies the money
   // landed.
+  //
+  // Every call site MUST check the returned `paid` flag instead of
+  // assuming BANK_TRANSFER always means "still pending" -- when this
+  // bypass fires, the payment (and everything downstream of it: escrow
+  // holds, notifying a matched shopper/rider, etc.) is already fully
+  // applied by the time this function returns, even though the customer
+  // never actually sent a transfer. Responding with a "please make the
+  // transfer" shape in that case is a real lie to the customer (they'd see
+  // "not paid yet" while the other party has already been notified as if
+  // they had paid) -- this is what caused a shopper to be notified of a
+  // new Shop-For-Me session before the customer had done anything beyond
+  // selecting Bank Transfer as their method.
   if (devBypassEnabled()) {
     const confirmed = await confirmManualPaymentRequest(request.id, null, io);
-    return { request: confirmed, bankDetails: companyBank };
+    return { request: confirmed, bankDetails: companyBank, paid: true };
   }
   // io is optional -- a call site that omits it just skips the real-time
   // admin ping; the pending request is still there next time an admin
@@ -35,7 +47,7 @@ async function createManualPaymentRequest(userId, purpose, targetId, amountKobo,
   if (io) {
     notifyAllAdmins(io, "🏦 New manual bank transfer", `A user submitted a bank transfer for ₦${Math.round(amountKobo / 100).toLocaleString()} — confirm it once received.`, { manualPaymentRequestId: request.id }).catch(() => {});
   }
-  return { request, bankDetails: companyBank };
+  return { request, bankDetails: companyBank, paid: false };
 }
 
 // Maps a ManualPaymentRequest onto the exact metadata shape

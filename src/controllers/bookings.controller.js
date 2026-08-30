@@ -551,7 +551,11 @@ async function payBooking(req, res, next) {
     }
 
     if (paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "BOOKING_PAYMENT", booking.id, booking.totalKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "BOOKING_PAYMENT", booking.id, booking.totalKobo, req.app.get("io"));
+      if (paid) {
+        const updated = await prisma.booking.findUnique({ where: { id: booking.id } });
+        return res.json({ booking: updated, paid: true });
+      }
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 

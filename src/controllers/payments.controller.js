@@ -14,7 +14,8 @@ async function initializeWalletDeposit(req, res, next) {
     if (!amountKobo || amountKobo < 10000) return res.status(400).json({ error: "Minimum top-up is ₦100." });
 
     if (paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "WALLET_DEPOSIT", null, amountKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "WALLET_DEPOSIT", null, amountKobo, req.app.get("io"));
+      if (paid) return res.json({ paid: true });
       return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
@@ -166,7 +167,8 @@ async function initializeCommissionPayment(req, res, next) {
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "COMMISSION_PAYMENT", period.id, amountKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "COMMISSION_PAYMENT", period.id, amountKobo, req.app.get("io"));
+      if (paid) return res.json({ paid: true });
       return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
@@ -197,7 +199,8 @@ async function initializeFeatureBoostPayment(req, res, next) {
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "FEATURE_BOOST_PAYMENT", req.user.vendorProfile.id, weeklyFee, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "FEATURE_BOOST_PAYMENT", req.user.vendorProfile.id, weeklyFee, req.app.get("io"));
+      if (paid) return res.json({ paid: true });
       return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 

@@ -419,7 +419,11 @@ async function topUpItems(req, res, next) {
     // top-up needs (ensureShopperFeeHold is idempotent, so re-running it
     // here is a harmless no-op). No new purpose/route needed.
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_PAYMENT", session.id, amountKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_PAYMENT", session.id, amountKobo, req.app.get("io"));
+      if (paid) {
+        const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
+        return res.json({ session: updated, paid: true });
+      }
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
@@ -461,7 +465,11 @@ async function paySession(req, res, next) {
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_PAYMENT", session.id, amountKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_PAYMENT", session.id, amountKobo, req.app.get("io"));
+      if (paid) {
+        const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
+        return res.json({ session: updated, paid: true });
+      }
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
@@ -659,7 +667,12 @@ async function payCallTopUp(req, res, next) {
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_CALL_TOPUP", session.id, topUpKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_CALL_TOPUP", session.id, topUpKobo, req.app.get("io"));
+      if (paid) {
+        const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
+        req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "PACKAGING" });
+        return res.json({ session: updated, paid: true });
+      }
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
@@ -899,7 +912,13 @@ async function payRiderFeeTopUp(req, res, next) {
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_RIDER_FEE_TOPUP", session.id, topUpKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_RIDER_FEE_TOPUP", session.id, topUpKobo, req.app.get("io"));
+      if (paid) {
+        const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
+        req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "FINDING_RIDER" });
+        req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
+        return res.json({ session: updated, paid: true });
+      }
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
@@ -947,7 +966,12 @@ async function payShopSessionShortfall(req, res, next) {
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_SHORTFALL_PAYMENT", session.id, totalKobo, req.app.get("io"));
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_SHORTFALL_PAYMENT", session.id, totalKobo, req.app.get("io"));
+      if (paid) {
+        const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
+        req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:insufficient-funds-resolved", { sessionId: session.id });
+        return res.json({ session: updated, paid: true });
+      }
       return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
