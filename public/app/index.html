@@ -1299,6 +1299,23 @@ function connectSocket(){
     // "waiting for confirmation" (or a session that already delivered)
     // until the shopper happened to navigate away and back.
     if(document.getElementById('active-session-banner')&&typeof refreshShopperActiveSessionBanner==='function')refreshShopperActiveSessionBanner();
+    // Same gap on the customer's own 'packaging'/'customerTracking' screens
+    // -- shop-session:join above only rejoins the room for FUTURE pushes;
+    // a rider-arrived-shopper (the "get ready for the 3-way call" banner)
+    // or rider-arrived-customer event that happened to fire during the
+    // actual disconnect gap is never replayed, so the banner could just
+    // never appear even though everything looks connected again. Re-fetch
+    // the real session state once and re-render whichever of these two
+    // phases the customer is actually still on.
+    if(window._sfmSession&&(window._sfmPhase==='packaging'||window._sfmPhase==='customerTracking')){
+      var _sfmReconnectId=window._sfmSession.id, _sfmReconnectPhase=window._sfmPhase;
+      api('/shop-sessions/'+_sfmReconnectId).then(function(d){
+        if(d&&d.session&&window._sfmSession&&window._sfmSession.id===_sfmReconnectId){
+          window._sfmSession=d.session;
+          if(window._sfmPhase===_sfmReconnectPhase)renderShopPhase(_sfmReconnectPhase);
+        }
+      }).catch(function(){});
+    }
   });
   confirmCallBindListeners();
   bindGlobalChatRequestListener();
