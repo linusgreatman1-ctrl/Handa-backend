@@ -1480,7 +1480,7 @@ function mapApiUser(u){
   };
   if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; }
   if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
-  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; }
+  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; mapped.shopperIsOnline = !!u.shopperProfile.isOnline; }
   return mapped;
 }
 
@@ -8488,6 +8488,7 @@ async function toggleShopperOnline() {
   try{ await api('/users/me/availability',{method:'PATCH',body:JSON.stringify({isOnline:goingOnline})}); }
   catch(err){ showToast&&showToast(err.message||'Could not update availability','warning'); return; }
   isShopperOnline = goingOnline;
+  if(S.user)S.user.shopperIsOnline=goingOnline;
   const dot=document.getElementById('shopper-dot'), label=document.getElementById('shopper-label');
   const pill=document.getElementById('shopper-pill'), inc=document.getElementById('incoming-session');
   if(isShopperOnline){
@@ -8580,6 +8581,15 @@ function fullProfileHeader(o){
     +'</div></div>';
 }
 function renderShopperHome() {
+  // isShopperOnline is a plain client-side var that resets to false on
+  // every fresh page load/refresh -- without this sync, a shopper who was
+  // genuinely online server-side (S.user.shopperIsOnline, from the real
+  // shopperProfile.isOnline) would render as "Go Online" after any reload,
+  // hiding the incoming-request card and skipping
+  // loadShopperAvailableSessions() entirely even though real requests
+  // existed for them. Only syncs here (full render), never mid-session --
+  // toggleShopperOnline() already keeps both in step for that case.
+  isShopperOnline = !!(S.user && S.user.shopperIsOnline);
   var nm=(S.user&&S.user.name)||'Shopper';
   var u=(S.user)||{};
   var bank=(u.bankName&&u.bankAccountNumber)?{name:u.bankName,acct:u.bankAccountNumber,holder:u.bankAccountName||u.name}:{name:'Not set',acct:'Not linked',holder:u.name||''};
