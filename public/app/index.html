@@ -3687,7 +3687,7 @@ function renderShopPhase(phase) {
         ${[['🏍️',shopperNm+' is finding a rider to pick up your items'],['🤝',shopperNm+' & rider will jointly confirm all items'],['🔓','Once confirmed, escrow pays your market sellers directly'],['🏪','Each seller receives an instant bank transfer — no cash needed'],['🚀','Rider picks up and delivers to you']].map(([ic,t])=>`<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:7px;"><span style="flex-shrink:0;">${ic}</span><span style="font-size:12px;color:#9A9390;">${t}</span></div>`).join('')}
       </div>
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:11px 14px;margin-bottom:18px;text-align:left;">
-        <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to ${shopperNm} after the rider confirms pickup of all your items.</div>
+        <div style="font-size:13px;color:#9A9390;">🔒 <strong>Your escrow is safe.</strong> It will only be released to market sellers after the rider confirms pickup of all your items.</div>
       </div>
       ${(window._sfmSession&&window._sfmSession.deliveryCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;text-align:center;">
         <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Your Delivery Code</div>
