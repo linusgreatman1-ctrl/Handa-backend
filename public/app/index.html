@@ -8465,6 +8465,12 @@ function shopperBindAvailableSessionsListener(){
     if(list&&!list.children.length)list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';
   });
 }
+// Client-side dismiss only, same reasoning as _riderDeclinedSessionIds
+// (see declineRiderDelivery) -- a shopper session request is broadcast to
+// every online shopper, not assigned to this one specifically, so
+// declining just hides the card from THIS shopper's own list; every other
+// online shopper still sees it normally.
+var _shopperDeclinedSessionIds=new Set();
 async function loadShopperAvailableSessions(){
   var list=document.getElementById('shopper-sessions-list');
   if(!list)return;
@@ -8472,19 +8478,29 @@ async function loadShopperAvailableSessions(){
   list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">Looking for requests…</div>';
   try{
     var res=await api('/shop-sessions?as=available');
-    if(!res.sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';return;}
-    list.innerHTML=res.sessions.map(function(s){
+    var sessions=(res.sessions||[]).filter(function(s){return !_shopperDeclinedSessionIds.has(s.id);});
+    if(!sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';return;}
+    list.innerHTML=sessions.map(function(s){
       return '<div id="sfm-avail-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;margin-bottom:12px;">'
         +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:28px;">🛒</span><div style="flex:1;"><div style="font-weight:800;font-size:16px;color:#2ECC71;">🔔 New Session Request!</div><div style="font-size:13px;color:#F2EDE8;margin-top:2px;">'+(s.customer?s.customer.name:'Customer')+' wants to shop live</div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:900;font-family:\'Playfair Display\',serif;color:#F5A623;">₦'+Number(Math.round(s.sessionFeeKobo/100)).toLocaleString()+'</div><div style="font-size:10px;color:#9A9390;">session fee</div></div></div>'
         +'<div style="background:rgba(184,120,0,.09);border-radius:11px;padding:11px;margin-bottom:12px;"><div style="font-weight:700;font-size:12px;margin-bottom:7px;">📋 Shopping List ('+s.items.length+' items)</div>'
         +s.items.map(function(i){return '<div style="font-size:12px;color:#F2EDE8;padding:3px 0;">• '+i.text+'</div>';}).join('')
         +'</div><div style="font-size:12px;color:#9A9390;margin-bottom:14px;">📍 '+(s.deliveryAddress||'Address on acceptance')+'</div>'
-        +'<div style="display:flex;gap:9px;"><button class="btn btn-green" style="flex:1;" onclick="shopperAcceptSession(\''+s.id+'\')">✓ Accept Session</button></div>'
+        +'<div style="display:flex;gap:9px;"><button class="btn btn-green" style="flex:1;" onclick="shopperAcceptSession(\''+s.id+'\')">✓ Accept Session</button>'
+        +'<button onclick="declineShopperSession(\''+s.id+'\')" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Decline</button></div>'
         +'</div>';
     }).join('');
   }catch(err){
     list.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px">'+(err.message||'Could not load requests')+'</div>';
   }
+}
+function declineShopperSession(sessionId){
+  _shopperDeclinedSessionIds.add(sessionId);
+  var card=document.getElementById('sfm-avail-'+sessionId);
+  if(card)card.remove();
+  var list=document.getElementById('shopper-sessions-list');
+  if(list&&!list.children.length)list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';
+  toast('Session declined.');
 }
 
 
