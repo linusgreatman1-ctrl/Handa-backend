@@ -1291,6 +1291,14 @@ function connectSocket(){
     }
     if(document.getElementById('history-list')&&typeof renderEHistory==='function')renderEHistory();
     if(document.getElementById('vendor-bookings-list')&&typeof loadVendorBookingsList==='function')loadVendorBookingsList(window._vendorDashKind==='cook');
+    // Same catch-up as above for the shopper's own active-delivery banner --
+    // its live refresh (see the notification:new handler below) only fixes
+    // FUTURE pushes; a push that happened to land in a genuine disconnect
+    // gap (tab backgrounded, brief network drop) is never replayed by
+    // Socket.IO, so without this the banner could sit stale/stuck showing
+    // "waiting for confirmation" (or a session that already delivered)
+    // until the shopper happened to navigate away and back.
+    if(document.getElementById('active-session-banner')&&typeof refreshShopperActiveSessionBanner==='function')refreshShopperActiveSessionBanner();
   });
   confirmCallBindListeners();
   bindGlobalChatRequestListener();
