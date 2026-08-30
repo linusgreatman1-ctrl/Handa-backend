@@ -1313,6 +1313,14 @@ async function cancelSession(req, res, next) {
     await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session cancelled by customer" });
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
     closeSupportThreadForContext(session.id);
+    // If this session was still SEARCHING (broadcast to every online
+    // shopper, per listSessions' as=available), tell them it's gone --
+    // reuses matchSession's exact same event/payload, which every
+    // shopper's client already listens for and removes the card on. Without
+    // this, a shopper who already had the request open in their live list
+    // never saw it disappear until they manually reloaded the page, even
+    // though the customer had already cancelled it.
+    req.app.get("io")?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
     res.json({ session: updated });
   } catch (err) {
     next(err);
