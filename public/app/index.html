@@ -7840,9 +7840,9 @@ async function _submitAppReview() {
   if (!rating) { toast('Please select a star rating.'); return; }
   if (!comment) { toast('Please write a short review.'); return; }
   try {
-    var res = await api('/app-reviews', { method: 'POST', body: JSON.stringify({ rating: rating, comment: comment }) });
+    await api('/app-reviews', { method: 'POST', body: JSON.stringify({ rating: rating, comment: comment }) });
     toast('Thanks for your review!');
-    _renderAppReviewForm(res.review);
+    closeProcedureModal();
   } catch (e) {
     toast(e.message || 'Could not submit review.');
   }
