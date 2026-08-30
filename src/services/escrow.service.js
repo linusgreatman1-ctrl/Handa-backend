@@ -10,7 +10,7 @@ const AUTO_RELEASE_HOURS = Number(process.env.ESCROW_AUTO_RELEASE_HOURS || 24);
 // (src/services/commission.service.js) always reflects 0 due for bookings
 // now, specifically to avoid double-charging a vendor for the same
 // booking's commission a second time.
-const PLATFORM_COMMISSION_RATES = { SHOPPER: 0.2, RIDER: 0.2, VENDOR: 0.1 };
+const PLATFORM_COMMISSION_RATES = { SHOPPER: 0.2, RIDER: 0.15, VENDOR: 0.1 };
 
 // Every booking/session is paid into escrow up front (real money already
 // collected from the customer via Paystack — see payments.service) and
