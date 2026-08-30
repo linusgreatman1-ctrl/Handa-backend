@@ -793,7 +793,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
     <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:14px;" id="escrow-pay-methods">
       <button onclick="selectEscrowMethod(this,'wallet')" style="display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;transition:all .2s;">
-        <span style="font-size:22px;">💰</span><div><div style="font-weight:700;font-size:14px;">Wallet Balance</div><div style="font-size:11px;color:#9A9390;">Pay instantly from your wallet</div></div>
+        <span style="font-size:22px;">💰</span><div><div style="font-weight:700;font-size:14px;">Wallet Balance</div><div style="font-size:11px;color:#9A9390;" id="escrow-wallet-balance-line">Pay instantly from your wallet</div></div>
       </button>
       <button onclick="selectEscrowMethod(this,'card')" style="display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;cursor:pointer;font-family:'DM Sans',sans-serif;color:#F2EDE8;text-align:left;transition:all .2s;">
         <span style="font-size:22px;">💳</span><div><div style="font-weight:700;font-size:14px;">Debit / Credit Card</div><div style="font-size:11px;color:#9A9390;">Visa, Mastercard, Verve</div></div>
@@ -3632,6 +3632,19 @@ function renderShopPhase(phase) {
 
   // ── PHASE 5: Shopper Packages Items ───────────────────────────────────
   } else if (phase === 'packaging') {
+    // Catch-up check for the combined insufficient-funds prompt -- the
+    // live shop-session:insufficient-funds push only fixes FUTURE events;
+    // this phase is where the customer sits throughout the exact window
+    // it can fire in, so re-checking here on every render (including the
+    // reconnect re-render) catches a push that happened to land during a
+    // genuine disconnect gap, the same way the 3-way-call banner does.
+    (function(){
+      var s=window._sfmSession; if(!s||!s.riderArrivedShopperAt||window._shortfallPromptOpen)return;
+      var sessionShortfall=Math.max(0,(s.sessionFeeKobo||0)-(s.sessionFeeCollectedKobo??s.sessionFeeKobo??0));
+      var riderShortfall=Math.max(0,(s.riderFeeKobo||0)-(s.riderFeeCollectedKobo??s.riderFeeKobo??0));
+      var total=sessionShortfall+riderShortfall;
+      if(total>0)promptSessionShortfall(sessionShortfall,riderShortfall,total);
+    })();
     const total = shopItems.reduce((s,i)=>s+(i.price||0),0);
     const shopperNm = sfmShopperName();
     const liveStatus = (window._sfmSession&&window._sfmSession.status)||'PACKAGING';
@@ -4265,13 +4278,18 @@ function sfmSocketListeners(){
     else{shopItems.push({id:real.id,text:real.text,approved:real.approved,price:Math.round(real.priceKobo/100)});}
     if(document.getElementById('approval-items'))renderApprovalItems();
   });
-  _socket.on('shop-session:call-topup-required',function(p){
+  // Single combined insufficient-funds prompt, pushed once at
+  // rider-arrived-at-shopper -- replaces the two separate call-end/
+  // find-rider top-up prompts that used to interrupt earlier in the flow.
+  _socket.on('shop-session:insufficient-funds',function(p){
     if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
-    promptCallTopUp(p.topUpRequiredKobo);
+    promptSessionShortfall(p.sessionShortfallKobo,p.riderShortfallKobo,p.totalShortfallKobo);
   });
-  _socket.on('shop-session:rider-fee-topup-required',function(p){
+  _socket.on('shop-session:insufficient-funds-resolved',function(p){
     if(!window._sfmSession||p.sessionId!==window._sfmSession.id)return;
-    promptRiderFeeTopUp(p.topUpRequiredKobo,p.distanceKm);
+    var el=document.getElementById('escrow-modal');
+    if(el&&el.style.display==='flex'&&window._shortfallPromptOpen){el.style.display='none';}
+    window._shortfallPromptOpen=false;
   });
   // Shopper confirmed handover to the rider (after the 3-way call) --
   // flips the customer's waiting copy from "confirming items" to "rider
@@ -4382,76 +4400,48 @@ async function answerEmergencyEnd(confirm){
   }
 }
 
-// Your live call ran past the tier you already paid for — this is the
-// real per-minute fee (see sessionFeeForDuration in
-// shopSessions.controller.js), not a fixed fee, so the difference is only
-// knowable once the call actually ends. Reuses the same card/transfer/
-// USSD/wallet-debit selector as the initial deposit.
-function promptCallTopUp(topUpRequiredKobo){
-  showToast('Your call ran past the tier already paid — pay '+N(topUpRequiredKobo/100)+' more to continue','warning');
-  openEscrowModal(topUpRequiredKobo/100, async function(){
+// The single combined insufficient-funds prompt -- pushed once at
+// rider-arrived-at-shopper, after both the real call-duration session fee
+// and the real distance-based rider fee are known, instead of two
+// separate earlier prompts. Reuses the same card/transfer/USSD/wallet
+// selector as the initial deposit, with a breakdown showing exactly which
+// portion(s) are short.
+function promptSessionShortfall(sessionShortfallKobo,riderShortfallKobo,totalShortfallKobo){
+  window._shortfallPromptOpen=true;
+  showToast('Your session needs '+N(totalShortfallKobo/100)+' more to complete — add funds to continue','warning');
+  var breakdown=[];
+  if(sessionShortfallKobo>0)breakdown.push(['Shopper Session Fee (extra)',Math.round(sessionShortfallKobo/100)]);
+  if(riderShortfallKobo>0)breakdown.push(['Rider Delivery Fee (extra)',Math.round(riderShortfallKobo/100)]);
+  openEscrowModal(Math.round(totalShortfallKobo/100), async function(){
     try{
       var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
       var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
-      var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-call-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
+      var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-shortfall',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
       if(res.session)window._sfmSession=res.session;
+      if(res.paid)window._shortfallPromptOpen=false;
       if(res.manual){
-        openManualBankTransferModal(res,function(){showToast('Call fee top-up confirmed — continuing to packaging.','success');},function(){
-          promptCallTopUp(topUpRequiredKobo);
+        openManualBankTransferModal(res,function(){window._shortfallPromptOpen=false;showToast('Payment confirmed — your session can now complete.','success');},function(){
+          promptSessionShortfall(sessionShortfallKobo,riderShortfallKobo,totalShortfallKobo);
         });
       }else if(res.authorizationUrl){
         window.open(res.authorizationUrl,'_blank');
         showToast('Complete payment in the new tab to continue.','success');
-        var baseStatus=window._sfmSession&&window._sfmSession.status;
         pollPaystackVerify(res.reference, async function(){
           var r=await api('/shop-sessions/'+window._sfmSession.id);
-          if(r.session.status!==baseStatus){ window._sfmSession=r.session; return true; }
+          var stillOwed=Math.max(0,(r.session.sessionFeeKobo-(r.session.sessionFeeCollectedKobo??r.session.sessionFeeKobo)))+Math.max(0,(r.session.riderFeeKobo-(r.session.riderFeeCollectedKobo??r.session.riderFeeKobo)));
+          if(stillOwed<=0){ window._sfmSession=r.session; return true; }
           return false;
         }, function(){
-          showToast('Call fee top-up confirmed — continuing to packaging.','success');
+          window._shortfallPromptOpen=false;
+          showToast('Payment confirmed — your session can now complete.','success');
         });
       }else{
-        showToast('Call fee top-up paid — continuing to packaging.','success');
+        showToast('Payment confirmed — your session can now complete.','success');
       }
     }catch(err){
-      showToast(err.message||'Could not process the top-up payment','warning');
+      showToast(err.message||'Could not process the payment','warning');
     }
-  });
-}
-
-// The real distance-based rider fee (see utils/distanceFee.js) came out
-// higher than the flat estimate collected at deposit time — same
-// stays-put-until-paid pattern as promptCallTopUp.
-function promptRiderFeeTopUp(topUpRequiredKobo,distanceKm){
-  showToast('Rider fee for this delivery ('+(distanceKm||'?')+'km) is '+N(topUpRequiredKobo/100)+' more than deposited — pay the difference to find a rider','warning');
-  openEscrowModal(topUpRequiredKobo/100, async function(){
-    try{
-      var methodMap={wallet:'WALLET',card:'CARD',transfer:'BANK_TRANSFER',ussd:'USSD'};
-      var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
-      var res=await api('/shop-sessions/'+window._sfmSession.id+'/pay-rider-fee-topup',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
-      if(res.session)window._sfmSession=res.session;
-      if(res.manual){
-        openManualBankTransferModal(res,function(){showToast('Rider fee topped up — your shopper can now search for a rider.','success');},function(){
-          promptRiderFeeTopUp(topUpRequiredKobo,distanceKm);
-        });
-      }else if(res.authorizationUrl){
-        window.open(res.authorizationUrl,'_blank');
-        showToast('Complete payment in the new tab to continue.','success');
-        var baseStatus=window._sfmSession&&window._sfmSession.status;
-        pollPaystackVerify(res.reference, async function(){
-          var r=await api('/shop-sessions/'+window._sfmSession.id);
-          if(r.session.status!==baseStatus){ window._sfmSession=r.session; return true; }
-          return false;
-        }, function(){
-          showToast('Rider fee topped up — your shopper can now search for a rider.','success');
-        });
-      }else{
-        showToast('Rider fee topped up — your shopper can now search for a rider.','success');
-      }
-    }catch(err){
-      showToast(err.message||'Could not process the top-up payment','warning');
-    }
-  });
+  }, breakdown);
 }
 
 function sfmShopperName(){
@@ -4657,8 +4647,9 @@ async function depositAndFindShopper() {
       payForShopSessionDeposit(budgetKobo);
     }, [
       ['Items Budget', Math.round(budgetKobo/100)],
-      ['Shopper Session Fee', Math.round(sessionFeeKobo/100)],
-      ['Rider Delivery Fee', Math.round(riderFeeKobo/100)],
+      ['Shopper Session Fee (1-30 min)', Math.round(sessionFeeKobo/100)],
+      ['Rider Delivery Fee (predicted)', Math.round(riderFeeKobo/100)],
+      ["Note: Rider's Delivery fee not fully spent is refunded to your wallet.", null],
     ], function(){
       var sid=window._sfmSession&&window._sfmSession.id;
       window._sfmSession=null;
@@ -6188,28 +6179,18 @@ function shopperBindStatusListener(){
 }
 
 async function shopperEndCallAndPackage(){
-  // Don't tear down the peer connection until we actually know packaging
-  // is proceeding -- ending it unconditionally up front used to send the
-  // customer a bare "peer left, want to rejoin?" signal even when nothing
-  // was actually wrong, just because a top-up was still pending: the
-  // session stays LIVE_CALL in that case, so a dead video with no
-  // explanation was genuinely confusing. Now the call only ends once
-  // packaging is confirmed to proceed (or fails outright).
+  // The real per-minute fee (only knowable once the call actually ends)
+  // is just recorded now, never blocks packaging from starting -- any
+  // shortfall against what the customer already paid is caught once,
+  // combined with any rider-fee shortfall too, by the single
+  // insufficient-funds prompt at rider-arrived-at-shopper.
   if(window._shopperSession){
     try{
       var res=await api('/shop-sessions/'+window._shopperSession.id+'/packaging',{method:'POST'});
-      if(res.topUpRequiredKobo>0){
-        // Real per-minute fee exceeded what the customer already paid —
-        // the session stays LIVE_CALL until they pay the difference
-        // (pushed to their screen via shop-session:call-topup-required).
-        // Keep the call connected and don't advance the shopper's own
-        // screen to packaging yet either.
-        showToast('Call ran long — waiting for the customer to pay the extra '+N(res.topUpRequiredKobo/100),'warning');
-        return;
-      }
-      // The response carries the real callEndedAt the backend just
-      // stamped -- discarding it (as this used to) left the packaging
-      // screen with nothing to compute the "call lasted X" line from.
+      // The response carries the real callEndedAt/sessionFeeKobo the
+      // backend just stamped -- discarding it (as this used to) left the
+      // packaging screen with nothing to compute the "call lasted X" line
+      // from.
       if(res.session)window._shopperSession=Object.assign({},window._shopperSession,res.session);
     }
     catch(err){ showToast&&showToast(err.message||'Could not move to packaging','warning'); return; }
@@ -6260,14 +6241,11 @@ async function shopperCallFindRider(){
     try{
       var res = await api('/shop-sessions/'+window._shopperSession.id+'/find-rider',{method:'POST'});
       if(res.session) window._shopperSession = res.session;
-      if(res.topUpRequiredKobo>0){
-        // Backend also pushes shop-session:rider-fee-topup-required to the
-        // customer in real time (see the socket listener near
-        // shop-session:call-topup-required) — this toast just lets the
-        // shopper themselves know why nothing happened yet.
-        showToast&&showToast('The real rider fee for this distance ('+(res.distanceKm||'?')+'km) is more than what was deposited — waiting on the customer to top up before a rider can be found.','warning');
-        return;
-      }
+      // The real distance-based fee is just recorded now, never blocks the
+      // search from starting -- under it refunds the unused portion to the
+      // customer automatically (see findRider); over it, same as the
+      // session fee, is caught once by the combined insufficient-funds
+      // prompt at rider-arrived-at-shopper.
     }
     catch(err){ showToast&&showToast(err.message||'Could not search for a rider','warning'); return; }
   }
@@ -6915,11 +6893,29 @@ function openEscrowModal(total,cb,breakdown,onCancel){
     if(bd){
       bd.style.display='block';
       bd.innerHTML=breakdown.map(function(row){
+        // row[1]==null -- a plain note line (no amount), not a real
+        // breakdown entry -- e.g. explaining that a predicted fee's
+        // unused portion gets refunded automatically.
+        if(row[1]==null)return '<div style="padding:5px 0 0;font-size:11px;color:#9A9390;font-style:italic;">'+row[0]+'</div>';
         return '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;"><span style="color:#9A9390;">'+row[0]+'</span><span style="color:#F2EDE8;font-weight:700;">\u20a6'+Number(row[1]).toLocaleString()+'</span></div>';
       }).join('');
     }
   }else if(bd){bd.style.display='none';}
   document.getElementById('escrow-modal').style.display='flex';
+  // Real current balance, not just a generic "pay from your wallet" line
+  // -- lets the customer actually see whether Wallet can cover this
+  // before picking it, instead of finding out only after a failed debit.
+  var balLine=document.getElementById('escrow-wallet-balance-line');
+  if(balLine){
+    balLine.textContent='Checking your balance…';
+    api('/wallet').then(function(w){
+      var el=document.getElementById('escrow-wallet-balance-line');if(!el)return;
+      var bal=Math.round((w.balanceKobo||0)/100);
+      var short=bal<total;
+      el.textContent='Your wallet balance is '+N(bal)+(short?' — not enough, pick another method or add funds first':'');
+      el.style.color=short?'#E8392E':'#9A9390';
+    }).catch(function(){ var el=document.getElementById('escrow-wallet-balance-line');if(el)el.textContent='Pay instantly from your wallet'; });
+  }
 }
 function cancelEscrowModal(){
   document.getElementById('escrow-modal').style.display='none';

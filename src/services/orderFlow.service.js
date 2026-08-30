@@ -118,6 +118,68 @@ async function confirmRiderFeeTopUp(sessionId, amountKobo) {
   });
 }
 
+// Applies the combined session-fee + rider-fee shortfall payment (see
+// shopSessions.controller's payShopSessionShortfall) -- surfaced once,
+// at riderArrivedShopper, instead of the separate call-end/find-rider
+// top-ups above. Deliberately recomputes the shortfall fresh from the
+// session's own current state rather than trusting a passed-in amount --
+// unlike the two functions above, the amount that was actually charged
+// (Paystack/manual payment) can only ever have come from this exact same
+// computation run moments earlier when the payment was initiated, so
+// there's no real amount to pass through; recomputing here is both
+// simpler and safer against anything having changed in between.
+//
+// No status transition -- by RIDER_ASSIGNED (the only time this is ever
+// actually due) there's nothing left to "unblock" the way the old
+// call/rider-fee top-ups moved the session forward; this only exists to
+// back the holds with real funds before they're released.
+//
+// Only the session-fee side ever needs a fresh SHOPPER hold here: that
+// hold was created early (ensureShopperFeeHold, at MATCHED) using
+// whatever sessionFeeKobo was at the time -- if the real call-duration
+// fee came in higher, the original hold is now undersized and needs a
+// second one for the difference (same shape as the old confirmCallTopUp).
+// The rider's hold is created LATE (acceptDelivery), by which point
+// findRider has already updated riderFeeKobo to the real distance-based
+// value -- so it's already sized correctly and only needs the matching
+// funds to exist, not a second hold.
+async function confirmShopSessionShortfall(sessionId) {
+  const session = await prisma.shopSession.findUnique({ where: { id: sessionId } });
+  if (!session) throw Object.assign(new Error("Shop session not found."), { status: 404 });
+
+  const sessionFeeCollectedKobo = session.sessionFeeCollectedKobo ?? session.sessionFeeKobo;
+  const riderFeeCollectedKobo = session.riderFeeCollectedKobo ?? session.riderFeeKobo;
+  const sessionShortfallKobo = Math.max(0, session.sessionFeeKobo - sessionFeeCollectedKobo);
+  const riderShortfallKobo = Math.max(0, session.riderFeeKobo - riderFeeCollectedKobo);
+  const totalKobo = sessionShortfallKobo + riderShortfallKobo;
+  if (totalKobo <= 0) return session;
+
+  const updated = await prisma.shopSession.update({
+    where: { id: sessionId },
+    data: {
+      depositKobo: { increment: totalKobo },
+      sessionFeeCollectedKobo: sessionFeeCollectedKobo + sessionShortfallKobo,
+      riderFeeCollectedKobo: riderFeeCollectedKobo + riderShortfallKobo,
+    },
+  });
+
+  if (sessionShortfallKobo > 0 && session.shopperId) {
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId } });
+    if (shopper) {
+      await escrow.createHold({
+        contextType: "SHOP_SESSION",
+        shopSessionId: session.id,
+        payerId: session.customerId,
+        payeeId: shopper.userId,
+        payeeRole: "SHOPPER",
+        amountKobo: sessionShortfallKobo,
+      });
+    }
+  }
+
+  return updated;
+}
+
 // Applies a confirmed items-budget top-up (see shopSessions.controller's
 // topUpItems) — an insufficient-escrow item approval never creates its own
 // hold (the "items" portion of a deposit isn't held per-item, it's just
@@ -190,6 +252,7 @@ module.exports = {
   ensureShopperFeeHold,
   confirmCallTopUp,
   confirmRiderFeeTopUp,
+  confirmShopSessionShortfall,
   confirmItemsTopUp,
   confirmCommissionPayment,
   confirmFeatureBoostPayment,

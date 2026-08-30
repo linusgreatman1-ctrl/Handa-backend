@@ -610,6 +610,19 @@ model ShopSession {
   itemsTotalKobo Int @default(0) // sum of approved items' price, filled in as shopper prices them
   depositKobo    Int @default(0) // total confirmed Paystack payment received for this session (session fee + shopping budget for market sellers)
 
+  // What was actually paid in for each fee component, as distinct from
+  // sessionFeeKobo/riderFeeKobo above (which get overwritten to the real
+  // computed value once known -- real call duration at startPackaging,
+  // real distance at findRider). Stamped once at createSession to the
+  // same fixed defaults collected at deposit time (MIN_SESSION_FEE_KOBO /
+  // DEFAULT_RIDER_FEE_KOBO), then only ever adjusted by an explicit
+  // refund (real rider fee came in under what was collected) or a paid
+  // shortfall (payShopSessionShortfall) -- never just overwritten the way
+  // the "real" fields are. Comparing sessionFeeKobo/riderFeeKobo against
+  // these is exactly "how much more is actually owed."
+  sessionFeeCollectedKobo Int?
+  riderFeeCollectedKobo   Int?
+
   deliveryAddress String?
   deliveryLat     Float?
   deliveryLng     Float?
@@ -877,6 +890,7 @@ enum ManualPaymentPurpose {
   SHOP_SESSION_PAYMENT
   SHOP_SESSION_CALL_TOPUP
   SHOP_SESSION_RIDER_FEE_TOPUP
+  SHOP_SESSION_SHORTFALL_PAYMENT
   COMMISSION_PAYMENT
   FEATURE_BOOST_PAYMENT
 }

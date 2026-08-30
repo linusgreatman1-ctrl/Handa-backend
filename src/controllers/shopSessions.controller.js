@@ -88,7 +88,11 @@ async function expireStaleLiveSessions(io) {
   return stale.length;
 }
 
-const DEFAULT_RIDER_FEE_KOBO = 40000; // ₦400, matches the order flow's base delivery fee
+// ₦4,000 predicted rider fee, collected upfront alongside the ₦3,000
+// minimum-tier session fee -- see findRider (refunds the unused portion
+// once the real distance-based fee is known) and riderArrivedShopper
+// (the combined insufficient-funds check, if the real fee came in over).
+const DEFAULT_RIDER_FEE_KOBO = 400000;
 
 // Session fee is billed by real live-call duration, not item count —
 // 1-30min ₦3,000 / 31-60min ₦5,000 / +₦2,000 per additional 30 minutes
@@ -117,6 +121,10 @@ async function createSession(req, res, next) {
         deliveryLng,
         sessionFeeKobo: MIN_SESSION_FEE_KOBO,
         riderFeeKobo: DEFAULT_RIDER_FEE_KOBO,
+        // Snapshot of what's actually being collected for each fee at
+        // deposit time -- see the schema comment on these two fields.
+        sessionFeeCollectedKobo: MIN_SESSION_FEE_KOBO,
+        riderFeeCollectedKobo: DEFAULT_RIDER_FEE_KOBO,
         pickupCode: generateOtpCode(),
         deliveryCode: generateOtpCode(),
         items: { create: items.map((i) => ({ text: i.text, addedBy: "CUSTOMER" })) },
@@ -579,12 +587,13 @@ async function resumeCall(req, res, next) {
   }
 }
 
-// The real duration-based fee is only knowable once the call ends — if it
-// exceeds the minimum tier already collected up front (see createSession),
-// the session stays in LIVE_CALL and the customer must pay the difference
-// via POST /:id/pay-call-topup before packaging can begin. A call that
-// never exceeds 30 minutes needs no top-up (30min is both the floor tier
-// and what was already charged), so this transitions straight through.
+// The real duration-based fee is only knowable once the call ends. Rather
+// than blocking here until the customer pays any difference (the old
+// behavior), the real fee is just recorded and the call always proceeds
+// straight to packaging -- any shortfall against what's actually been
+// collected (sessionFeeCollectedKobo) is caught once, combined with any
+// rider-fee shortfall too, by the single insufficient-funds check at
+// riderArrivedShopper below.
 async function startPackaging(req, res, next) {
   try {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -609,17 +618,10 @@ async function startPackaging(req, res, next) {
     const pausedMs = session.callPausedTotalMs + (session.callPausedAt ? Date.now() - session.callPausedAt.getTime() : 0);
     const durationMinutes = Math.max(1, Math.ceil(((callEndedAt - session.callStartedAt) - pausedMs) / 60000));
     const realFeeKobo = sessionFeeForDuration(durationMinutes);
-    const topUpRequiredKobo = Math.max(0, realFeeKobo - session.sessionFeeKobo);
 
-    if (topUpRequiredKobo > 0) {
-      const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { callEndedAt } });
-      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:call-topup-required", { sessionId: session.id, topUpRequiredKobo });
-      return res.json({ session: updated, topUpRequiredKobo });
-    }
-
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "PACKAGING", callEndedAt } });
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "PACKAGING", callEndedAt, sessionFeeKobo: realFeeKobo } });
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "PACKAGING" });
-    res.json({ session: updated, topUpRequiredKobo: 0 });
+    res.json({ session: updated });
   } catch (err) {
     next(err);
   }
@@ -787,11 +789,17 @@ async function confirmEmergencyEnd(req, res, next) {
 // searching for a rider" — using the shopper's and customer's registered
 // state/LGA (see utils/distanceFee.js for how, given no Maps API key is
 // configured yet). Riders then see this real number on GET
-// /shop-sessions?as=available before deciding to accept. If the real
-// distance-based fee is higher than the flat estimate collected at
-// createSession, the session stays in PACKAGING and the customer must pay
-// the difference via POST /:id/pay-rider-fee-topup first — same
-// stays-put-until-paid pattern as startPackaging's call-duration top-up.
+// /shop-sessions?as=available before deciding to accept. The predicted
+// ₦4,000 collected at deposit time (DEFAULT_RIDER_FEE_KOBO) was only ever
+// an estimate: if the real fee comes in UNDER that, the unused portion is
+// refunded -- but startPackaging (called earlier, LIVE_CALL->PACKAGING)
+// already knows by now whether the real call-duration session fee came in
+// OVER what was collected for it. Rather than refunding the rider-fee
+// surplus outright while a session-fee shortfall sits unpaid right next
+// to it, that surplus is applied to the shortfall FIRST -- only whatever
+// is genuinely left over after that gets refunded to the wallet, and only
+// whatever the offset didn't cover shows up in the combined
+// insufficient-funds check at riderArrivedShopper below.
 async function findRider(req, res, next) {
   try {
     const session = await prisma.shopSession.findUnique({
@@ -812,20 +820,41 @@ async function findRider(req, res, next) {
     const pickup = session.shopper?.user || {};
     const dropoff = session.customer || {};
     const { feeKobo, distanceKm } = distanceFee.estimateRiderFeeKobo(pickup, dropoff);
-    const topUpRequiredKobo = Math.max(0, feeKobo - session.riderFeeKobo);
+    const riderCollectedKobo = session.riderFeeCollectedKobo ?? session.riderFeeKobo;
+    const sessionCollectedKobo = session.sessionFeeCollectedKobo ?? session.sessionFeeKobo;
+    const updateData = { status: "FINDING_RIDER", riderFeeKobo: feeKobo };
 
-    if (topUpRequiredKobo > 0) {
-      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:rider-fee-topup-required", { sessionId: session.id, topUpRequiredKobo, distanceKm });
-      return res.json({ session, topUpRequiredKobo, distanceKm });
+    const riderSurplusKobo = Math.max(0, riderCollectedKobo - feeKobo);
+    if (riderSurplusKobo > 0) {
+      const sessionShortfallKobo = Math.max(0, session.sessionFeeKobo - sessionCollectedKobo);
+      const offsetKobo = Math.min(riderSurplusKobo, sessionShortfallKobo);
+      const refundKobo = riderSurplusKobo - offsetKobo;
+
+      // Whatever of the rider-fee surplus wasn't needed to cover the
+      // session-fee side is what's actually left "collected" for the
+      // rider fee going forward.
+      updateData.riderFeeCollectedKobo = feeKobo + refundKobo;
+      if (offsetKobo > 0) updateData.sessionFeeCollectedKobo = sessionCollectedKobo + offsetKobo;
+
+      const io = req.app.get("io");
+      if (refundKobo > 0) {
+        await walletSvc.creditWallet(session.customerId, refundKobo, "ESCROW_REFUND", { contextType: "SHOP_SESSION", contextId: session.id, description: "Unused portion of the predicted rider delivery fee refunded." });
+      }
+      if (offsetKobo > 0) {
+        const remainingShortfallKobo = sessionShortfallKobo - offsetKobo;
+        const msg = remainingShortfallKobo > 0
+          ? `Your rider is only ${distanceKm}km away — ₦${Math.round(offsetKobo / 100).toLocaleString()} of the unused delivery fee covered part of your higher call fee. You still owe ₦${Math.round(remainingShortfallKobo / 100).toLocaleString()} more to complete this session.`
+          : `Your rider is only ${distanceKm}km away — ₦${Math.round(offsetKobo / 100).toLocaleString()} of the unused delivery fee was applied to cover your higher call fee in full.` + (refundKobo > 0 ? ` The remaining ₦${Math.round(refundKobo / 100).toLocaleString()} was refunded to your wallet.` : "");
+        await notify(io, session.customerId, "ORDER_UPDATE", "Delivery fee applied to session fee", msg, { sessionId: session.id });
+      } else if (refundKobo > 0) {
+        await notify(io, session.customerId, "ORDER_UPDATE", "Delivery fee refunded", `Your rider is only ${distanceKm}km away — ₦${Math.round(refundKobo / 100).toLocaleString()} of the predicted delivery fee was refunded to your wallet.`, { sessionId: session.id });
+      }
     }
 
-    const updated = await prisma.shopSession.update({
-      where: { id: session.id },
-      data: { status: "FINDING_RIDER" },
-    });
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: updateData });
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "FINDING_RIDER" });
     req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
-    res.json({ session: updated, topUpRequiredKobo: 0, distanceKm });
+    res.json({ session: updated, distanceKm });
   } catch (err) {
     next(err);
   }
@@ -875,6 +904,54 @@ async function payRiderFeeTopUp(req, res, next) {
       amountKobo: topUpKobo,
       reference,
       metadata: { purpose: "SHOP_SESSION_RIDER_FEE_TOPUP", sessionId: session.id },
+    });
+    res.json({ paid: false, authorizationUrl: payment.authorization_url, reference });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The single combined insufficient-funds payment -- charges exactly
+// whatever's still owed across the session fee and rider fee together,
+// computed fresh (never trusts a client-supplied amount), same
+// WALLET-vs-Paystack-vs-BankTransfer branching every other top-up here
+// uses. Unlike payCallTopUp/payRiderFeeTopUp, this doesn't unblock a
+// stuck status transition -- it's only ever due once riderArrivedShopper
+// has already flagged it, well after the session moved past PACKAGING/
+// FINDING_RIDER on its own, so nothing here changes session.status.
+async function payShopSessionShortfall(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
+
+    const sessionFeeCollectedKobo = session.sessionFeeCollectedKobo ?? session.sessionFeeKobo;
+    const riderFeeCollectedKobo = session.riderFeeCollectedKobo ?? session.riderFeeKobo;
+    const sessionShortfallKobo = Math.max(0, session.sessionFeeKobo - sessionFeeCollectedKobo);
+    const riderShortfallKobo = Math.max(0, session.riderFeeKobo - riderFeeCollectedKobo);
+    const totalKobo = sessionShortfallKobo + riderShortfallKobo;
+    if (totalKobo <= 0) return res.status(409).json({ error: "No payment is currently due." });
+
+    if (req.body.paymentMethod === "WALLET") {
+      await prisma.$transaction(async (tx) => {
+        await walletSvc.debitWallet(req.user.id, totalKobo, "ESCROW_HOLD", { contextType: "SHOP_SESSION", contextId: session.id, description: "Shop-For-Me insufficient-funds top-up" }, tx);
+      });
+      const updated = await orderFlow.confirmShopSessionShortfall(session.id);
+      req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:insufficient-funds-resolved", { sessionId: session.id });
+      return res.json({ session: updated, paid: true });
+    }
+
+    if (req.body.paymentMethod === "BANK_TRANSFER") {
+      const { request, bankDetails } = await manualPayments.createManualPaymentRequest(req.user.id, "SHOP_SESSION_SHORTFALL_PAYMENT", session.id, totalKobo, req.app.get("io"));
+      return res.json({ paid: false, manual: true, requestId: request.id, reference: request.reference, bankDetails });
+    }
+
+    if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
+    const reference = generateReference("SHORT");
+    const payment = await paystack.initializeTransaction({
+      email: req.user.email,
+      amountKobo: totalKobo,
+      reference,
+      metadata: { purpose: "SHOP_SESSION_SHORTFALL_PAYMENT", sessionId: session.id },
     });
     res.json({ paid: false, authorizationUrl: payment.authorization_url, reference });
   } catch (err) {
@@ -944,6 +1021,20 @@ async function riderArrivedShopper(req, res, next) {
     const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
     if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Rider has arrived", "Your rider has arrived to collect the items.", { sessionId: session.id });
     await notify(io, session.customerId, "ORDER_UPDATE", "Rider has arrived", "Your rider has arrived at the shopper's location to collect your items.", { sessionId: session.id });
+
+    // Single combined insufficient-funds check, right here -- by now both
+    // the real session fee (startPackaging) and the real rider fee
+    // (findRider) are known, so this is the one moment that can compare
+    // each against what was actually collected and ask for the exact
+    // combined difference, instead of two separate earlier prompts.
+    const sessionShortfallKobo = Math.max(0, updated.sessionFeeKobo - (updated.sessionFeeCollectedKobo ?? updated.sessionFeeKobo));
+    const riderShortfallKobo = Math.max(0, updated.riderFeeKobo - (updated.riderFeeCollectedKobo ?? updated.riderFeeKobo));
+    if (sessionShortfallKobo > 0 || riderShortfallKobo > 0) {
+      const totalShortfallKobo = sessionShortfallKobo + riderShortfallKobo;
+      io?.to(`shop-session:${session.id}`).emit("shop-session:insufficient-funds", { sessionId: session.id, sessionShortfallKobo, riderShortfallKobo, totalShortfallKobo });
+      await notify(io, session.customerId, "ORDER_UPDATE", "Insufficient funds", `Your session needs ₦${Math.round(totalShortfallKobo / 100).toLocaleString()} more to complete — add funds to continue.`, { sessionId: session.id });
+    }
+
     res.json({ session: updated });
   } catch (err) {
     next(err);
@@ -1310,6 +1401,7 @@ module.exports = {
   sendSOS,
   findRider,
   payRiderFeeTopUp,
+  payShopSessionShortfall,
   acceptDelivery,
   riderArrivedShopper,
   markOutForDelivery,

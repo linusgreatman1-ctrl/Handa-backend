@@ -46,7 +46,7 @@ async function createManualPaymentRequest(userId, purpose, targetId, amountKobo,
 function metadataForRequest(request) {
   const metadata = { purpose: request.purpose, userId: request.userId };
   if (request.purpose === "BOOKING_PAYMENT") metadata.bookingId = request.targetId;
-  else if (request.purpose === "SHOP_SESSION_PAYMENT" || request.purpose === "SHOP_SESSION_CALL_TOPUP" || request.purpose === "SHOP_SESSION_RIDER_FEE_TOPUP") metadata.sessionId = request.targetId;
+  else if (request.purpose === "SHOP_SESSION_PAYMENT" || request.purpose === "SHOP_SESSION_CALL_TOPUP" || request.purpose === "SHOP_SESSION_RIDER_FEE_TOPUP" || request.purpose === "SHOP_SESSION_SHORTFALL_PAYMENT") metadata.sessionId = request.targetId;
   else if (request.purpose === "COMMISSION_PAYMENT") metadata.commissionPeriodId = request.targetId;
   else if (request.purpose === "FEATURE_BOOST_PAYMENT") metadata.vendorId = request.targetId;
   return metadata;
