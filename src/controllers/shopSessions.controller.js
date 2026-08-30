@@ -161,8 +161,10 @@ async function listSessions(req, res, next) {
       } else if (req.user.shopperProfile) {
         // depositKobo>0 excludes a session the customer created but hasn't
         // actually paid for yet -- see the note in createSession/
-        // confirmShopSessionPayment.
-        where = { status: "SEARCHING", shopperId: null, depositKobo: { gt: 0 } };
+        // confirmShopSessionPayment. The `declines` exclusion is per this
+        // shopper only -- a session they declined stays visible to every
+        // OTHER online shopper, matching the broadcast-to-all model.
+        where = { status: "SEARCHING", shopperId: null, depositKobo: { gt: 0 }, declines: { none: { shopperId: req.user.shopperProfile.id } } };
       } else {
         return res.status(403).json({ error: "No shopper or rider profile found." });
       }
@@ -508,6 +510,30 @@ async function matchSession(req, res, next) {
     // could still accept it.
     req.app.get("io")?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
     res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Persists a shopper declining a broadcast-available session -- listSessions'
+// `as=available` where-clause excludes it for THIS shopper only, so a
+// refresh doesn't bring it back the way the old client-side-only Set did.
+// The session stays visible to every OTHER online shopper. Idempotent
+// (declining twice, or a session that's meanwhile been matched/cancelled,
+// both just no-op rather than erroring) -- the frontend doesn't need to
+// carefully guard against double-taps or stale cards.
+async function declineSession(req, res, next) {
+  try {
+    if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+
+    await prisma.shopSessionDecline.upsert({
+      where: { shopSessionId_shopperId: { shopSessionId: session.id, shopperId: req.user.shopperProfile.id } },
+      create: { shopSessionId: session.id, shopperId: req.user.shopperProfile.id },
+      update: {},
+    });
+    res.json({ declined: true });
   } catch (err) {
     next(err);
   }
@@ -1421,6 +1447,7 @@ module.exports = {
   topUpItems,
   paySession,
   matchSession,
+  declineSession,
   startCall,
   pauseCall,
   resumeCall,

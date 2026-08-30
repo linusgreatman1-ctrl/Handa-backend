@@ -230,7 +230,8 @@ model ShopperProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  shopSessions ShopSession[] @relation("ShopSessionShopper")
+  shopSessions ShopSession[]        @relation("ShopSessionShopper")
+  declines     ShopSessionDecline[]
 
   @@index([isOnline])
 }
@@ -701,11 +702,31 @@ model ShopSession {
   escrowHolds   EscrowHold[]
   sellerPayouts SellerPayout[]
   ratings       Rating[]
+  declines      ShopSessionDecline[]
 
   @@index([customerId])
   @@index([shopperId])
   @@index([riderId])
   @@index([status])
+}
+
+// A shopper declining a broadcast-available session is per-shopper, not
+// global -- the session stays visible to every OTHER online shopper (the
+// same broadcast-to-all model as dispatch:new-shop-delivery). Persisted
+// here (not just a client-side Set) so it survives a page refresh --
+// without this, the declining shopper's own browser reload wiped its
+// in-memory decline list and the exact same request kept reappearing for
+// them, even though they'd already said no.
+model ShopSessionDecline {
+  id            String         @id @default(uuid())
+  shopSessionId String
+  shopSession   ShopSession    @relation(fields: [shopSessionId], references: [id], onDelete: Cascade)
+  shopperId     String
+  shopper       ShopperProfile @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+
+  @@unique([shopSessionId, shopperId])
+  @@index([shopperId])
 }
 
 enum ShopItemAddedBy {

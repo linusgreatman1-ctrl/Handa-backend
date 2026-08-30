@@ -47,6 +47,27 @@ async function getManualPaymentRequest(req, res, next) {
   }
 }
 
+// Dev/testing-only shortcut: the customer's own "I've Made the Transfer"
+// tap immediately confirms their own request, instead of needing a real
+// admin to click Confirm in the admin panel. Only does anything when
+// DEV_BYPASS_PAYMENTS is on (403 otherwise) -- a real bank transfer must
+// stay admin-confirmed in production, since nothing here actually
+// verifies the money landed. See manualPayments.service.js's
+// createManualPaymentRequest for why this moved off the request-creation
+// step onto this explicit customer action instead.
+async function confirmManualPaymentDev(req, res, next) {
+  try {
+    if (!walletSvc.devBypassEnabled()) return res.status(403).json({ error: "Dev bypass is not enabled." });
+    const request = await prisma.manualPaymentRequest.findUnique({ where: { id: req.params.id } });
+    if (!request || request.userId !== req.user.id) return res.status(404).json({ error: "Request not found." });
+    if (request.status !== "PENDING") return res.json({ request });
+    const confirmed = await manualPayments.confirmManualPaymentRequest(request.id, null, req.app.get("io"));
+    res.json({ request: confirmed });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Called by the frontend after Paystack's inline checkout closes, and
 // independently by the webhook — both paths are idempotent (a Paystack
 // reference can only fund one wallet credit / unlock one escrow hold
@@ -216,4 +237,4 @@ async function initializeFeatureBoostPayment(req, res, next) {
   }
 }
 
-module.exports = { initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest };
+module.exports = { initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest, confirmManualPaymentDev };

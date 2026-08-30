@@ -6980,6 +6980,12 @@ function cancelManualBankTransferModal(){
 function confirmManualBankTransfer(requestId){
   var btn=document.getElementById('mbt-confirm-btn');if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Waiting for confirmation\u2026';}
   var statusEl=document.getElementById('mbt-status');
+  // Dev/testing convenience: if DEV_BYPASS_PAYMENTS is on, this confirms
+  // the request immediately (same effect as an admin clicking Confirm) --
+  // 403s harmlessly in production, where the poll below just waits for a
+  // real admin as normal. Only fires on this explicit "I've Made the
+  // Transfer" tap, never at request-creation time.
+  api('/payments/manual-request/'+requestId+'/dev-confirm',{method:'POST'}).catch(function(){});
   var tries=0;
   var iv=setInterval(async function(){
     tries++;
@@ -8543,13 +8549,17 @@ async function loadShopperAvailableSessions(){
     list.innerHTML='<div style="color:#E8392E;font-size:13px;text-align:center;padding:14px">'+(err.message||'Could not load requests')+'</div>';
   }
 }
-function declineShopperSession(sessionId){
+async function declineShopperSession(sessionId){
   _shopperDeclinedSessionIds.add(sessionId);
   var card=document.getElementById('sfm-avail-'+sessionId);
   if(card)card.remove();
   var list=document.getElementById('shopper-sessions-list');
   if(list&&!list.children.length)list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';
   toast('Session declined.');
+  // Persisted server-side (not just the in-memory Set above) so it stays
+  // declined across a page refresh — see shopSessions.controller.js's
+  // declineSession/listSessions.
+  try{await api('/shop-sessions/'+sessionId+'/decline',{method:'POST'});}catch(e){}
 }
 
 

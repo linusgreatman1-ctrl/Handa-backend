@@ -19,6 +19,7 @@ router.delete("/:id/items/:itemId", ctrl.removeItem);
 router.post("/:id/pay", ctrl.paySession);
 router.post("/:id/topup-items", ctrl.topUpItems);
 router.post("/:id/match", ctrl.matchSession);
+router.post("/:id/decline", ctrl.declineSession);
 router.post("/:id/start-call", ctrl.startCall);
 router.post("/:id/call-pause", ctrl.pauseCall);
 router.post("/:id/call-resume", ctrl.resumeCall);

@@ -2,7 +2,6 @@ const prisma = require("../config/db");
 const { generateReference } = require("../utils/reference");
 const companyBank = require("../config/companyBank");
 const { notifyAllAdmins } = require("./notifications.service");
-const { devBypassEnabled } = require("./wallet.service");
 
 // Bank Transfer is the one payment method that never touches Paystack —
 // every other method (Card/USSD/Wallet) keeps using it unchanged. The
@@ -17,33 +16,20 @@ async function createManualPaymentRequest(userId, purpose, targetId, amountKobo,
   const request = await prisma.manualPaymentRequest.create({
     data: { userId, purpose, targetId: targetId != null ? String(targetId) : null, amountKobo, reference },
   });
-  // DEV_BYPASS_PAYMENTS=true (same flag wallet.service.js's debitWallet
-  // already honors) skips the real admin-confirmation wait so a bank
-  // transfer "pays" the moment it's submitted -- lets the whole escrow/
-  // add-funds flow be exercised end-to-end without needing a second admin
-  // session open just to click Confirm each time. Unset (or "false") this
-  // before treating the app as production -- a real bank transfer must
-  // stay admin-confirmed, since nothing here actually verifies the money
-  // landed.
+  // Always starts PENDING, regardless of DEV_BYPASS_PAYMENTS -- the
+  // customer must see the real bank details and take the "I've Made the
+  // Transfer" action before anything downstream (escrow holds, notifying
+  // a matched shopper/rider, etc.) is treated as paid. Confirming
+  // immediately here (the old behavior) meant a shopper got notified of a
+  // new Shop-For-Me session the instant the customer merely SELECTED
+  // Bank Transfer, before they'd done anything resembling paying.
   //
-  // Every call site MUST check the returned `paid` flag instead of
-  // assuming BANK_TRANSFER always means "still pending" -- when this
-  // bypass fires, the payment (and everything downstream of it: escrow
-  // holds, notifying a matched shopper/rider, etc.) is already fully
-  // applied by the time this function returns, even though the customer
-  // never actually sent a transfer. Responding with a "please make the
-  // transfer" shape in that case is a real lie to the customer (they'd see
-  // "not paid yet" while the other party has already been notified as if
-  // they had paid) -- this is what caused a shopper to be notified of a
-  // new Shop-For-Me session before the customer had done anything beyond
-  // selecting Bank Transfer as their method.
-  if (devBypassEnabled()) {
-    const confirmed = await confirmManualPaymentRequest(request.id, null, io);
-    return { request: confirmed, bankDetails: companyBank, paid: true };
-  }
-  // io is optional -- a call site that omits it just skips the real-time
-  // admin ping; the pending request is still there next time an admin
-  // opens the Manual Bank Transfers tab either way.
+  // The dev-bypass shortcut now lives at the "I've Made the Transfer" tap
+  // instead (payments.controller.js's confirmManualPaymentDev, called by
+  // the frontend's confirmManualBankTransfer) -- same end result (no
+  // second admin session needed to click Confirm during testing), but
+  // gated behind an explicit customer action instead of firing before
+  // they've done anything.
   if (io) {
     notifyAllAdmins(io, "🏦 New manual bank transfer", `A user submitted a bank transfer for ₦${Math.round(amountKobo / 100).toLocaleString()} — confirm it once received.`, { manualPaymentRequestId: request.id }).catch(() => {});
   }
