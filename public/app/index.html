@@ -5061,6 +5061,7 @@ async function flipRtcCamera(){
 // so it can never collide with either.
 // ══════════════════════════════════════════════════════
 var _bcallRingTimer=null;
+var _bcallInviteResendIv=null;
 function bcallStart(){
   var otherUserId=window._callOtherUserId,bookingId=window._callBookingId||null;
   var name=window._callName||'Contact',avatar=window._callAvatar||'👤',role=window._callRole||'';
@@ -5069,7 +5070,25 @@ function bcallStart(){
   window._bcall={role:'caller',bookingId:bookingId,otherUserId:otherUserId,otherName:name,otherAvatar:avatar,otherRole:role,pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false,_ts:Date.now()};
   renderBcallOverlay();
   if(bookingId&&_socket)_socket.emit('booking:join',{bookingId:bookingId});
-  if(_socket)_socket.emit('bookingcall:invite',{toUserId:otherUserId,bookingId:bookingId,callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤',callerRole:S.role||''});
+  var _bcallInvitePayload={toUserId:otherUserId,bookingId:bookingId,callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤',callerRole:S.role||''};
+  if(_socket)_socket.emit('bookingcall:invite',_bcallInvitePayload);
+  // A single invite emit can occasionally never reach the callee -- a
+  // brief socket reconnect on their end right as it's sent, a dropped
+  // packet, the callee's tab just resuming from background -- with no
+  // retry, that's a real "the call just didn't ring" on a fully working
+  // system, only fixed by the caller manually hanging up and redialing.
+  // Resending the identical invite every 3s is safe (the callee's own
+  // bookingcall:incoming handler just re-shows the same incoming-call
+  // info, a harmless no-op once it's already ringing there) and makes a
+  // one-off delivery miss self-heal without the human needing to retry.
+  clearInterval(_bcallInviteResendIv);
+  _bcallInviteResendIv=setInterval(function(){
+    if(window._bcall&&window._bcall.role==='caller'&&window._bcall.status==='ringing'&&_socket){
+      _socket.emit('bookingcall:invite',_bcallInvitePayload);
+    }else{
+      clearInterval(_bcallInviteResendIv);
+    }
+  },3000);
   clearTimeout(_bcallRingTimer);
   _bcallRingTimer=setTimeout(function(){
     if(window._bcall&&window._bcall.status==='ringing'){
@@ -5277,6 +5296,7 @@ function bcallEnd(){
 }
 function bcallTeardown(){
   clearTimeout(_bcallRingTimer);
+  clearInterval(_bcallInviteResendIv);
   clearInterval(window._bcallTickTimer);
   var c=window._bcall;
   if(c){
