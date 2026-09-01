@@ -63,10 +63,18 @@ const PER_KM_KOBO = 5000; // ₦50/km
 const MIN_FEE_KOBO = 40000; // ₦400 — matches the old flat default as a floor
 const MAX_FEE_KOBO = 500000; // ₦5,000 — sanity cap against a bad/missing location producing a wild fee
 
-function estimateRiderFeeKobo(pickup, dropoff) {
-  const km = computeDistanceKm(pickup || {}, dropoff || {});
+// Shared by both distance sources (this file's own haversine estimate, and
+// googleRoutes.service.js's real road-distance calculation) so a market's
+// predicted fee is priced identically regardless of which one produced the
+// km figure.
+function feeKoboFromDistanceKm(km) {
   const raw = BASE_FARE_KOBO + Math.round(km * PER_KM_KOBO);
-  return { feeKobo: Math.min(MAX_FEE_KOBO, Math.max(MIN_FEE_KOBO, raw)), distanceKm: Math.round(km * 10) / 10 };
+  return Math.min(MAX_FEE_KOBO, Math.max(MIN_FEE_KOBO, raw));
 }
 
-module.exports = { estimateRiderFeeKobo, computeDistanceKm, haversineKm, STATE_CENTROIDS };
+function estimateRiderFeeKobo(pickup, dropoff) {
+  const km = computeDistanceKm(pickup || {}, dropoff || {});
+  return { feeKobo: feeKoboFromDistanceKm(km), distanceKm: Math.round(km * 10) / 10 };
+}
+
+module.exports = { estimateRiderFeeKobo, computeDistanceKm, haversineKm, feeKoboFromDistanceKm, STATE_CENTROIDS };

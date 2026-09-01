@@ -4641,6 +4641,7 @@ async function depositAndFindShopper() {
   try{
     var createRes=await api('/shop-sessions',{method:'POST',body:JSON.stringify({
       deliveryAddress:addrEl.value.trim(),
+      market:marketEl.value.trim(),
       items:validItems.map(function(i){return {text:i.text};}),
     })});
     window._sfmSession=createRes.session;

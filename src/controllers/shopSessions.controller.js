@@ -9,6 +9,7 @@ const { generateOtpCode } = require("../utils/otp");
 const { notify } = require("../services/notifications.service");
 const { closeSupportThreadForContext } = require("./chat.controller");
 const distanceFee = require("../utils/distanceFee");
+const googleRoutes = require("../services/googleRoutes.service");
 
 const SEARCHING_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 // Split by stage rather than one blanket 2h cutoff for every stage -- a
@@ -109,8 +110,29 @@ function sessionFeeForDuration(minutes) {
 
 async function createSession(req, res, next) {
   try {
-    const { storeId, deliveryAddress, deliveryLat, deliveryLng, items } = req.body;
+    const { storeId, deliveryAddress, deliveryLat, deliveryLng, items, market } = req.body;
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "At least one item is required." });
+
+    // Real road-distance predicted rider fee, computed once here (not
+    // DEFAULT_RIDER_FEE_KOBO's old flat guess) -- the market name the
+    // customer typed is the route's origin, geocoded by Google directly
+    // from the free-text address (no separate geocoding call needed).
+    // Per the decision this replaces (not just seeds) the fee: findRider
+    // no longer recomputes it from the matched shopper's own address, it
+    // just reuses whatever was set here. Falls back to the flat default
+    // on any failure -- missing GOOGLE_MAPS_API_KEY, an address Google
+    // can't resolve, a network error -- so session creation never breaks
+    // because of this.
+    let riderFeeKobo = DEFAULT_RIDER_FEE_KOBO;
+    if (market && deliveryAddress) {
+      try {
+        const origin = req.user.state ? `${market}, ${req.user.state}, Nigeria` : `${market}, Nigeria`;
+        const { distanceKm } = await googleRoutes.computeRouteDistanceKm(origin, `${deliveryAddress}, Nigeria`);
+        riderFeeKobo = distanceFee.feeKoboFromDistanceKm(distanceKm);
+      } catch (err) {
+        console.error("[shop-session] Google Routes fee estimate failed, using flat default:", err.message);
+      }
+    }
 
     const session = await prisma.shopSession.create({
       data: {
@@ -119,12 +141,13 @@ async function createSession(req, res, next) {
         deliveryAddress,
         deliveryLat,
         deliveryLng,
+        market: market || null,
         sessionFeeKobo: MIN_SESSION_FEE_KOBO,
-        riderFeeKobo: DEFAULT_RIDER_FEE_KOBO,
+        riderFeeKobo,
         // Snapshot of what's actually being collected for each fee at
         // deposit time -- see the schema comment on these two fields.
         sessionFeeCollectedKobo: MIN_SESSION_FEE_KOBO,
-        riderFeeCollectedKobo: DEFAULT_RIDER_FEE_KOBO,
+        riderFeeCollectedKobo: riderFeeKobo,
         pickupCode: generateOtpCode(),
         deliveryCode: generateOtpCode(),
         items: { create: items.map((i) => ({ text: i.text, addedBy: "CUSTOMER" })) },
@@ -830,30 +853,24 @@ async function confirmEmergencyEnd(req, res, next) {
   }
 }
 
-// The rider fee is computed right here — "immediately the shopper starts
-// searching for a rider" — using the shopper's and customer's registered
-// state/LGA (see utils/distanceFee.js for how, given no Maps API key is
-// configured yet). Riders then see this real number on GET
-// /shop-sessions?as=available before deciding to accept. The predicted
-// ₦4,000 collected at deposit time (DEFAULT_RIDER_FEE_KOBO) was only ever
-// an estimate: if the real fee comes in UNDER that, the unused portion is
-// refunded -- but startPackaging (called earlier, LIVE_CALL->PACKAGING)
-// already knows by now whether the real call-duration session fee came in
-// OVER what was collected for it. Rather than refunding the rider-fee
-// surplus outright while a session-fee shortfall sits unpaid right next
-// to it, that surplus is applied to the shortfall FIRST -- only whatever
-// is genuinely left over after that gets refunded to the wallet, and only
-// whatever the offset didn't cover shows up in the combined
-// insufficient-funds check at riderArrivedShopper below.
+// The rider fee itself is now set once at createSession (real Google-Routes
+// road distance, market -> customer delivery address — see
+// googleRoutes.service.js) and treated as final; this function no longer
+// recomputes it from the matched shopper's own registered address. What
+// stays here is the safety-net offset/refund logic, unchanged: it only
+// actually does anything if riderFeeCollectedKobo and riderFeeKobo have
+// drifted apart since creation (which shouldn't normally happen under the
+// new design, but the mechanism is kept intact rather than deleted). If a
+// session-fee shortfall exists (startPackaging, called earlier, already
+// knows whether the real call-duration fee came in over what was
+// collected) and a rider-fee surplus also exists, the surplus is applied
+// to the shortfall FIRST -- only whatever is genuinely left over after
+// that gets refunded to the wallet, and only whatever the offset didn't
+// cover shows up in the combined insufficient-funds check at
+// riderArrivedShopper below.
 async function findRider(req, res, next) {
   try {
-    const session = await prisma.shopSession.findUnique({
-      where: { id: req.params.id },
-      include: {
-        shopper: { include: { user: { select: { state: true, lga: true } } } },
-        customer: { select: { state: true, lga: true } },
-      },
-    });
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ error: "Shop session not found." });
     if (!req.user.shopperProfile || session.shopperId !== req.user.shopperProfile.id) {
       return res.status(403).json({ error: "You are not the shopper on this session." });
@@ -862,12 +879,18 @@ async function findRider(req, res, next) {
       return res.status(409).json({ error: `Session must be in one of [PACKAGING] (currently ${session.status}).` });
     }
 
-    const pickup = session.shopper?.user || {};
-    const dropoff = session.customer || {};
-    const { feeKobo, distanceKm } = distanceFee.estimateRiderFeeKobo(pickup, dropoff);
+    // riderFeeKobo is no longer recomputed here from the matched shopper's
+    // own registered address -- createSession already set it to the real,
+    // final Google-Routes-based estimate (market -> customer delivery
+    // address), and that's authoritative now, not this moment. feeKobo
+    // therefore just reuses it; the offset/refund logic below is kept
+    // completely intact as a safety net (it'll normally see zero surplus/
+    // shortfall since riderFeeCollectedKobo was set to the same value at
+    // creation) rather than removed.
+    const feeKobo = session.riderFeeKobo;
     const riderCollectedKobo = session.riderFeeCollectedKobo ?? session.riderFeeKobo;
     const sessionCollectedKobo = session.sessionFeeCollectedKobo ?? session.sessionFeeKobo;
-    const updateData = { status: "FINDING_RIDER", riderFeeKobo: feeKobo };
+    const updateData = { status: "FINDING_RIDER" };
 
     const riderSurplusKobo = Math.max(0, riderCollectedKobo - feeKobo);
     if (riderSurplusKobo > 0) {
@@ -888,18 +911,18 @@ async function findRider(req, res, next) {
       if (offsetKobo > 0) {
         const remainingShortfallKobo = sessionShortfallKobo - offsetKobo;
         const msg = remainingShortfallKobo > 0
-          ? `Your rider is only ${distanceKm}km away — ₦${Math.round(offsetKobo / 100).toLocaleString()} of the unused delivery fee covered part of your higher call fee. You still owe ₦${Math.round(remainingShortfallKobo / 100).toLocaleString()} more to complete this session.`
-          : `Your rider is only ${distanceKm}km away — ₦${Math.round(offsetKobo / 100).toLocaleString()} of the unused delivery fee was applied to cover your higher call fee in full.` + (refundKobo > 0 ? ` The remaining ₦${Math.round(refundKobo / 100).toLocaleString()} was refunded to your wallet.` : "");
+          ? `₦${Math.round(offsetKobo / 100).toLocaleString()} of your unused delivery fee covered part of your higher call fee. You still owe ₦${Math.round(remainingShortfallKobo / 100).toLocaleString()} more to complete this session.`
+          : `₦${Math.round(offsetKobo / 100).toLocaleString()} of your unused delivery fee was applied to cover your higher call fee in full.` + (refundKobo > 0 ? ` The remaining ₦${Math.round(refundKobo / 100).toLocaleString()} was refunded to your wallet.` : "");
         await notify(io, session.customerId, "ORDER_UPDATE", "Delivery fee applied to session fee", msg, { sessionId: session.id });
       } else if (refundKobo > 0) {
-        await notify(io, session.customerId, "ORDER_UPDATE", "Delivery fee refunded", `Your rider is only ${distanceKm}km away — ₦${Math.round(refundKobo / 100).toLocaleString()} of the predicted delivery fee was refunded to your wallet.`, { sessionId: session.id });
+        await notify(io, session.customerId, "ORDER_UPDATE", "Delivery fee refunded", `₦${Math.round(refundKobo / 100).toLocaleString()} of your predicted delivery fee was refunded to your wallet.`, { sessionId: session.id });
       }
     }
 
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: updateData });
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "FINDING_RIDER" });
     req.app.get("io")?.to("dispatch:riders").emit("dispatch:new-shop-delivery", { sessionId: req.params.id });
-    res.json({ session: updated, distanceKm });
+    res.json({ session: updated });
   } catch (err) {
     next(err);
   }
