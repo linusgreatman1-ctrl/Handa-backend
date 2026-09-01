@@ -276,15 +276,18 @@ async function getSession(req, res, next) {
     }
     // Same "already reported, swap the button for a static state" pattern
     // getBooking already has -- split per role (submitReport's own
-    // context map sends 'shopper_session' reports as context:SHOP_SESSION
-    // and 'rider' reports as context:RIDER, both keyed by this session's
-    // id), so the two report buttons can independently show "already
-    // reported" instead of one ticket silently covering both.
-    const [shopperReportTicket, riderReportTicket] = await Promise.all([
+    // context map sends 'shopper_session' reports as context:SHOP_SESSION,
+    // 'rider' reports as context:RIDER, and 'customer' reports as
+    // context:CUSTOMER, all keyed by this session's id), so each of the
+    // three report buttons (shopper/customer/rider can each report a
+    // different other party) independently shows "already reported"
+    // instead of one ticket silently covering all of them.
+    const [shopperReportTicket, riderReportTicket, customerReportTicket] = await Promise.all([
       prisma.supportTicket.findFirst({ where: { context: "SHOP_SESSION", contextId: session.id }, orderBy: { createdAt: "desc" } }),
       prisma.supportTicket.findFirst({ where: { context: "RIDER", contextId: session.id }, orderBy: { createdAt: "desc" } }),
+      prisma.supportTicket.findFirst({ where: { context: "CUSTOMER", contextId: session.id }, orderBy: { createdAt: "desc" } }),
     ]);
-    res.json({ session, shopperReportTicket, riderReportTicket });
+    res.json({ session, shopperReportTicket, riderReportTicket, customerReportTicket });
   } catch (err) {
     next(err);
   }

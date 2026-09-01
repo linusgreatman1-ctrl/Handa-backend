@@ -3355,12 +3355,36 @@ function _joinShopSessionRoom(sessionId){
     });
   });
 }
-async function restoreActiveShopSession(role) {
+// Pure detection -- finds this role's own active (non-terminal) session,
+// if any, without navigating anywhere. Used by both the login/refresh
+// prompt flow (promptOrEnterActiveShopSession) and the plain unconditional
+// restore (restoreActiveShopSession, kept for the "Track This Delivery"
+// banner's own explicit click -- an intentional user action that doesn't
+// need a confirmation prompt in front of it).
+async function detectActiveShopSession(role) {
   try {
     if (role === 'shopper') {
       var rs = await api('/shop-sessions?as=shopper');
-      var activeS = (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
-      if (!activeS) return false;
+      return (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;}) || null;
+    }
+    if (role === 'rider') {
+      var rr = await api('/shop-sessions?as=rider');
+      return (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;}) || null;
+    }
+    var rc = await api('/shop-sessions?as=customer');
+    return (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1;}) || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Actually navigates into an already-detected active session for the given
+// role -- the real work restoreActiveShopSession used to do unconditionally
+// on every single login/refresh, now only run once the user has explicitly
+// chosen to continue (or via the banner's direct click).
+async function enterActiveShopSession(role, activeS) {
+  try {
+    if (role === 'shopper') {
       // GET /shop-sessions?as=... (list) uses a deliberately narrow include
       // (no user.id/phone on shopper, no rider at all) -- fine for a list
       // row, but every chat/call button reads exactly those missing fields
@@ -3395,29 +3419,80 @@ async function restoreActiveShopSession(role) {
       return true;
     }
     if (role === 'rider') {
-      var rr = await api('/shop-sessions?as=rider');
-      var activeR = (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
-      if (!activeR) return false;
-      var fullR = await api('/shop-sessions/'+activeR.id);
+      var fullR = await api('/shop-sessions/'+activeS.id);
       window._riderActiveSession = fullR.session;
       eGo('rider');
-      await _joinShopSessionRoom(activeR.id);
-      if (activeR.status === 'OUT_FOR_DELIVERY') riderMapPhase2(); else riderMapPhase1();
+      await _joinShopSessionRoom(activeS.id);
+      if (activeS.status === 'OUT_FOR_DELIVERY') riderMapPhase2(); else riderMapPhase1();
       return true;
     }
     // customer
-    var rc = await api('/shop-sessions?as=customer');
-    var activeC = (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1;});
-    if (!activeC) return false;
-    var fullC = await api('/shop-sessions/'+activeC.id);
+    var fullC = await api('/shop-sessions/'+activeS.id);
     window._sfmSession = fullC.session;
-    var cPhase = activeC.status==='SEARCHING'?'finding':(activeC.status==='MATCHED'?'shopperProfile':(SFM_STATUS_PHASE[activeC.status]||'liveCall'));
+    var cPhase = activeS.status==='SEARCHING'?'finding':(activeS.status==='MATCHED'?'shopperProfile':(SFM_STATUS_PHASE[activeS.status]||'liveCall'));
     window._sfmResumePhase = cPhase;
-    await _joinShopSessionRoom(activeC.id);
+    await _joinShopSessionRoom(activeS.id);
     eGo('sfm');
     return true;
   } catch (err) {
     return false;
+  }
+}
+
+async function restoreActiveShopSession(role) {
+  var activeS = await detectActiveShopSession(role);
+  if (!activeS) return false;
+  return enterActiveShopSession(role, activeS);
+}
+
+// ── Ongoing-session prompt on login/refresh ──────────────────────────────
+// Previously, every login/refresh silently forced the customer/shopper/
+// rider straight back into whatever session was still active -- "Track
+// This Delivery" (or the equivalent live-call/tracking screen) showing up
+// every single time they merely reloaded the page, with no way to just
+// look at their homepage instead. Now: detect the same way, but ask first.
+// "Return to Homepage" only dismisses the prompt for THIS specific session
+// (remembered in sessionStorage, per tab) -- the real session is completely
+// untouched and keeps running exactly as before; it'll prompt again next
+// reload only if a genuinely different session becomes active, or never
+// again for this one unless the user navigates back into it themselves
+// (e.g. via the shopper's own "Track This Delivery" banner, which still
+// works exactly as before -- an explicit click doesn't need re-asking).
+function _sessionDismissKey(sessionId){ return 'handa_dismissed_session_'+sessionId; }
+function _isSessionDismissed(sessionId){
+  try{ return sessionStorage.getItem(_sessionDismissKey(sessionId))==='1'; }catch(e){ return false; }
+}
+function _dismissSession(sessionId){
+  try{ sessionStorage.setItem(_sessionDismissKey(sessionId),'1'); }catch(e){}
+}
+async function promptOrEnterActiveShopSession(role){
+  var activeS = await detectActiveShopSession(role);
+  if (!activeS || _isSessionDismissed(activeS.id)) return false;
+  var roleLabel = role==='shopper' ? 'shopping session' : role==='rider' ? 'delivery' : 'Shop-For-Me session';
+  window._ongoingSessionCtx = { role: role, session: activeS };
+  showProcedureModal(
+    '<div style="padding:24px 20px;text-align:center;">'
+    +'<div style="font-size:40px;margin-bottom:10px;">🛒</div>'
+    +'<div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#F2EDE8;margin-bottom:8px;">Ongoing Session</div>'
+    +'<div style="font-size:13px;color:#9A9390;margin-bottom:20px;">You have an ongoing '+roleLabel+' in progress. Continue where you left off, or return to your homepage?</div>'
+    +'<button onclick="_ongoingSessionChoice(\'continue\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:10px;">▶ Continue Session</button>'
+    +'<button onclick="_ongoingSessionChoice(\'home\')" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🏠 Return to Homepage</button>'
+    +'</div>'
+  );
+  return true;
+}
+function _ongoingSessionChoice(choice){
+  var ctx = window._ongoingSessionCtx;
+  closeProcedureModal();
+  window._ongoingSessionCtx = null;
+  if (!ctx) return;
+  if (choice==='continue') {
+    enterActiveShopSession(ctx.role, ctx.session);
+  } else {
+    _dismissSession(ctx.session.id);
+    // The real home screen underneath was already rendered by the caller
+    // before this prompt appeared (see tryRestoreSession) -- nothing
+    // further to do here, the modal just closes onto it.
   }
 }
 
@@ -7847,7 +7922,7 @@ async function submitReport(){
     if(evidenceEl){evidenceEl.value='';var lt=document.getElementById('report-evidence-label-text');if(lt)lt.textContent='Choose a photo';}
     closeBottomSheet&&closeBottomSheet();
     closeProcedureModal&&closeProcedureModal();
-    toast('Report submitted! Our team will contact you within 30 mins.');
+    toast('Your report has been received — our team will get back to you within 24 hours.');
     if(wasOrderLive){
       var rm=document.getElementById('rating-modal');if(rm)rm.style.display='flex';
     }else if(_eRole==='customer'&&(_reportContext==='shopper_session'||_reportContext==='rider')&&_reportContextId){
@@ -8081,13 +8156,21 @@ async function showRiderRideHistory(){
 async function showRiderRideDetail(id){
   var body=document.getElementById('rider-body');if(!body)return;
   body.innerHTML='<div style="padding:52px 16px 24px;"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>';
-  var s;
-  try{ s=(await api('/shop-sessions/'+id)).session; }
+  var s,customerReportTicket,shopperReportTicket;
+  try{ var res=await api('/shop-sessions/'+id); s=res.session; customerReportTicket=res.customerReportTicket; shopperReportTicket=res.shopperReportTicket; }
   catch(err){ body.innerHTML='<div style="padding:52px 16px 24px;"><div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load delivery')+'</div></div>'; return; }
   var earned=Math.round((s.riderFeeKobo||0)*0.8/100);
   // Session/delivery details first, Report Customer + Report Shopper
   // together underneath -- was interleaved (a contact card + its own
   // report button, repeated per party, details last), not this order.
+  // Each shows "already reported" once a real ticket exists for that
+  // target on this session, instead of always offering the button again.
+  function _riderReportRow(label,ticket,showKey){
+    if(ticket){
+      return '<div style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(245,166,35,.35);background:rgba(245,166,35,.08);color:#F5A623;font-weight:700;font-size:12px;text-align:center;">'+label+' reported</div>';
+    }
+    return '<button onclick="showReportIssue(\''+showKey+'\',\''+s.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x26A0;&#xFE0F; Report '+label+'</button>';
+  }
   body.innerHTML='<div style="padding:52px 16px 24px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="showRiderRideHistory()" class="ibtn">&#x2190;</button><h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">Delivery #'+s.id.slice(0,8)+'</h2></div>'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:12px;">'
     +'<div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-bottom:10px;">&#x1F4E6; Delivery</div>'
@@ -8098,8 +8181,8 @@ async function showRiderRideDetail(id){
     +'<div style="display:flex;justify-content:space-between;padding:7px 0;"><span style="font-size:12px;color:#9A9390;">Earned</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">'+N(earned)+'</span></div>'
     +'</div>'
     +'<div style="display:flex;gap:10px;">'
-    +'<button onclick="showReportIssue(\'customer\',\''+s.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x26A0;&#xFE0F; Report Customer</button>'
-    +'<button onclick="showReportIssue(\'shopper_session\',\''+s.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">&#x26A0;&#xFE0F; Report Shopper</button>'
+    +_riderReportRow('Customer',customerReportTicket,'customer')
+    +_riderReportRow('Shopper',shopperReportTicket,'shopper_session')
     +'</div>';
 }
 
@@ -8728,10 +8811,12 @@ async function refreshShopperActiveSessionBanner(){
 // ── Shopper session flow (mirrors customer phases exactly) ──────────────
 async function openShopperSessionDetail(id) {
   showBottomSheet('Session Details', '<div style="text-align:center;padding:30px;color:#9A9390">Loading…</div>');
-  let s;
+  let s,customerReportTicket,riderReportTicket;
   try{
     const res = await api('/shop-sessions/'+id);
     s = res.session;
+    customerReportTicket = res.customerReportTicket;
+    riderReportTicket = res.riderReportTicket;
   }catch(err){
     showBottomSheet('Session Details', '<div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load session')+'</div>');
     return;
@@ -8770,8 +8855,12 @@ async function openShopperSessionDetail(id) {
     </div>
     ${canReport?`
     <div style="display:flex;gap:9px;">
-      <button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('customer');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Customer</button>
-      ${hasRider?`<button onclick="closeProcedureModal();setTimeout(function(){showReportIssue('rider');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Rider</button>`:''}
+      ${customerReportTicket
+        ?'<div style="flex:1;padding:11px;border-radius:13px;border:1.5px solid rgba(245,166,35,.35);background:rgba(245,166,35,.08);color:#F5A623;font-weight:700;font-size:12px;text-align:center;">Customer reported</div>'
+        :`<button onclick="closeBottomSheet();setTimeout(function(){showReportIssue('customer','${s.id}');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Customer</button>`}
+      ${hasRider?(riderReportTicket
+        ?'<div style="flex:1;padding:11px;border-radius:13px;border:1.5px solid rgba(245,166,35,.35);background:rgba(245,166,35,.08);color:#F5A623;font-weight:700;font-size:12px;text-align:center;">Rider reported</div>'
+        :`<button onclick="closeBottomSheet();setTimeout(function(){showReportIssue('rider','${s.id}');},150)" style="flex:1;background:rgba(232,57,46,0.10);border:1.5px solid #E8392E;border-radius:13px;padding:11px;font-weight:700;font-size:12px;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">⚠️ Report Rider</button>`):''}
     </div>`:''}
   `);
 }
@@ -10073,27 +10162,30 @@ async function tryRestoreSession(attempt){
     var bn=document.getElementById('bnav');if(bn)bn.style.display='flex';
     if(_eRole==='shopper'){
       S.role='shopper';S.curScreen='shopper';
-      var resumedShopper=await restoreActiveShopSession('shopper');
-      if(!resumedShopper)afterShopperAuth();
+      // Home renders immediately, unconditionally -- an ongoing session (if
+      // any) surfaces a moment later as a real Continue/Return-Home prompt
+      // instead of forcing straight into it on every login/refresh.
+      afterShopperAuth();
+      promptOrEnterActiveShopSession('shopper');
       var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}
-      // This whole branch bypasses eGo() (calls restoreActiveShopSession/
-      // afterShopperAuth directly instead), so eGo()'s own "show the
-      // notif bell for any non-login screen" line never ran for a shopper
-      // restoring their session -- which is the normal path on every
-      // return visit/reload, not an edge case. Every other role either
-      // goes through eGo() directly or falls back to it, so only shopper
-      // was actually missing this.
+      // This whole branch bypasses eGo() (calls afterShopperAuth directly
+      // instead), so eGo()'s own "show the notif bell for any non-login
+      // screen" line never ran for a shopper restoring their session --
+      // which is the normal path on every return visit/reload, not an edge
+      // case. Every other role either goes through eGo() directly or falls
+      // back to it, so only shopper was actually missing this.
       var nb0=document.getElementById('notif-bell');if(nb0)nb0.style.display='flex';
     }
     else if(_eRole==='cook'){eGo('cook');}
     else if(_eRole==='event_planner'){eGo('event_planner');}
     else if(_eRole==='rider'){
-      var resumedRider=await restoreActiveShopSession('rider');
-      if(!resumedRider){if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
+      if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();
+      eGo('rider');
+      promptOrEnterActiveShopSession('rider');
     }
     else{
-      var resumedCustomer=await restoreActiveShopSession('customer');
-      if(!resumedCustomer)eGo('home');
+      eGo('home');
+      promptOrEnterActiveShopSession('customer');
     }
     scheduleProactiveRefresh();
     return true;
