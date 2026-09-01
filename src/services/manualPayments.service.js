@@ -46,7 +46,13 @@ function metadataForRequest(request) {
   if (request.purpose === "BOOKING_PAYMENT") metadata.bookingId = request.targetId;
   else if (request.purpose === "SHOP_SESSION_PAYMENT" || request.purpose === "SHOP_SESSION_CALL_TOPUP" || request.purpose === "SHOP_SESSION_RIDER_FEE_TOPUP" || request.purpose === "SHOP_SESSION_SHORTFALL_PAYMENT") metadata.sessionId = request.targetId;
   else if (request.purpose === "COMMISSION_PAYMENT") metadata.commissionPeriodId = request.targetId;
-  else if (request.purpose === "FEATURE_BOOST_PAYMENT") metadata.vendorId = request.targetId;
+  else if (request.purpose === "FEATURE_BOOST_PAYMENT") {
+    // See payments.controller.js's initializeFeatureBoostPayment -- targetId
+    // is "<vendorId>:<plan>" since this model has no separate metadata column.
+    const [vendorId, plan] = String(request.targetId).split(":");
+    metadata.vendorId = vendorId;
+    metadata.plan = plan;
+  }
   return metadata;
 }
 

@@ -10406,7 +10406,7 @@ async function renderVendorDashboard(kind){
   if(!isCook) h+='<div id="event-requests-section" style="margin-bottom:16px"></div>';
   h+='<div style="background:#1C1C1C;border:1.5px solid rgba(245,166,35,.3);border-radius:14px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">';
   h+='<div><p style="font-weight:700;font-size:14px;margin:0 0 2px">⭐ Get Featured</p><p style="color:#9A9390;font-size:12px;margin:0">Appear on Handa homepage</p></div>';
-  h+='<button onclick="payToFeature()" style="padding:10px 14px;background:#F5A623;color:#111;border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">₦5,000/wk</button></div>';
+  h+='<button onclick="openFeaturePlanModal()" style="padding:10px 14px;background:#F5A623;color:#111;border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">From ₦6,500/mo</button></div>';
   // A clear, noticeable break between the commission/featured banners above
   // and the real bookings list below -- the two used to run straight into
   // each other with only a small uppercase label between them.
@@ -11816,6 +11816,18 @@ async function vendorBookingAction(id,action){
   }catch(err){showToast&&showToast(err.message||'Could not update booking','warning');}
 }
 
+var _featurePlan='MONTHLY';
+function openFeaturePlanModal(){
+  var html = '<div id="vpm-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
+    + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:360px;width:100%;padding:20px;font-family:\'DM Sans\',sans-serif;">'
+    + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">⭐ Get Featured</div>'
+    + '<div style="font-size:12px;color:#9A9390;margin-bottom:14px;">Choose a plan</div>'
+    + '<button onclick="closeVendorPayMethodModal();_featurePlan=\'MONTHLY\';openVendorPayMethodModal(\'feature\')" style="display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;"><span>📅 Monthly</span><span style="color:#F5A623;">₦6,500</span></button>'
+    + '<button onclick="closeVendorPayMethodModal();_featurePlan=\'YEARLY\';openVendorPayMethodModal(\'feature\')" style="display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;"><span>🗓️ Yearly <span style="font-size:10px;color:#2ECC71;font-weight:700;">SAVE ₦8,000</span></span><span style="color:#F5A623;">₦70,000</span></button>'
+    + '<button onclick="closeVendorPayMethodModal()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
+    + '</div></div>';
+  var d=document.createElement('div');d.id='vpm-modal-wrap';d.innerHTML=html;document.body.appendChild(d);
+}
 function openVendorPayMethodModal(kind){
   var fn=kind==='commission'?'payCommission':'payToFeature';
   var html = '<div id="vpm-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
@@ -11851,9 +11863,9 @@ async function payCommission(method){
   }catch(err){showToast&&showToast(err.message||'Could not start commission payment','warning');}
 }
 async function payToFeature(method){
-  if(!method){openVendorPayMethodModal('feature');return;}
+  if(!method){openFeaturePlanModal();return;}
   try{
-    var res=await api('/payments/feature-boost/initialize',{method:'POST',body:JSON.stringify({paymentMethod:method})});
+    var res=await api('/payments/feature-boost/initialize',{method:'POST',body:JSON.stringify({paymentMethod:method,plan:_featurePlan})});
     if(res.paid){showToast&&showToast('Feature boost paid from wallet','success');}
     else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Feature boost payment confirmed','success');},function(){openVendorPayMethodModal('feature');});}
     else if(res.authorizationUrl){

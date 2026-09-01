@@ -120,7 +120,7 @@ async function applyVerifiedPayment(data, io) {
     return { purpose };
   }
   if (purpose === "FEATURE_BOOST_PAYMENT") {
-    await orderFlow.confirmFeatureBoostPayment(data.metadata.vendorId, data.amount, data.reference);
+    await orderFlow.confirmFeatureBoostPayment(data.metadata.vendorId, data.amount, data.reference, data.metadata.plan);
     return { purpose };
   }
   return { purpose: purpose || "UNKNOWN" };
@@ -205,31 +205,40 @@ async function initializeCommissionPayment(req, res, next) {
   }
 }
 
+// ₦6,500/month or ₦70,000/year — replaces the old flat ₦5,000/week plan.
+const FEATURE_BOOST_PRICES_KOBO = { MONTHLY: 650000, YEARLY: 7000000 };
+
 async function initializeFeatureBoostPayment(req, res, next) {
   try {
-    const weeklyFee = Number(process.env.FEATURE_BOOST_WEEKLY_NGN || 5000) * 100;
+    const plan = req.body.plan === "YEARLY" ? "YEARLY" : "MONTHLY";
+    const amountKobo = FEATURE_BOOST_PRICES_KOBO[plan];
     const reference = generateReference("BST");
 
     if (req.body.paymentMethod === "WALLET") {
-      await walletSvc.debitWallet(req.user.id, weeklyFee, "FEATURE_BOOST_PAYMENT", {
+      await walletSvc.debitWallet(req.user.id, amountKobo, "FEATURE_BOOST_PAYMENT", {
         reference,
-        description: "Feature boost payment via wallet",
+        description: `Feature boost payment via wallet (${plan.toLowerCase()})`,
       });
-      await orderFlow.confirmFeatureBoostPayment(req.user.vendorProfile.id, weeklyFee, reference);
+      await orderFlow.confirmFeatureBoostPayment(req.user.vendorProfile.id, amountKobo, reference, plan);
       return res.json({ paid: true });
     }
 
     if (req.body.paymentMethod === "BANK_TRANSFER") {
-      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "FEATURE_BOOST_PAYMENT", req.user.vendorProfile.id, weeklyFee, req.app.get("io"));
+      // ManualPaymentRequest has no separate metadata column -- the plan is
+      // encoded into targetId ("<vendorId>:<plan>") and split back out in
+      // manualPayments.service.js's metadataForRequest, same trick used
+      // nowhere else in this file only because every other purpose here
+      // needs just the one id.
+      const { request, bankDetails, paid } = await manualPayments.createManualPaymentRequest(req.user.id, "FEATURE_BOOST_PAYMENT", `${req.user.vendorProfile.id}:${plan}`, amountKobo, req.app.get("io"));
       if (paid) return res.json({ paid: true });
       return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
     const data = await paystack.initializeTransaction({
       email: req.user.email,
-      amountKobo: weeklyFee,
+      amountKobo,
       reference,
-      metadata: { purpose: "FEATURE_BOOST_PAYMENT", vendorId: req.user.vendorProfile.id },
+      metadata: { purpose: "FEATURE_BOOST_PAYMENT", vendorId: req.user.vendorProfile.id, plan },
     });
     res.json({ authorizationUrl: data.authorization_url, reference });
   } catch (err) {

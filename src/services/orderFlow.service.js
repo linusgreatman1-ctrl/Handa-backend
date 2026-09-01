@@ -221,8 +221,14 @@ async function confirmCommissionPayment(commissionPeriodId, reference) {
   });
 }
 
-async function confirmFeatureBoostPayment(vendorId, amountKobo, reference) {
-  const endAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+// ₦6,500/month or ₦70,000/year (payments.controller.js's
+// FEATURE_BOOST_PRICES_KOBO) -- MONTHLY is the safe default if plan is ever
+// missing/unrecognized (e.g. an old pending manual request from before this
+// two-tier redesign).
+const FEATURE_BOOST_DURATIONS_MS = { MONTHLY: 30 * 24 * 60 * 60 * 1000, YEARLY: 365 * 24 * 60 * 60 * 1000 };
+async function confirmFeatureBoostPayment(vendorId, amountKobo, reference, plan) {
+  const durationMs = FEATURE_BOOST_DURATIONS_MS[plan] || FEATURE_BOOST_DURATIONS_MS.MONTHLY;
+  const endAt = new Date(Date.now() + durationMs);
   await prisma.vendorProfile.update({ where: { id: vendorId }, data: { featuredUntil: endAt } });
   return prisma.featureBoost.create({ data: { vendorId, amountPaidKobo: amountKobo, endAt } });
 }
