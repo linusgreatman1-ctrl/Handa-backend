@@ -4079,10 +4079,18 @@ function _sfmHideRatingBlock(rateeRole,score){
 // Shared 2-minute idle auto-return-home -- used by both the Shop-For-Me
 // rating screen and the generic booking Thank-You screen, per "once a
 // customer has finished rating and review... if it stays for 2 minutes
-// with no action taken it returns to homepage." Cleared on any click
-// within the screen so genuine activity doesn't get cut off mid-read.
+// with no action taken it returns to homepage." Was only reset by 'click'
+// -- genuinely writing a review comment (keystrokes in the textarea, no
+// click involved once the field already has focus) or just scrolling to
+// re-read the order details never touched the timer at all, so a customer
+// actively typing a longer review got silently booted to home mid-write,
+// discarding it, well within a normal 2 minutes of real engagement. Listens
+// for input/keydown/scroll too now, not just click, so any real activity
+// on the screen counts.
 var _screenIdleTimer=null;
 var _screenIdleListener=null;
+var _screenIdleContainer=null;
+var _SCREEN_IDLE_EVENTS=['click','input','keydown','scroll','touchstart'];
 function startScreenIdleAutoHome(containerId,ms){
   stopScreenIdleAutoHome();
   var container=document.getElementById(containerId);
@@ -4091,7 +4099,8 @@ function startScreenIdleAutoHome(containerId,ms){
   arm();
   if(container){
     _screenIdleListener=arm;
-    container.addEventListener('click',_screenIdleListener);
+    _screenIdleContainer=container;
+    _SCREEN_IDLE_EVENTS.forEach(function(ev){ container.addEventListener(ev,_screenIdleListener,{passive:true}); });
   }
 }
 // Any real navigation away should stop this too, not just a fresh call to
@@ -4099,7 +4108,11 @@ function startScreenIdleAutoHome(containerId,ms){
 // customer already left could fire go('home') on whatever they're doing now.
 function stopScreenIdleAutoHome(){
   if(_screenIdleTimer){clearTimeout(_screenIdleTimer);_screenIdleTimer=null;}
+  if(_screenIdleContainer&&_screenIdleListener){
+    _SCREEN_IDLE_EVENTS.forEach(function(ev){ _screenIdleContainer.removeEventListener(ev,_screenIdleListener); });
+  }
   _screenIdleListener=null;
+  _screenIdleContainer=null;
 }
 
 function _rmFindName(role, profileId){
