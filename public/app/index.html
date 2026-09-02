@@ -10000,7 +10000,8 @@ function riderMapPhase2(){
     +'</div>'
     +(arrivedAtCustomer?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Arrival marked — enter the code below to confirm</div>'
       :'<button onclick="riderMarkArrivedAtCustomer()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(46,204,113,.4);background:rgba(46,204,113,.08);color:#2ECC71;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
-    +'<button onclick="finishDelivery()" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2713; Confirm Delivery Complete</button>'
+    +'<button onclick="finishDelivery()" '+(arrivedAtCustomer?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;'+(arrivedAtCustomer?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Confirm Delivery Complete</button>'
+    +(arrivedAtCustomer?'':'<div style="text-align:center;color:#9A9390;font-size:11px;margin-top:6px;">Mark "I\'ve Arrived" above once you\'re at '+customerName+'\'s location</div>')
     +'</div>';
 }
 
@@ -10037,6 +10038,11 @@ function submitHandoverCode(){
 }
 
 async function finishDelivery(){
+  var s=window._riderActiveSession;
+  if(s && !s.riderArrivedCustomerAt){
+    showToast&&showToast('Mark "I\'ve Arrived" first','warning');
+    return;
+  }
   openHandoverCodeModal('Confirm Delivery', async function(code){
     if(window._riderActiveSession){
       try{ await api('/shop-sessions/'+window._riderActiveSession.id+'/delivered',{method:'POST',body:JSON.stringify({code:code})}); }

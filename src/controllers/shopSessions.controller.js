@@ -565,7 +565,7 @@ async function declineSession(req, res, next) {
   }
 }
 
-function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall, onSuccess } = {}) {
+function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall, requireArrivedCustomer, onSuccess } = {}) {
   return async (req, res, next) => {
     try {
       const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -584,6 +584,9 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRide
       }
       if (requireConfirmCall && !session.confirmCallCompletedAt) {
         return res.status(409).json({ error: "Complete the 3-way confirm call with the shopper and customer first." });
+      }
+      if (requireArrivedCustomer && !session.riderArrivedCustomerAt) {
+        return res.status(409).json({ error: "Mark that you've arrived at the customer's location first." });
       }
 
       const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: toStatus } });
@@ -1133,6 +1136,10 @@ const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
   requireRider: true,
   codeField: "deliveryCode",
   codeErrorMessage: "Incorrect delivery code. Ask the customer for their code.",
+  // Same real gate as the pickup side (requireConfirmCall there) -- a
+  // rider must genuinely mark arrival at the customer first, not just
+  // enter the code from wherever they happen to be.
+  requireArrivedCustomer: true,
   // RiderProfile.deliveries was previously a display-only field nothing
   // ever incremented (always whatever the seed set it to) -- this is the
   // real completion event, so it's the real place to count one.
