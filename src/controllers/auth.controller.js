@@ -175,6 +175,20 @@ async function login(req, res, next) {
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
+    // A shopper who closes their tab/device without explicitly tapping Go
+    // Offline stays "online" in the database indefinitely -- the next
+    // login (possibly days later, on any device) previously came up
+    // already showing Online, silently receiving/appearing available for
+    // new session requests before they'd actually chosen to. Every fresh
+    // login now starts genuinely offline; going online again is always an
+    // explicit action. Doesn't touch a mid-session page refresh (that goes
+    // through /auth/me, not here) -- an already-online shopper reloading
+    // the page correctly stays online, only a real login resets this.
+    if (user.shopperProfile && user.shopperProfile.isOnline) {
+      await prisma.shopperProfile.update({ where: { id: user.shopperProfile.id }, data: { isOnline: false } });
+      user.shopperProfile.isOnline = false;
+    }
+
     const { accessToken, refreshToken } = await issueSession(res, user);
     res.json({ user: publicUser(user), accessToken, refreshToken });
   } catch (err) {
