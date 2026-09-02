@@ -947,7 +947,6 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <button onclick="closeChat()" style="background:none;border:none;color:#F2EDE8;font-size:22px;cursor:pointer;padding:0">←</button>
     <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#F5A623,#E8392E);display:flex;align-items:center;justify-content:center;font-size:22px" id="chat-av">👤</div>
     <div style="flex:1"><p style="font-weight:700;font-size:15px;margin:0" id="chat-name">—</p><p style="color:#2ECC71;font-size:11px;margin:0" id="chat-status">● Online</p></div>
-    <button id="chat-call-btn" style="width:40px;height:40px;border-radius:50%;background:rgba(46,204,113,.15);border:2px solid rgba(46,204,113,.4);color:#2ECC71;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">📞</button>
     <button onclick="closeActiveChatThread()" title="End this chat" style="width:40px;height:40px;border-radius:50%;background:rgba(232,57,46,.12);border:2px solid rgba(232,57,46,.35);color:#E8392E;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:6px">✕</button>
   </div>
   <div class="chat-msgs" id="chat-msgs"></div>
@@ -3061,23 +3060,6 @@ async function openChat(p){
   if(!p||!p.otherUserId){showToast&&showToast('Chat is not available for this contact yet.','warning');return;}
   document.getElementById('chat-name').textContent=p.name||'Chat';
   document.getElementById('chat-av').textContent=p.em||'\ud83d\udc64';
-  // In-app call only, no phone/WhatsApp chooser -- this button used to
-  // route through callPhone()->openCallModal() with no otherUserId ever
-  // passed, which openCallModal itself hides the in-app option for
-  // (see its own comment), leaving only a phone-dialer/WhatsApp choice
-  // that either did nothing (no p.phone on hand) or left the app
-  // entirely -- exactly the "call button is not working" bug. Every real
-  // chat opened via this shared function (shopper<->rider<->customer<->
-  // vendor, across every session type) already has the real otherUserId
-  // right here, so it can ring in-app directly with no modal at all.
-  document.getElementById('chat-call-btn').onclick=function(){
-    window._callOtherUserId=p.otherUserId;
-    window._callBookingId=p.contextId||null;
-    window._callName=p.name||'Contact';
-    window._callAvatar=p.em||'\ud83d\udc64';
-    window._callRole=p.role||'';
-    bcallStart();
-  };
   _setChatComposerClosed(false);
   var msgsEl=document.getElementById('chat-msgs');
   msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading\u2026</div>';
@@ -3111,7 +3093,6 @@ async function openChat(p){
 async function openSupportChat(contextId){
   document.getElementById('chat-name').textContent='Handa Support';
   document.getElementById('chat-av').textContent='🎧';
-  document.getElementById('chat-call-btn').onclick=function(){ supportCallStart(); };
   _setChatComposerClosed(false);
   var msgsEl=document.getElementById('chat-msgs');
   msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading…</div>';
@@ -3138,7 +3119,6 @@ async function openSupportChat(contextId){
 async function openChatByThreadId(threadId,title){
   document.getElementById('chat-name').textContent=title||'Handa Support';
   document.getElementById('chat-av').textContent='🎧';
-  document.getElementById('chat-call-btn').onclick=null;
   var msgsEl=document.getElementById('chat-msgs');
   msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading…</div>';
   document.getElementById('chat-ov').classList.add('on');
