@@ -1152,6 +1152,13 @@ async function api(path, opts){
     // response so callers can read them instead of losing everything but
     // the message string.
     apiErr.data = data;
+    // A real HTTP status a caller can check without parsing the message
+    // string -- tryRestoreSession uses this to tell "token is genuinely
+    // dead" (401) apart from "the request just failed for some other
+    // reason" (a cold Render free-tier wake-up returning 502/503, a
+    // network blip -- undefined here too, since those throw before res
+    // even exists), which need very different retry behavior.
+    apiErr.status = res.status;
     throw apiErr;
   }
   return data;
@@ -8825,11 +8832,23 @@ function renderShopperHome() {
 // to the rider." Re-checked for real, every time home renders, and now
 // covers OUT_FOR_DELIVERY too so it stays up until the rider actually
 // delivers, not just until handover.
+// Several notifications fire in quick succession right around delivery
+// completion (rider-arrived, then delivery-complete moments later) --
+// each one calls this via the global notification listener. With no
+// sequencing guard, an OLDER call's response could resolve AFTER a newer
+// one (ordinary network jitter, no bug needed to trigger it) and overwrite
+// the correct "session is done, banner hidden" state with the stale
+// "still active" one -- exactly "the button came back, then later
+// disappeared again" once some later trigger corrected it. Only the most
+// recently STARTED call is allowed to apply its result.
+var _shopperBannerReqSeq=0;
 async function refreshShopperActiveSessionBanner(){
   var banner=document.getElementById('active-session-banner');
   if(!banner)return;
+  var mySeq=++_shopperBannerReqSeq;
   try{
     var rs=await api('/shop-sessions?as=shopper');
+    if(mySeq!==_shopperBannerReqSeq)return; // a newer call has since started -- this response is stale, drop it
     var active=(rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;});
     banner=document.getElementById('active-session-banner');if(!banner)return; // home may have re-rendered while this was in flight
     if(!active){banner.style.display='none';return;}
@@ -10223,14 +10242,25 @@ async function tryRestoreSession(attempt){
     scheduleProactiveRefresh();
     return true;
   }catch(err){
-    // A single failure here isn't necessarily "this token is dead" -- a
-    // transient network blip, or a cold Render free-tier wake-up (~30-50s
-    // per README), throws the exact same way as a genuinely expired/
-    // invalid session. Retry once after a short delay before giving up, so
-    // a real still-good session doesn't get logged out over a slow first
-    // request.
-    if(attempt<2){
-      await new Promise(function(resolve){setTimeout(resolve,3000);});
+    // A 401 here means the token is genuinely dead (rejected, not just
+    // unreachable) -- no amount of retrying fixes that, fail straight to
+    // login. Anything else (network blip, or a cold Render free-tier
+    // wake-up -- README documents this can take 30-50s) throws the exact
+    // same way but for a totally different reason: the request just never
+    // got a real answer. A single 3s retry isn't enough margin to survive
+    // a real cold start (the retry can just as easily hit the same
+    // still-waking server) -- this was the likely cause of a phone tab
+    // resuming from background, hitting a sleeping instance, and getting
+    // silently logged out with no error shown, even though the session
+    // was perfectly valid. Retry up to 4 times with growing delays
+    // (3s/6s/10s/15s, ~34s total) before actually giving up.
+    if(err&&err.status===401){
+      setAccessToken(null);
+      return false;
+    }
+    if(attempt<5){
+      var delays=[3000,6000,10000,15000];
+      await new Promise(function(resolve){setTimeout(resolve,delays[attempt-1]||15000);});
       return tryRestoreSession(attempt+1);
     }
     setAccessToken(null);
