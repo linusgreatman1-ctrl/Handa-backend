@@ -7997,10 +7997,41 @@ async function loadRiderAvailableDeliveries(){
 
 // Live refresh — a rider who's already online should see new deliveries
 // appear without reloading.
+// A new delivery only ever surfaced on the rider's own Deliveries list --
+// if they were on Map/Earnings/History/Profile (or anywhere off that one
+// tab) when it came in, they saw nothing at all until they happened to tap
+// back to Deliveries themselves. Online means online regardless of which
+// screen is open, so this shows a real global popup (with real Accept/
+// Decline, not just a "go check your dashboard" nudge) whenever the
+// Deliveries list itself isn't the thing currently on screen -- when it
+// is, the existing list refresh below already surfaces the same card
+// in place, and showing both would just be a duplicate.
+async function showRiderDispatchPopup(sessionId){
+  if(document.getElementById('rider-dispatch-popup'))return;
+  if(_riderDeclinedSessionIds.has(sessionId))return;
+  try{
+    var res=await api('/shop-sessions?as=available');
+    var s=(res.sessions||[]).find(function(x){return x.id===sessionId;});
+    if(!s||_riderDeclinedSessionIds.has(s.id))return;
+    if(document.getElementById('rider-delivery-card-'+s.id))return; // already visible in the list
+    var html='<div id="rider-dispatch-popup" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:10000;max-width:420px;margin:0 auto;background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.6);font-family:\'DM Sans\',sans-serif;">'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 New Delivery Available</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div></div>'
+      +(s.shopper&&s.shopper.user?('<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">📍 Pick up from '+(s.shopper.user.name||'Shopper')+'</div>'):'')
+      +'<div style="display:flex;gap:8px;">'
+      +'<button onclick="acceptRiderDelivery(\''+s.id+'\');var p=document.getElementById(\'rider-dispatch-popup\');if(p)p.remove();" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button>'
+      +'<button onclick="declineRiderDelivery(\''+s.id+'\',null);var p=document.getElementById(\'rider-dispatch-popup\');if(p)p.remove();" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">✕</button>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend',html);
+  }catch(e){}
+}
 function riderBindDispatchListeners(){
   if(!_socket||_socket._riderDispatchBound)return;
   _socket._riderDispatchBound=true;
-  _socket.on('dispatch:new-shop-delivery',function(){ if(S.rdrOnline)loadRiderAvailableDeliveries(); });
+  _socket.on('dispatch:new-shop-delivery',function(p){
+    if(!S.rdrOnline)return;
+    if(document.getElementById('rider-deliveries-list'))loadRiderAvailableDeliveries();
+    else if(p&&p.sessionId)showRiderDispatchPopup(p.sessionId);
+  });
   // Shopper tapped "Confirm Handover to Rider" after the 3-way call --
   // real-time flips the rider's screen from "confirming items" straight
   // to "handed over, press Items Collected" instead of them having to
@@ -8894,10 +8925,35 @@ async function toggleShopperOnline() {
 // this, a session another shopper just accepted (or one that expired)
 // kept showing as acceptable until the page was manually reloaded, and a
 // brand new request never appeared until then either.
+// Same gap as the rider's own dispatch popup above, mirrored for the
+// shopper -- a new request only ever surfaced on their own Home list, so
+// being online anywhere else (History/Earnings/Profile) meant seeing
+// nothing until they happened to tap back to Home themselves.
+async function showShopperDispatchPopup(sessionId){
+  if(document.getElementById('shopper-dispatch-popup'))return;
+  if(_shopperDeclinedSessionIds.has(sessionId))return;
+  try{
+    var res=await api('/shop-sessions?as=available');
+    var s=(res.sessions||[]).find(function(x){return x.id===sessionId;});
+    if(!s||_shopperDeclinedSessionIds.has(s.id))return;
+    if(document.getElementById('sfm-avail-'+s.id))return; // already visible in the list
+    var html='<div id="shopper-dispatch-popup" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:10000;max-width:420px;margin:0 auto;background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.6);font-family:\'DM Sans\',sans-serif;">'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:28px;">🛒</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#2ECC71;">🔔 New Session Request!</div><div style="font-size:12px;color:#F2EDE8;margin-top:2px;">'+(s.customer?s.customer.name:'Customer')+' wants to shop live</div></div><div style="text-align:right;"><div style="font-size:18px;font-weight:900;font-family:\'Playfair Display\',serif;color:#F5A623;">₦'+Number(Math.round(s.sessionFeeKobo/100)).toLocaleString()+'</div><div style="font-size:9px;color:#9A9390;">session fee</div></div></div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button onclick="shopperAcceptSession(\''+s.id+'\');var p=document.getElementById(\'shopper-dispatch-popup\');if(p)p.remove();" style="flex:2;padding:11px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept Session</button>'
+      +'<button onclick="declineShopperSession(\''+s.id+'\');var p=document.getElementById(\'shopper-dispatch-popup\');if(p)p.remove();" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;">✕</button>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend',html);
+  }catch(e){}
+}
 function shopperBindAvailableSessionsListener(){
   if(!_socket||_socket._shopperAvailBound)return;
   _socket._shopperAvailBound=true;
-  _socket.on('shop-session:new',function(){ if(isShopperOnline)loadShopperAvailableSessions(); });
+  _socket.on('shop-session:new',function(p){
+    if(!isShopperOnline)return;
+    if(document.getElementById('shopper-sessions-list'))loadShopperAvailableSessions();
+    else if(p&&p.sessionId)showShopperDispatchPopup(p.sessionId);
+  });
   _socket.on('shop-session:taken',function(p){
     var card=document.getElementById('sfm-avail-'+p.sessionId);
     if(card)card.remove();
