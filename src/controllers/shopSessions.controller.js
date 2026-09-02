@@ -1256,7 +1256,38 @@ async function completeConfirmCall(req, res, next) {
     }
 
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { confirmCallCompletedAt: new Date() } });
-    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-completed", { sessionId: session.id });
+    const io = req.app.get("io");
+    io?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-completed", { sessionId: session.id });
+
+    // The "3-way call starting" notification startConfirmCall() sent to the
+    // customer and rider is now stale -- without this it sits unread in
+    // their notification bell forever (nothing else in the app ever clears
+    // it), which is exactly the "notification still didn't disappear after
+    // the call ended" complaint. Mark those two rows read and push a live
+    // event so the bell badge/list update immediately for whoever's looking
+    // at it right now, not just next time they happen to reopen it.
+    const rider = session.riderId
+      ? await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } }).catch(() => null)
+      : null;
+    const recipientIds = [session.customerId, rider?.userId].filter(Boolean);
+    if (recipientIds.length) {
+      const stale = await prisma.notification.findMany({
+        where: {
+          userId: { in: recipientIds },
+          title: "3-way call starting",
+          read: false,
+          data: { path: ["sessionId"], equals: session.id },
+        },
+        select: { id: true, userId: true },
+      });
+      if (stale.length) {
+        await prisma.notification.updateMany({ where: { id: { in: stale.map((n) => n.id) } }, data: { read: true } });
+        for (const n of stale) {
+          io?.to(`user:${n.userId}`).emit("notification:cleared", { id: n.id });
+        }
+      }
+    }
+
     res.json({ session: updated });
   } catch (err) {
     next(err);

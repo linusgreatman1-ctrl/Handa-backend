@@ -1229,6 +1229,23 @@ function connectSocket(){
       showChatRequestBanner(name,roleWord,n.data.threadId);
     }
   });
+  // A previously-unread notification (currently only the "3-way call
+  // starting" one, auto-cleared by completeConfirmCall once the call
+  // actually ends) got marked read server-side without this tab's own
+  // action -- decrement the badge and flip the row to its read look right
+  // now if the notifications modal happens to be open, instead of only
+  // reflecting it the next time the bell is reopened.
+  _socket.on('notification:cleared', function(p){
+    if(!p||!p.id)return;
+    setNotifBadge(Math.max(0,_notifUnread-1));
+    var row=document.getElementById('notif-row-'+p.id);
+    if(row){
+      row.style.background='#1C1C1C';
+      row.style.borderColor='#2A2850';
+      var dot=row.querySelector('.notif-unread-dot');
+      if(dot)dot.remove();
+    }
+  });
   // Event-request/proposal activity (posted, proposed on, accepted,
   // declined, cancelled) -- previously only ever visible after a manual
   // reload. Refreshes whichever of these views is actually open right now;
