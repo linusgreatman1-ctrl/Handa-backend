@@ -3390,6 +3390,14 @@ async function detectActiveShopSession(role) {
 // on every single login/refresh, now only run once the user has explicitly
 // chosen to continue (or via the banner's direct click).
 async function enterActiveShopSession(role, activeS) {
+  // Clears this party's own "left the session" flag the moment they
+  // genuinely come back in -- covers both the ongoing-session prompt's
+  // Continue button and the shopper's own "Track This Delivery" banner
+  // (restoreActiveShopSession), since both funnel through here. Without
+  // this, coming back in wouldn't undo an earlier accidental/exploratory
+  // "Return to Homepage" tap, leaving the session one away-flag away from
+  // auto-cancelling the next time anyone else also steps away.
+  api('/shop-sessions/'+activeS.id+'/away',{method:'POST',body:JSON.stringify({away:false})}).catch(function(){});
   try {
     if (role === 'shopper') {
       // GET /shop-sessions?as=... (list) uses a deliberately narrow include
@@ -3497,6 +3505,13 @@ function _ongoingSessionChoice(choice){
     enterActiveShopSession(ctx.role, ctx.session);
   } else {
     _dismissSession(ctx.session.id);
+    // Tells the backend THIS party has left -- only actually cancels the
+    // real session once every party currently relevant to it (customer
+    // always; shopper once matched; rider once assigned) has independently
+    // done the same. One party staying engaged is enough to keep it
+    // running untouched; best-effort, doesn't block returning home either
+    // way if the request fails.
+    api('/shop-sessions/'+ctx.session.id+'/away',{method:'POST',body:JSON.stringify({away:true})}).catch(function(){});
     // The real home screen underneath was already rendered by the caller
     // before this prompt appeared (see tryRestoreSession) -- nothing
     // further to do here, the modal just closes onto it.
@@ -10104,11 +10119,17 @@ function _finishLogin(nm){
   window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
   connectSocket();
   scheduleProactiveRefresh();
-  if(_eRole==='shopper'){S.role='shopper';S.curScreen='shopper';afterShopperAuth();var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}}
+  // promptOrEnterActiveShopSession here too, not just tryRestoreSession's
+  // page-refresh path -- without this, a FRESH login landed on the plain
+  // home screen with no ongoing-session check at all, and the real
+  // Continue/Return-Home prompt only ever appeared after a SUBSEQUENT
+  // refresh (which does go through tryRestoreSession). Same real prompt,
+  // now shown immediately on login too, not just on refresh.
+  if(_eRole==='shopper'){S.role='shopper';S.curScreen='shopper';afterShopperAuth();var sb0=document.getElementById('app-sidebar');if(sb0){sb0.style.visibility='visible';renderAppSidebarNav('shopper');}promptOrEnterActiveShopSession('shopper');}
   else if(_eRole==='cook'){eGo('cook');}
   else if(_eRole==='event_planner'){eGo('event_planner');}
-  else if(_eRole==='rider'){S.role='rider';if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');}
-  else{eGo('home');}
+  else if(_eRole==='rider'){S.role='rider';if(typeof renderRiderDeliveries==='function')renderRiderDeliveries();eGo('rider');promptOrEnterActiveShopSession('rider');}
+  else{eGo('home');promptOrEnterActiveShopSession('customer');}
   showToast&&showToast('Welcome, '+nm+'!','success');
 }
 

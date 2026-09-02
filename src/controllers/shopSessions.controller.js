@@ -1353,6 +1353,61 @@ async function cancelSession(req, res, next) {
   }
 }
 
+// Toggle "I've left this session" per party -- driven by the frontend's
+// ongoing-session prompt (Return to Homepage sets it, Continue clears it;
+// see ShopSession.customerAwayAt's schema comment). Only actually cancels
+// once EVERY party currently relevant to the session (customer always;
+// shopper once matched; rider once assigned) is simultaneously away --
+// one party staying engaged keeps it running completely untouched. Not a
+// substitute for the customer's own explicit cancelSession above (a
+// deliberate single-party cancel is unrelated to this) -- this only fires
+// from the specific "everyone genuinely walked away" combination.
+async function markAway(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+
+    let field = null;
+    if (session.customerId === req.user.id) field = "customerAwayAt";
+    else if (req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id) field = "shopperAwayAt";
+    else if (req.user.riderProfile && session.riderId === req.user.riderProfile.id) field = "riderAwayAt";
+    if (!field) return res.status(403).json({ error: "You are not a party to this session." });
+
+    if (["DELIVERED", "COMPLETED", "CANCELLED"].includes(session.status)) {
+      return res.json({ session });
+    }
+
+    const away = !!req.body.away;
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { [field]: away ? new Date() : null } });
+
+    const allAway = away && !!updated.customerAwayAt && (!updated.shopperId || !!updated.shopperAwayAt) && (!updated.riderId || !!updated.riderAwayAt);
+    if (allAway) {
+      const io = req.app.get("io");
+      await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session auto-cancelled -- every party left" });
+      const cancelled = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() } });
+      closeSupportThreadForContext(session.id);
+      io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
+      io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
+
+      const notifyUserIds = [session.customerId];
+      if (session.shopperId) {
+        const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+        if (shopper) notifyUserIds.push(shopper.userId);
+      }
+      if (session.riderId) {
+        const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
+        if (rider) notifyUserIds.push(rider.userId);
+      }
+      await Promise.all(notifyUserIds.map((uid) => notify(io, uid, "ORDER_UPDATE", "Session cancelled", "Everyone left this session, so it was automatically cancelled and any escrow was refunded.", { sessionId: session.id }).catch(() => {})));
+      return res.json({ session: cancelled });
+    }
+
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Shopper allocates the deposited shopping budget (deposit minus the
 // session fee already earmarked for them) across the market sellers they
 // bought from, paying each directly by bank transfer.
@@ -1482,6 +1537,7 @@ module.exports = {
   paySession,
   matchSession,
   declineSession,
+  markAway,
   startCall,
   pauseCall,
   resumeCall,

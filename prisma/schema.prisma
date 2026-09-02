@@ -707,6 +707,17 @@ model ShopSession {
   // instead of a normal cancelled-with-reason display.
   abandonedAt DateTime?
 
+  // Set/cleared by POST /:id/away, whenever a party explicitly chooses
+  // "Return to Homepage" on the ongoing-session prompt (cleared again if
+  // they come back in). Once every party CURRENTLY relevant to the session
+  // (customer always; shopper once matched; rider once assigned) is
+  // simultaneously away, the session auto-cancels and refunds — but if even
+  // one of them is still actively engaged, it keeps running untouched. Not
+  // set by simply closing a tab/browser without using that button.
+  customerAwayAt DateTime?
+  shopperAwayAt  DateTime?
+  riderAwayAt    DateTime?
+
   escrowHolds   EscrowHold[]
   sellerPayouts SellerPayout[]
   ratings       Rating[]
