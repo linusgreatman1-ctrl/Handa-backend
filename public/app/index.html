@@ -5719,6 +5719,18 @@ function confirmCallBindListeners(){
       window._shopperSession.confirmCallCompletedAt = window._shopperSession.confirmCallCompletedAt || new Date().toISOString();
       unlockShopperHandoverIfReady();
     }
+    if(window._sfmSession && window._sfmSession.id===p.sessionId){
+      // Same gap as the rider branch below, on the customer's own side --
+      // this listener never had a customer branch at all, so
+      // window._sfmSession.confirmCallCompletedAt was never updated live,
+      // and the customer's own "packaging" screen (renderShopPhase,
+      // ~line 3808) kept showing "Kemi Shopper will start a 3-way call...
+      // stay ready to join it" forever instead of switching to "Items
+      // confirmed on the 3-way call" -- matches the sibling
+      // handover-confirmed listener's own re-render pattern exactly.
+      window._sfmSession.confirmCallCompletedAt = window._sfmSession.confirmCallCompletedAt || new Date().toISOString();
+      if(window._sfmPhase==='packaging')renderShopPhase('packaging');
+    }
     if(window._riderActiveSession && window._riderActiveSession.id===p.sessionId){
       window._riderActiveSession.confirmCallCompletedAt = window._riderActiveSession.confirmCallCompletedAt || new Date().toISOString();
       // Updating the data alone never touched the screen -- riderMapPhase1's
