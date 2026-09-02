@@ -197,6 +197,17 @@ async function adjustUserWallet(req, res, next) {
     } else {
       await walletSvc.debitWallet(target.id, -amount, "ADJUSTMENT", { description: reason.trim() });
     }
+    // A manual admin wallet adjustment moved real money with nothing
+    // telling the affected user it happened at all -- silent either way,
+    // credit or debit.
+    await notify(
+      req.app.get("io"),
+      target.id,
+      "ORDER_UPDATE",
+      amount > 0 ? "Wallet credited" : "Wallet adjusted",
+      `₦${Math.abs(Math.round(amount / 100)).toLocaleString()} was ${amount > 0 ? "credited to" : "deducted from"} your wallet by Handa support: ${reason.trim()}`,
+      {}
+    ).catch(() => {});
     const wallet = await walletSvc.getOrCreateWallet(target.id);
     await logAdminAction(req.user, "WALLET_ADJUSTED", "User", target.id, `${amount > 0 ? "Credited" : "Debited"} ₦${Math.abs(Math.round(amount / 100)).toLocaleString()} for ${target.name}: ${reason.trim()}`);
     res.json({ balanceKobo: wallet.balanceKobo });

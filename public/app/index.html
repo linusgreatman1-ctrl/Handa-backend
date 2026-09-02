@@ -3061,7 +3061,23 @@ async function openChat(p){
   if(!p||!p.otherUserId){showToast&&showToast('Chat is not available for this contact yet.','warning');return;}
   document.getElementById('chat-name').textContent=p.name||'Chat';
   document.getElementById('chat-av').textContent=p.em||'\ud83d\udc64';
-  document.getElementById('chat-call-btn').onclick=function(){if(p.phone)callPhone(p.phone);};
+  // In-app call only, no phone/WhatsApp chooser -- this button used to
+  // route through callPhone()->openCallModal() with no otherUserId ever
+  // passed, which openCallModal itself hides the in-app option for
+  // (see its own comment), leaving only a phone-dialer/WhatsApp choice
+  // that either did nothing (no p.phone on hand) or left the app
+  // entirely -- exactly the "call button is not working" bug. Every real
+  // chat opened via this shared function (shopper<->rider<->customer<->
+  // vendor, across every session type) already has the real otherUserId
+  // right here, so it can ring in-app directly with no modal at all.
+  document.getElementById('chat-call-btn').onclick=function(){
+    window._callOtherUserId=p.otherUserId;
+    window._callBookingId=p.contextId||null;
+    window._callName=p.name||'Contact';
+    window._callAvatar=p.em||'\ud83d\udc64';
+    window._callRole=p.role||'';
+    bcallStart();
+  };
   _setChatComposerClosed(false);
   var msgsEl=document.getElementById('chat-msgs');
   msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading\u2026</div>';

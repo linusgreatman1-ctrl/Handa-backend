@@ -32,11 +32,11 @@ async function expireStaleSearchingSessions(io) {
     where: { status: "SEARCHING", shopperId: null, createdAt: { lte: cutoff } },
   });
   for (const session of stale) {
-    await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "No shopper accepted within 30 minutes — auto-cancelled and refunded." });
+    await refundRemainingDeposit(session, io, "No shopper accepted within 30 minutes — auto-cancelled");
     await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
     io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
     io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
-    await notify(io, session.customerId, "ORDER_UPDATE", "Session expired", "No shopper accepted your Shop-For-Me request within 30 minutes. You've been refunded — please search again.", { sessionId: session.id });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Session expired", "No shopper accepted your Shop-For-Me request within 30 minutes — please search again.", { sessionId: session.id });
     closeSupportThreadForContext(session.id);
   }
   return stale.length;
@@ -75,11 +75,11 @@ async function expireStaleLiveSessions(io) {
     },
   });
   for (const session of stale) {
-    await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session never completed — auto-cancelled and refunded." });
+    await refundRemainingDeposit(session, io, "Session never completed — auto-cancelled");
     const now = new Date();
     await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: now, abandonedAt: now } });
     io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
-    await notify(io, session.customerId, "ORDER_UPDATE", "Session ended", "Your Shop-For-Me session didn't complete in time and has been cancelled. You've been refunded.", { sessionId: session.id });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Session ended", "Your Shop-For-Me session didn't complete in time and has been cancelled.", { sessionId: session.id });
     if (session.shopperId) {
       const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
       if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session ended", "A Shop-For-Me session you were on didn't complete in time and has been cancelled.", { sessionId: session.id });
@@ -910,6 +910,12 @@ async function findRider(req, res, next) {
       const io = req.app.get("io");
       if (refundKobo > 0) {
         await walletSvc.creditWallet(session.customerId, refundKobo, "ESCROW_REFUND", { contextType: "SHOP_SESSION", contextId: session.id, description: "Unused portion of the predicted rider delivery fee refunded." });
+        // depositKobo must shrink by exactly what was just refunded --
+        // otherwise it keeps overstating how much of the customer's money
+        // is still genuinely at stake in this session, which is exactly
+        // the figure a later full cancellation relies on to refund the
+        // right remaining amount (see refundRemainingDeposit below).
+        updateData.depositKobo = { decrement: refundKobo };
       }
       if (offsetKobo > 0) {
         const remainingShortfallKobo = sessionShortfallKobo - offsetKobo;
@@ -1421,6 +1427,48 @@ async function refundUnspentBudget(session, io) {
   }
 }
 
+// Used on every FULL cancellation path (customer-initiated, or an
+// auto-cancel sweep) -- refunds the customer's ENTIRE remaining stake in
+// the session, not just whatever happens to already be backed by a real
+// EscrowHold. This closes a real, serious gap: a session's shopper-fee
+// hold is only ever created once a shopper actually matches
+// (ensureShopperFeeHold), the rider-fee hold only once a rider actually
+// accepts (acceptDelivery), and the items/shopping-budget portion is
+// NEVER backed by a hold at all (see refundUnspentBudget's own comment).
+// Cancelling a session that's still SEARCHING therefore has ZERO holds to
+// refund -- escrow.refundAllHoldsForContext alone is a silent no-op, even
+// though the customer's full deposit is real money already taken from
+// their wallet. This refunds every currently-HELD hold (as before) AND
+// whatever of depositKobo isn't accounted for by ANY hold (held, or
+// already refunded/released earlier -- see findRider's own depositKobo
+// decrement for its rider-fee-surplus refund, which is what keeps this
+// formula honest) or an already-made seller payout, crediting the true
+// remainder directly and always with one real notification for the total.
+async function refundRemainingDeposit(session, io, reasonText) {
+  const refundedHolds = await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: reasonText });
+  const refundedViaHoldsKobo = refundedHolds.reduce((sum, h) => sum + h.amountKobo, 0);
+
+  const holdsTotal = await prisma.escrowHold.aggregate({
+    where: { contextType: "SHOP_SESSION", shopSessionId: session.id },
+    _sum: { amountKobo: true },
+  });
+  const payoutsTotal = await prisma.sellerPayout.aggregate({
+    where: { sessionId: session.id, status: { in: ["PENDING", "PROCESSING", "PAID"] } },
+    _sum: { amountKobo: true },
+  });
+  const accountedForKobo = (holdsTotal._sum.amountKobo || 0) + (payoutsTotal._sum.amountKobo || 0);
+  const unbackedKobo = Math.max(0, session.depositKobo - accountedForKobo);
+  if (unbackedKobo > 0) {
+    await walletSvc.creditWallet(session.customerId, unbackedKobo, "ESCROW_REFUND", { contextType: "SHOP_SESSION", contextId: session.id, description: `${reasonText} — deposit refunded` });
+  }
+
+  const totalRefundedKobo = refundedViaHoldsKobo + unbackedKobo;
+  if (totalRefundedKobo > 0) {
+    await notify(io, session.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(totalRefundedKobo / 100).toLocaleString()} was refunded to your wallet — ${reasonText.toLowerCase()}.`, { sessionId: session.id }).catch(() => {});
+  }
+  return totalRefundedKobo;
+}
+
 // escrow.service.js's runAutoReleaseSweep releases individual holds
 // generically across every context (bookings included) with no idea
 // which session/booking they belonged to -- a Shop-For-Me session whose
@@ -1473,7 +1521,15 @@ async function cancelSession(req, res, next) {
     if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
     if (["DELIVERED", "COMPLETED", "CANCELLED"].includes(session.status)) return res.status(409).json({ error: `Session is already ${session.status.toLowerCase()}.` });
 
-    await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session cancelled by customer" });
+    const io = req.app.get("io");
+    // Refunds the customer's full remaining stake -- not just whatever's
+    // currently backed by a real EscrowHold. A session cancelled while
+    // still SEARCHING has ZERO holds (none are created until a shopper
+    // actually matches / a rider actually accepts), so the plain
+    // escrow.refundAllHoldsForContext this used to call alone was a silent
+    // no-op there -- the customer's real, already-paid deposit was never
+    // refunded at all. See refundRemainingDeposit's own comment.
+    await refundRemainingDeposit(session, io, "Session cancelled by customer");
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
     closeSupportThreadForContext(session.id);
     // If this session was still SEARCHING (broadcast to every online
@@ -1483,7 +1539,18 @@ async function cancelSession(req, res, next) {
     // this, a shopper who already had the request open in their live list
     // never saw it disappear until they manually reloaded the page, even
     // though the customer had already cancelled it.
-    req.app.get("io")?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
+    io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
+    // Tell whichever matched party didn't do the cancelling -- previously
+    // silent, matching the booking-cancel flow's own "notify the other
+    // side" pattern.
+    if (session.shopperId) {
+      const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+      if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session cancelled", "The customer cancelled this Shop-For-Me session.", { sessionId: session.id }).catch(() => {});
+    }
+    if (session.riderId) {
+      const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
+      if (rider) await notify(io, rider.userId, "ORDER_UPDATE", "Session cancelled", "The customer cancelled this Shop-For-Me session.", { sessionId: session.id }).catch(() => {});
+    }
     res.json({ session: updated });
   } catch (err) {
     next(err);
@@ -1520,7 +1587,7 @@ async function markAway(req, res, next) {
     const allAway = away && !!updated.customerAwayAt && (!updated.shopperId || !!updated.shopperAwayAt) && (!updated.riderId || !!updated.riderAwayAt);
     if (allAway) {
       const io = req.app.get("io");
-      await escrow.refundAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Session auto-cancelled -- every party left" });
+      await refundRemainingDeposit(updated, io, "Session auto-cancelled -- every party left");
       const cancelled = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() } });
       closeSupportThreadForContext(session.id);
       io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });

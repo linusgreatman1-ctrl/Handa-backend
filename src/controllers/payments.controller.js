@@ -150,7 +150,7 @@ async function webhook(req, res, next) {
     if (event.event === "charge.success") {
       await applyVerifiedPayment(event.data, req.app.get("io"));
     } else if (event.event === "transfer.success" || event.event === "transfer.failed" || event.event === "transfer.reversed") {
-      await orderFlow.applyTransferWebhook(event);
+      await orderFlow.applyTransferWebhook(event, req.app.get("io"));
     }
 
     res.json({ received: true });

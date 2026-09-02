@@ -364,12 +364,18 @@ async function updateBooking(req, res, next) {
       // A real hold may already exist (PAID/ACCEPTED) -- reconcile it for
       // real in the same transaction so a rejected top-up rolls back the
       // whole edit instead of partially applying it.
+      let editDiffKobo = null;
       const updated = await prisma.$transaction(async (tx) => {
-        await reconcileBookingEditFinancials(booking, data.totalKobo, tx);
+        editDiffKobo = await reconcileBookingEditFinancials(booking, data.totalKobo, tx);
         return tx.booking.update({ where: { id: booking.id }, data });
       });
       if (booking.vendor?.userId) {
         await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking details updated", `The customer updated booking #${booking.bookingNumber} — check the new details.`, { bookingId: booking.id });
+      }
+      // A removed item refunds the difference straight to the customer's
+      // wallet inside reconcileBookingEditFinancials above -- never silent.
+      if (editDiffKobo != null && editDiffKobo < 0) {
+        await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(-editDiffKobo / 100).toLocaleString()} was refunded to your wallet for the items removed from booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
       }
       req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
@@ -419,14 +425,21 @@ async function acceptEditedBooking(req, res, next) {
     // Only actually charged/refunded now that the vendor has genuinely
     // committed to it -- the earlier dry-run at proposal time (updateBooking)
     // was just a preview, nothing was held back for it.
+    let editDiffKobo = null;
     const updated = await prisma.$transaction(async (tx) => {
-      await reconcileBookingEditFinancials(booking, booking.pendingEditSnapshot.totalKobo, tx);
+      editDiffKobo = await reconcileBookingEditFinancials(booking, booking.pendingEditSnapshot.totalKobo, tx);
       return tx.booking.update({
         where: { id: booking.id },
         data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null, wasEdited: true },
       });
     });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit accepted", `The vendor accepted your changes to booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    // The real charge/refund only happens HERE, at the vendor's acceptance
+    // -- not at proposal time -- so this is the one real moment a refund
+    // for removed items actually lands, and it needs its own notification.
+    if (editDiffKobo != null && editDiffKobo < 0) {
+      await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(-editDiffKobo / 100).toLocaleString()} was refunded to your wallet for the items removed from booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
+    }
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {

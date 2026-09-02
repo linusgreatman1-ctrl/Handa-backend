@@ -209,6 +209,17 @@ async function updateTicketStatus(req, res, next) {
 
     const data = { status, resolution, resolvedAt: ["RESOLVED", "CLOSED"].includes(status) ? new Date() : null };
 
+    // Tracks whether a refund notification has actually gone out to the
+    // filer yet -- the BOOKING-context dispute branch below sends its own
+    // detailed, booking-numbered message when it applies, but that branch
+    // never runs for a SHOP_SESSION-context dispute or for a plain
+    // non-dispute ticket the admin issues a goodwill refund on -- both of
+    // those used to credit the wallet with zero notification at all. The
+    // generic fallback right before the response guarantees every real
+    // refund gets exactly one notification, without double-notifying the
+    // booking case that already has its own message.
+    let refundNotified = false;
+
     // A platform-funded credit for the admin's exact decided amount —
     // not an automatic full-hold refund, since a partial refund is a
     // real possibility and nothing is clawed back from a vendor/rider
@@ -288,11 +299,26 @@ async function updateTicketStatus(req, res, next) {
               `The dispute on the booking #${booking.bookingNumber} was resolved in favor of the customer as a refund.<br>₦${Math.round(Number(data.refundAmountKobo) / 100).toLocaleString()} was refunded to your wallet.`,
               { bookingId: booking.id }
             ).catch(() => {});
+            refundNotified = true;
             await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", `The dispute on the booking #${booking.bookingNumber} was resolved in the customer's favor.`, { bookingId: booking.id }).catch(() => {});
           }
         }
         if (escrowCtx.contextType === "BOOKING") closeSupportThreadForContext(escrowCtx.bookingId);
       }
+    }
+
+    // Fallback for every refund the booking-specific branch above doesn't
+    // cover -- a SHOP_SESSION-context dispute, or a plain non-dispute
+    // ticket the admin issues a goodwill refund on. Never silent.
+    if (data.refundAmountKobo && !refundNotified) {
+      await notify(
+        req.app.get("io"),
+        existing.userId,
+        "ORDER_UPDATE",
+        "Refund issued",
+        `₦${Math.round(data.refundAmountKobo / 100).toLocaleString()} was refunded to your wallet regarding your support ticket${resolution ? ": " + resolution : "."}`,
+        {}
+      ).catch(() => {});
     }
 
     const ticket = await prisma.supportTicket.update({ where: { id: existing.id }, data });

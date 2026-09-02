@@ -237,7 +237,7 @@ async function confirmFeatureBoostPayment(vendorId, amountKobo, reference, plan)
 // a transfer can fail asynchronously well after we optimistically marked
 // it PROCESSING, so the wallet debit only becomes final (or gets reversed)
 // here.
-async function applyTransferWebhook(event) {
+async function applyTransferWebhook(event, io) {
   const transferCode = event.data?.transfer_code;
   if (!transferCode) return;
 
@@ -250,6 +250,12 @@ async function applyTransferWebhook(event) {
         await tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: "FAILED", failureReason: event.data?.reason || event.event } });
         await wallet.creditWallet(withdrawal.userId, withdrawal.amountKobo, "ADJUSTMENT", { description: "Withdrawal reversed: transfer failed." }, tx);
       });
+      // The wallet credit above silently reverses the withdrawal with
+      // nothing telling the user their money is back -- this is the async
+      // Paystack webhook path (the transfer failed well after the
+      // withdrawal was optimistically marked PROCESSING), so a real
+      // notification is the only way they'd ever find out.
+      await notify(io, withdrawal.userId, "ORDER_UPDATE", "Withdrawal failed — refunded", `Your withdrawal of ₦${Math.round(withdrawal.amountKobo / 100).toLocaleString()} could not be completed and has been refunded to your wallet.`, {}).catch(() => {});
     }
     return;
   }
