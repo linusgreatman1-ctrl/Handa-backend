@@ -6716,7 +6716,15 @@ async function shopperAcceptSession(sessionId) {
     var full = await api('/shop-sessions/'+sessionId);
     window._shopperSession = full.session;
     if(_socket) _socket.emit('shop-session:join', {sessionId: sessionId});
-    document.getElementById('incoming-session').style.display='none';
+    // Only exists in the Home tab's own rendered markup -- accepting from
+    // anywhere else (e.g. the new global dispatch popup, which can be
+    // accepted from any tab) threw right here (no null-check, unlike the
+    // active-session-banner line right below), silently aborting into the
+    // catch block below before renderShopperPhase('accepted') ever ran --
+    // the match succeeded for real on the backend, but the screen never
+    // moved off whatever tab the shopper happened to be on.
+    var incoming=document.getElementById('incoming-session');
+    if(incoming)incoming.style.display='none';
     var banner=document.getElementById('active-session-banner');
     if(banner){
       banner.style.display='block';
