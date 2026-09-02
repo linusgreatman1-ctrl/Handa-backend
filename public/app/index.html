@@ -1549,9 +1549,9 @@ function _arSelect(lb,id,opts){ return '<label style="display:block;font-size:12
 // whichever subset of doc types applies to them.
 window._kycDocs = null;
 var KYC_DOC_TYPES = {
-  vendor: [['GOVERNMENT_ID','Government ID'], ['PROOF_OF_ADDRESS','Proof of Address']],
-  rider: [['GOVERNMENT_ID','Government ID'], ['PROOF_OF_ADDRESS','Proof of Address'], ['VEHICLE_DOCUMENT','Vehicle Document']],
-  shopper: [['GOVERNMENT_ID','Government ID'], ['PROOF_OF_ADDRESS','Proof of Address']],
+  vendor: [['GOVERNMENT_ID','Government ID'], ['NIN_SLIP','NIN Slip'], ['PROOF_OF_ADDRESS','Proof of Address']],
+  rider: [['GOVERNMENT_ID','Government ID'], ['NIN_SLIP','NIN Slip'], ['PROOF_OF_ADDRESS','Proof of Address'], ['VEHICLE_DOCUMENT','Vehicle Document']],
+  shopper: [['GOVERNMENT_ID','Government ID'], ['NIN_SLIP','NIN Slip'], ['PROOF_OF_ADDRESS','Proof of Address']],
 };
 async function loadMyKycDocuments(){
   try{ var res = await api('/kyc/documents'); window._kycDocs = res.documents; }
@@ -10478,6 +10478,12 @@ async function doRegister(){
   else if(_eRole==='rider'){body.role='RIDER';}
   else if(_eRole==='shopper'){body.role='SHOPPER';}
   else{body.role='CUSTOMER';}
+  // Captured before _finishLogin runs below (which may itself touch
+  // _eRole as part of landing on the right dashboard) -- this is what
+  // decides whether the NIN slip prompt applies, so it needs the role the
+  // account was actually just registered as, not whatever _eRole ends up
+  // holding a moment later.
+  var regRole=_eRole;
   var btn=document.getElementById('auth-btn');if(btn)btn.disabled=true;
   setAccessToken(null); setRefreshToken(null); // same reasoning as doAuth() — don't let a mid-request refresh restore a stale prior session
   try{
@@ -10486,10 +10492,66 @@ async function doRegister(){
     setRefreshToken(data.refreshToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;
     _finishLogin(S.user.name);
+    // Customer never needs this -- only the four roles that go through
+    // real KYC review (Rider/Shopper/Home Cook/Event Planner). Fires once
+    // the dashboard has had a moment to render underneath, matching the
+    // same settle-then-overlay pattern used elsewhere in this file.
+    if(['rider','shopper','cook','event_planner'].indexOf(regRole)>-1){
+      setTimeout(function(){ promptNinSlipUpload(); }, 600);
+    }
   }catch(err){
     showToast&&showToast(err.message||'Registration failed','warning');
   }finally{
     if(btn)btn.disabled=false;
+  }
+}
+
+// One-time prompt right after registration for the four roles that go
+// through real KYC review -- reuses the exact same POST /kyc/documents
+// endpoint (docType:'NIN_SLIP') and pending/approve/reject review flow
+// already built for every other document type, just surfaced as an
+// immediate ask at sign-up instead of only being discoverable later in
+// the profile's own Documents section (KYC_DOC_TYPES already includes
+// NIN_SLIP there too, so skipping here and uploading later works exactly
+// the same way). Skippable, not a hard registration gate -- going online
+// is already separately gated on admin-verified status, so nothing here
+// needs to force the issue.
+function promptNinSlipUpload(){
+  var html='<div id="nin-upload-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:380px;width:100%;padding:24px;font-family:\'DM Sans\',sans-serif;text-align:center;">'
+    +'<div style="font-size:42px;margin-bottom:10px;">🪪</div>'
+    +'<div style="font-weight:900;font-size:16px;color:#F2EDE8;margin-bottom:6px;">Upload Your NIN Slip</div>'
+    +'<div style="font-size:12px;color:#9A9390;margin-bottom:18px;line-height:1.5;">We need a photo of your National Identification Number (NIN) slip to verify your account. Our team will review it — you can still explore the app while it\'s pending.</div>'
+    +'<input type="file" id="nin-slip-file-input" accept="image/*" style="display:none;" onchange="submitNinSlipUpload(this)">'
+    +'<button onclick="document.getElementById(\'nin-slip-file-input\').click()" id="nin-slip-upload-btn" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:10px;">📎 Choose Photo</button>'
+    +'<button onclick="closeNinSlipModal()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Skip for now</button>'
+    +'</div></div>';
+  var existing=document.getElementById('nin-upload-modal'); if(existing)existing.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function closeNinSlipModal(){
+  var el=document.getElementById('nin-upload-modal'); if(el)el.remove();
+}
+async function submitNinSlipUpload(inputEl){
+  var file=inputEl.files&&inputEl.files[0];
+  if(!file)return;
+  var btn=document.getElementById('nin-slip-upload-btn');
+  if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Uploading…';}
+  var fd=new FormData();
+  fd.append('document',file);
+  fd.append('docType','NIN_SLIP');
+  try{
+    // Raw fetch, not api() — a FormData body needs the browser's own
+    // multipart Content-Type (with boundary), which api() always
+    // overrides to JSON. Same pattern as submitKycUpload.
+    var res=await fetch(API_BASE+'/kyc/documents',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+    var data={}; try{ data=await res.json(); }catch(e){}
+    if(!res.ok) throw new Error(data.error||'Upload failed');
+    showToast&&showToast('NIN slip submitted — we\'ll review it shortly.','success');
+    closeNinSlipModal();
+  }catch(err){
+    if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent='📎 Choose Photo';}
+    showToast&&showToast(err.message||'Could not upload NIN slip','warning');
   }
 }
 

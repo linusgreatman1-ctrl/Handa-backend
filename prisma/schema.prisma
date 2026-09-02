@@ -247,6 +247,7 @@ enum KycDocType {
   GOVERNMENT_ID
   PROOF_OF_ADDRESS
   VEHICLE_DOCUMENT
+  NIN_SLIP
 }
 
 enum KycStatus {

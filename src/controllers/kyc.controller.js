@@ -1,7 +1,7 @@
 const prisma = require("../config/db");
 const { notifyAllAdmins } = require("../services/notifications.service");
 
-const DOC_TYPES = ["GOVERNMENT_ID", "PROOF_OF_ADDRESS", "VEHICLE_DOCUMENT"];
+const DOC_TYPES = ["GOVERNMENT_ID", "PROOF_OF_ADDRESS", "VEHICLE_DOCUMENT", "NIN_SLIP"];
 
 async function uploadKycDocument(req, res, next) {
   try {
