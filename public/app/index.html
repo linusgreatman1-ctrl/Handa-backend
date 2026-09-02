@@ -6030,7 +6030,11 @@ function renderShopperPhase(phase) {
   } else if (phase === 'sellerPayout') {
     const ss=window._shopperSession||{};
     const totalBudget = Math.round(((ss.depositKobo||0)-(ss.sessionFeeKobo||0)-(ss.riderFeeKobo||0))/100);
-    body.innerHTML = `<div class="fi" style="padding:20px 18px 100px;">
+    body.innerHTML = `<div class="fi" style="padding:20px 18px 100px;position:relative;">
+      ${ss.pickupCode?`<div style="position:absolute;top:20px;right:18px;background:#1C1C1C;border:1.5px solid #2ECC71;border-radius:12px;padding:7px 12px;text-align:center;z-index:2;">
+        <div style="font-size:9px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Pickup Code</div>
+        <div style="font-size:18px;font-weight:900;letter-spacing:3px;color:#2ECC71;">${ss.pickupCode}</div>
+      </div>`:''}
       <div style="text-align:center;margin-bottom:20px;">
         <div style="font-size:52px;margin-bottom:10px;">🏪</div>
         <div class="h2" style="margin-bottom:6px;">Pay Your Sellers</div>
