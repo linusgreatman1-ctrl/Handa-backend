@@ -5281,7 +5281,6 @@ function bcallBindListeners(){
   _socket.on('bookingcall:declined',function(p){
     var c=window._bcall;
     if(!c||c.role!=='caller'||c.otherUserId!==p.fromUserId)return;
-    clearTimeout(_bcallRingTimer);
     // "busy" (they're already ringing/on another call) is a real, common,
     // temporary state, not a real decline -- showing the same "declined
     // the call" message for both used to read as a rejection nobody
@@ -5290,7 +5289,21 @@ function bcallBindListeners(){
       ? (c.otherName||'They')+' is on another call right now — try again shortly'
       : (c.otherName||'They')+' declined the call';
     showToast&&showToast(msg,'warning');
-    bcallTeardown();
+    // A real decline ends the call outright. A "busy" decline does NOT --
+    // the callee's account may be open in more than one tab/device at
+    // once (same user{id} room gets the invite on all of them), and one
+    // tab having stale local call state must not be able to kill a call
+    // that's still genuinely ringing correctly on the callee's OTHER,
+    // idle tab/device. Keep ringing (the invite resend in bcallStart is
+    // still firing every 3s) until a real accept or the full 30s timeout
+    // -- this was the actual cause of "it was ringing on their end but
+    // kept cutting off on mine": a stale second tab/device logged into
+    // the same account auto-declining a call the primary tab was
+    // legitimately still ringing for.
+    if(p.reason!=='busy'){
+      clearTimeout(_bcallRingTimer);
+      bcallTeardown();
+    }
   });
   _socket.on('bookingcall:cancelled',function(p){
     var inc=window._bcallIncoming;
