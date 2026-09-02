@@ -122,6 +122,11 @@
 
 <div id="admin-toast" style="display:none;position:fixed;top:16px;right:16px;z-index:99999;background:#1C1C1C;color:#F2EDE8;border:1.5px solid #3B9FE8;border-radius:12px;padding:12px 16px;max-width:320px;font-family:inherit;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer;"></div>
 
+<div id="admin-call-ov" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.72);align-items:center;justify-content:center;font-family:inherit;">
+  <div id="admin-call-body" style="background:#1C1C1C;border:1.5px solid #2a2a2a;border-radius:16px;padding:28px 24px;width:280px;text-align:center;"></div>
+  <audio id="admin-call-remote-audio" autoplay></audio>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const API = '/api';
@@ -159,6 +164,176 @@ function connectAdminNotifSocket() {
     bumpSysNotifBadge();
     showAdminToast(n.title + ': ' + n.body, null, () => { document.getElementById('admin-toast').style.display = 'none'; openAdminNotificationsModal(); });
   });
+  adminCallBindListeners();
+}
+
+// ── Real in-app voice call FROM a customer's "Chat with Support" button
+// TO whichever admin picks it up first. There's no single fixed admin
+// user to ring, so the backend (live.js) broadcasts the invite to every
+// online super/content admin's socket (the shared "admins" room every
+// such socket already auto-joins on connect) instead of one specific
+// user:{id} room the way a normal 1:1 booking call works. Reuses the
+// SAME bookingcall:offer/answer/ice-candidate/end relay the customer
+// app's own booking-call system already uses for the actual SDP/ICE
+// exchange once a call is answered -- only the invite/accept/claim layer
+// (supportcall:*) is new, since a broadcast-then-first-to-answer flow
+// has no equivalent in the 1:1 system. ──
+let _adminCall = null; // {fromSocketId, fromUserId, callerName, callerAvatar, pc, localStream, status, micMuted, startedAt}
+let _adminIceServersCache = null;
+async function adminFetchIceServers() {
+  if (_adminIceServersCache) return _adminIceServersCache;
+  try {
+    const res = await api('/config/ice-servers');
+    _adminIceServersCache = (res && res.iceServers) || [{ urls: 'stun:stun.l.google.com:19302' }];
+  } catch (e) {
+    _adminIceServersCache = [{ urls: 'stun:stun.l.google.com:19302' }];
+  }
+  return _adminIceServersCache;
+}
+function adminCallBindListeners() {
+  if (!adminChatSocket || adminChatSocket._callBound) return;
+  adminChatSocket._callBound = true;
+  adminChatSocket.on('supportcall:incoming', (p) => {
+    if (!p) return;
+    // A second admin already answering this exact call (by fromSocketId)
+    // is handled by supportcall:claimed below, not here -- this just
+    // shows the ringing UI for a genuinely new call.
+    if (_adminCall) return; // this admin is already on/ringing a call
+    _adminCall = { fromSocketId: p.fromSocketId, fromUserId: p.fromUserId, callerName: p.callerName || 'A customer', callerAvatar: p.callerAvatar || '👤', pc: null, localStream: null, status: 'incoming', micMuted: false, startedAt: null };
+    renderAdminCallOverlay();
+  });
+  adminChatSocket.on('supportcall:claimed', (p) => {
+    // Another admin got to it first -- clear OUR ringing UI for this same
+    // call (never touch it if we're not even showing this one, or if
+    // WE'RE the one who claimed it -- our own status is already past
+    // 'incoming' by the time our own accept round-trips back here).
+    if (_adminCall && _adminCall.status === 'incoming' && _adminCall.fromSocketId === (p && p.fromSocketId)) {
+      _adminCall = null;
+      renderAdminCallOverlay();
+    }
+  });
+  adminChatSocket.on('supportcall:cancelled', (p) => {
+    if (_adminCall && _adminCall.status === 'incoming' && _adminCall.fromSocketId === (p && p.fromSocketId)) {
+      _adminCall = null;
+      renderAdminCallOverlay();
+    }
+  });
+  adminChatSocket.on('bookingcall:offer', (p) => {
+    const c = _adminCall;
+    if (!c || !c.pc || p.fromSocketId !== c.fromSocketId) return;
+    c.pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).then(() => c.pc.createAnswer()).then((answer) => c.pc.setLocalDescription(answer).then(() => {
+      adminChatSocket.emit('bookingcall:answer', { toSocketId: p.fromSocketId, sdp: answer });
+    })).catch(() => {});
+  });
+  adminChatSocket.on('bookingcall:ice-candidate', (p) => {
+    const c = _adminCall;
+    if (!c || !c.pc || p.fromSocketId !== c.fromSocketId || !p.candidate) return;
+    c.pc.addIceCandidate(new RTCIceCandidate(p.candidate)).catch(() => {});
+  });
+  adminChatSocket.on('bookingcall:ended', () => {
+    if (!_adminCall) return;
+    showAdminToast('Call ended', null, () => { document.getElementById('admin-toast').style.display = 'none'; });
+    adminCallTeardown();
+  });
+}
+async function adminCallAccept() {
+  const c = _adminCall;
+  if (!c || c.status !== 'incoming') return;
+  c.status = 'connecting';
+  renderAdminCallOverlay();
+  try {
+    c.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    c.localStream = null;
+  }
+  const iceServers = await adminFetchIceServers();
+  if (_adminCall !== c) return; // ended while awaiting mic/ICE config
+  const pc = new RTCPeerConnection({ iceServers });
+  c.pc = pc;
+  if (c.localStream) {
+    c.localStream.getTracks().forEach((t) => pc.addTrack(t, c.localStream));
+  } else {
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+    showAdminToast('Mic unavailable — you can still listen', null, () => { document.getElementById('admin-toast').style.display = 'none'; });
+  }
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate && adminChatSocket) adminChatSocket.emit('bookingcall:ice-candidate', { toSocketId: c.fromSocketId, candidate: ev.candidate });
+  };
+  pc.ontrack = (ev) => {
+    const el = document.getElementById('admin-call-remote-audio');
+    if (el) el.srcObject = ev.streams[0];
+  };
+  pc.onconnectionstatechange = () => {
+    if (_adminCall !== c) return;
+    if (pc.connectionState === 'connected' && c.status !== 'connected') {
+      c.status = 'connected'; c.startedAt = Date.now();
+      renderAdminCallOverlay();
+      clearInterval(window._adminCallTickTimer);
+      window._adminCallTickTimer = setInterval(() => { if (_adminCall && _adminCall.status === 'connected') renderAdminCallOverlay(); }, 1000);
+    } else if (pc.connectionState === 'failed') {
+      showAdminToast('Call connection lost', null, () => { document.getElementById('admin-toast').style.display = 'none'; });
+      adminCallTeardown();
+    }
+  };
+  adminChatSocket.emit('supportcall:accept', { toSocketId: c.fromSocketId });
+}
+function adminCallDismiss() {
+  // Just hides OUR ringing UI -- doesn't tell the backend anything, since
+  // another admin may still legitimately answer this same broadcast call.
+  _adminCall = null;
+  renderAdminCallOverlay();
+}
+function adminCallToggleMic() {
+  const c = _adminCall; if (!c || !c.localStream) return;
+  const t = c.localStream.getAudioTracks()[0]; if (!t) return;
+  t.enabled = !t.enabled; c.micMuted = !t.enabled;
+  renderAdminCallOverlay();
+}
+function adminCallEnd() {
+  const c = _adminCall;
+  if (c && adminChatSocket) adminChatSocket.emit('bookingcall:end', { toSocketId: c.fromSocketId });
+  adminCallTeardown();
+}
+function adminCallTeardown() {
+  clearInterval(window._adminCallTickTimer);
+  const c = _adminCall;
+  if (c) {
+    if (c.pc) { try { c.pc.close(); } catch (e) {} }
+    if (c.localStream) c.localStream.getTracks().forEach((t) => { try { t.stop(); } catch (e) {} });
+  }
+  _adminCall = null;
+  const el = document.getElementById('admin-call-remote-audio'); if (el) el.srcObject = null;
+  renderAdminCallOverlay();
+}
+function adminCallFmtDuration(ms) {
+  const s = Math.floor(ms / 1000); const m = Math.floor(s / 60);
+  return (m < 10 ? '0' : '') + m + ':' + ((s % 60) < 10 ? '0' : '') + (s % 60);
+}
+function renderAdminCallOverlay() {
+  const ov = document.getElementById('admin-call-ov'); const body = document.getElementById('admin-call-body');
+  if (!ov || !body) return;
+  const c = _adminCall;
+  if (!c) { ov.style.display = 'none'; body.innerHTML = ''; return; }
+  ov.style.display = 'flex';
+  if (c.status === 'incoming') {
+    body.innerHTML = `<div style="width:72px;height:72px;border-radius:50%;background:#242424;border:2px solid #2ECC71;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 14px;">${c.callerAvatar}</div>`
+      + `<div style="font-weight:800;font-size:17px;color:#F2EDE8;">${c.callerName}</div>`
+      + `<div style="font-size:12px;color:#9A9390;margin-top:4px;">Incoming support call</div>`
+      + `<div style="display:flex;gap:14px;margin-top:26px;justify-content:center;">`
+      + `<button onclick="adminCallDismiss()" style="width:52px;height:52px;border-radius:50%;border:none;background:#3a3a3a;color:#fff;font-size:20px;cursor:pointer;">✕</button>`
+      + `<button onclick="adminCallAccept()" style="width:52px;height:52px;border-radius:50%;border:none;background:#2ECC71;color:#111;font-size:20px;cursor:pointer;">📞</button>`
+      + `</div>`
+      + `<div style="display:flex;gap:14px;margin-top:8px;justify-content:center;font-size:10px;color:#9A9390;"><div style="width:52px;">Dismiss</div><div style="width:52px;">Answer</div></div>`;
+    return;
+  }
+  const statusText = c.status === 'connecting' ? 'Connecting…' : adminCallFmtDuration(Date.now() - (c.startedAt || Date.now()));
+  body.innerHTML = `<div style="width:72px;height:72px;border-radius:50%;background:#242424;border:2px solid #3B9FE8;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 14px;">${c.callerAvatar}</div>`
+    + `<div style="font-weight:800;font-size:17px;color:#F2EDE8;">${c.callerName}</div>`
+    + `<div style="font-size:12px;color:#9A9390;margin-top:4px;">${statusText}</div>`
+    + `<div style="display:flex;gap:12px;margin-top:26px;justify-content:center;">`
+    + `<button onclick="adminCallToggleMic()" style="width:46px;height:46px;border-radius:50%;border:1.5px solid #2a2a2a;background:${c.micMuted ? '#E8392E' : '#242424'};color:#F2EDE8;font-size:17px;cursor:pointer;">🎤</button>`
+    + `<button onclick="adminCallEnd()" style="width:52px;height:52px;border-radius:50%;border:none;background:#E8392E;color:#fff;font-size:20px;cursor:pointer;">📞</button>`
+    + `</div>`;
 }
 function setSysNotifBadge(n) {
   sysNotifUnread = Math.max(0, n);

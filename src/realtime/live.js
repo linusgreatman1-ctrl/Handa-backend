@@ -256,6 +256,37 @@ function attachLiveSocket(httpServer) {
       });
     });
 
+    // Real in-app voice call to Handa Support -- there's no single fixed
+    // admin userId to ring the way bookingcall:* rings one specific
+    // person, so this broadcasts to every online admin (the "admins" room
+    // already joined above) instead. Whichever admin accepts first claims
+    // it; every other admin's ringing UI is told to stand down via
+    // supportcall:claimed. Once claimed, both sides just have each
+    // other's live socketId -- the actual SDP/ICE exchange reuses the
+    // bookingcall:offer/answer/ice-candidate/end relay above verbatim,
+    // same shape as any other 1:1 call, no separate signaling needed.
+    socket.on("supportcall:invite", ({ callerName, callerAvatar } = {}) => {
+      socket.join(`supportcall:${socket.id}`);
+      io.to("admins").emit("supportcall:incoming", {
+        fromUserId: user.id,
+        fromSocketId: socket.id,
+        callerName: callerName || user.name,
+        callerAvatar: callerAvatar || "👤",
+      });
+    });
+    socket.on("supportcall:accept", ({ toSocketId } = {}) => {
+      if (!toSocketId) return;
+      socket.join(`supportcall:${toSocketId}`);
+      io.to(toSocketId).emit("supportcall:accepted", { fromUserId: user.id, fromSocketId: socket.id, adminName: user.name });
+      // Tells every OTHER admin this specific pending call is already
+      // answered, so their incoming-call UI clears instead of a second
+      // admin trying to accept a call someone else already picked up.
+      io.to("admins").emit("supportcall:claimed", { fromSocketId: toSocketId, byAdminSocketId: socket.id });
+    });
+    socket.on("supportcall:cancel", () => {
+      io.to("admins").emit("supportcall:cancelled", { fromSocketId: socket.id });
+    });
+
     // "disconnecting" (not "disconnect") fires while socket.rooms is still
     // populated, so a dropped tab/network still tells the other side of
     // any live call to tear down instead of hanging on a dead peer.
@@ -268,6 +299,12 @@ function attachLiveSocket(httpServer) {
         } else if (room.startsWith("booking:")) {
           const bookingId = room.slice("booking:".length);
           socket.to(room).emit("bookingcall:ended", { bookingId, fromUserId: user.id });
+        } else if (room.startsWith("supportcall:")) {
+          // Either the caller's tab closing mid-ring/mid-call, or the
+          // answering admin's tab closing -- either way the other side
+          // (whoever's still in this room) needs to know it's over
+          // instead of hanging on a peer that will never come back.
+          socket.to(room).emit("bookingcall:ended", { bookingId: null, fromUserId: user.id });
         }
       }
     });

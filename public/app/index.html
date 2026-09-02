@@ -3111,7 +3111,7 @@ async function openChat(p){
 async function openSupportChat(contextId){
   document.getElementById('chat-name').textContent='Handa Support';
   document.getElementById('chat-av').textContent='🎧';
-  document.getElementById('chat-call-btn').onclick=null;
+  document.getElementById('chat-call-btn').onclick=function(){ supportCallStart(); };
   _setChatComposerClosed(false);
   var msgsEl=document.getElementById('chat-msgs');
   msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#9A9390;font-size:12px">Loading…</div>';
@@ -5136,6 +5136,28 @@ async function flipRtcCamera(){
 // ══════════════════════════════════════════════════════
 var _bcallRingTimer=null;
 var _bcallInviteResendIv=null;
+// Real in-app voice call to Handa Support -- reuses the exact same
+// window._bcall state/UI (renderBcallOverlay, mic/speaker controls,
+// bookingcall:offer/answer/ice-candidate signaling) as a normal 1:1
+// booking call, just with c.isSupportCall:true and c.otherUserId left
+// null until whichever admin actually answers sets it (see the
+// supportcall:accepted listener in bcallBindListeners) -- there's no
+// single fixed admin to ring the way a specific vendor/rider/shopper is,
+// so the invite (supportcall:invite) broadcasts to every online admin
+// instead of one user:{id} room.
+function supportCallStart(){
+  if(window._bcall||window._bcallIncoming){showToast&&showToast('You are already on a call.','warning');return;}
+  window._bcall={role:'caller',bookingId:null,otherUserId:null,otherName:'Handa Support',otherAvatar:'🎧',otherRole:'ADMIN',pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false,isSupportCall:true,_ts:Date.now()};
+  renderBcallOverlay();
+  if(_socket)_socket.emit('supportcall:invite',{callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤'});
+  clearTimeout(_bcallRingTimer);
+  _bcallRingTimer=setTimeout(function(){
+    if(window._bcall&&window._bcall.status==='ringing'){
+      showToast&&showToast('No support agent is available right now — try the chat instead','warning');
+      bcallEnd();
+    }
+  },30000);
+}
 function bcallStart(){
   var otherUserId=window._callOtherUserId,bookingId=window._callBookingId||null;
   var name=window._callName||'Contact',avatar=window._callAvatar||'👤',role=window._callRole||'';
@@ -5311,6 +5333,31 @@ function bcallBindListeners(){
       }).catch(function(){});
     });
   });
+  // A support call has no otherUserId known at invite time (it's a
+  // broadcast to every online admin, not one specific person) -- this is
+  // the one place that's actually learned, from whichever admin's own
+  // socket answered first. Deliberately a SEPARATE listener from
+  // bookingcall:accepted above rather than folding this into it, since
+  // that one's own guard (c.otherUserId!==p.fromUserId) would always
+  // reject a support call (otherUserId is still null at this point).
+  _socket.on('supportcall:accepted',function(p){
+    var c=window._bcall;
+    if(!c||c.role!=='caller'||!c.isSupportCall)return;
+    clearTimeout(_bcallRingTimer);
+    c.otherUserId=p.fromUserId;
+    c.otherName=p.adminName||'Handa Support';
+    c.remoteSocketId=p.fromSocketId;
+    c.status='connecting';
+    renderBcallOverlay();
+    bcallSetupPeer().then(function(){
+      if(window._bcall!==c||!c.pc)return;
+      c.pc.createOffer().then(function(offer){
+        return c.pc.setLocalDescription(offer).then(function(){
+          _socket.emit('bookingcall:offer',{toSocketId:c.remoteSocketId,sdp:offer,bookingId:c.bookingId});
+        });
+      }).catch(function(){});
+    });
+  });
   _socket.on('bookingcall:declined',function(p){
     var c=window._bcall;
     if(!c||c.role!=='caller'||c.otherUserId!==p.fromUserId)return;
@@ -5392,6 +5439,7 @@ function bcallEnd(){
   var c=window._bcall;
   if(c){
     if(_socket&&c.remoteSocketId)_socket.emit('bookingcall:end',{toSocketId:c.remoteSocketId,bookingId:c.bookingId});
+    else if(c.isSupportCall&&_socket&&c.role==='caller')_socket.emit('supportcall:cancel',{});
     else if(_socket&&c.role==='caller')_socket.emit('bookingcall:cancel',{toUserId:c.otherUserId,bookingId:c.bookingId});
   }
   bcallTeardown();
