@@ -6144,7 +6144,13 @@ function renderShopperPhase(phase) {
   // PHASE G: Seller Payout — shopper allocates escrow to registered market sellers
   } else if (phase === 'sellerPayout') {
     const ss=window._shopperSession||{};
-    const totalBudget = Math.round(((ss.depositKobo||0)-(ss.sessionFeeKobo||0)-(ss.riderFeeKobo||0))/100);
+    // Capped to what the customer actually APPROVED (itemsTotalKobo), not
+    // the full deposited items budget -- the customer may have budgeted
+    // more than the shopper ended up buying/getting approved, and that
+    // unapproved leftover is never payable to a seller (see the matching
+    // backend cap in confirmSellerPayouts / the refund-or-offset logic in
+    // refundUnspentBudget once the session completes).
+    const totalBudget = Math.round((ss.itemsTotalKobo||0)/100);
     body.innerHTML = `<div class="fi" style="padding:20px 18px 100px;position:relative;">
       ${ss.pickupCode?`<div style="position:absolute;top:20px;right:18px;background:#1C1C1C;border:1.5px solid #2ECC71;border-radius:12px;padding:7px 12px;text-align:center;z-index:2;">
         <div style="font-size:9px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Pickup Code</div>
@@ -6158,7 +6164,7 @@ function renderShopperPhase(phase) {
 
       <div style="background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.3);border-radius:14px;padding:13px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;">
         <div>
-          <div style="font-size:11px;color:#9A9390;margin-bottom:2px;">Escrow Budget (Items)</div>
+          <div style="font-size:11px;color:#9A9390;margin-bottom:2px;">Approved Items Total</div>
           <div style="font-weight:900;font-size:22px;color:#2ECC71;">₦${totalBudget.toLocaleString()}</div>
         </div>
         <div style="text-align:right;">
@@ -7061,11 +7067,15 @@ function updateSellerAmount(i, val) {
 function updatePayoutTotals() {
   const rows = window._spPayoutRows || [];
   // Was hardcoded to a fixed ₦2,500 regardless of the session's real
-  // budget -- the overspend guard below was checking against a number
-  // that had nothing to do with what was actually deposited. Compute it
-  // the same real way the sellerPayout phase's own render does.
+  // budget, then later fixed to the full deposited items budget -- but
+  // that's what the customer BUDGETED, not what they actually approved.
+  // If the shopper only got, say, ₦7,000 of items approved out of an
+  // ₦8,000 budget, the unapproved ₦1,000 was never theirs to allocate to
+  // a seller -- must match confirmSellerPayouts' own real cap on the
+  // backend (itemsTotalKobo), or this client-side guard would let the
+  // shopper "ready" a payout the server then rejects.
   const ss = window._shopperSession||{};
-  const totalBudget = Math.round(((ss.depositKobo||0)-(ss.sessionFeeKobo||0)-(ss.riderFeeKobo||0))/100);
+  const totalBudget = Math.round((ss.itemsTotalKobo||0)/100);
   const allocated = rows.filter(r=>r.selected).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
   const allocEl = document.getElementById('sp-allocated');
   const warnEl = document.getElementById('sp-balance-warning');
@@ -7078,7 +7088,7 @@ function updatePayoutTotals() {
   if(warnEl && msgEl) {
     if(over) {
       warnEl.style.display='block';
-      msgEl.textContent = `Total exceeds escrow budget by ₦${(allocated-totalBudget).toLocaleString()}. Please reduce some amounts.`;
+      msgEl.textContent = `Total exceeds what was approved for items by ₦${(allocated-totalBudget).toLocaleString()}. Please reduce some amounts.`;
     } else {
       warnEl.style.display='none';
     }

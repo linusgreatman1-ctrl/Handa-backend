@@ -1326,7 +1326,7 @@ async function confirmSession(req, res, next) {
     if (session.status !== "DELIVERED") return res.status(409).json({ error: "Session has not been marked delivered yet." });
 
     await escrow.releaseAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Customer confirmed Shop-For-Me delivery" });
-    await refundUnspentBudget(session);
+    await refundUnspentBudget(session, req.app.get("io"));
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
     closeSupportThreadForContext(session.id);
     await notifyPayoutRecipients(req.app.get("io"), updated);
@@ -1338,21 +1338,86 @@ async function confirmSession(req, res, next) {
 
 // The customer's deposit covers sessionFee + riderFee + a real items
 // budget, but the shopper may never spend all of the items portion
-// (fewer items approved than budgeted for). Neither of those first two
-// fees is ever partially spent, so any leftover can only be in the
-// items budget -- refunds exactly that difference back to the
-// customer's wallet the moment the session completes, instead of it
-// silently staying locked in escrow with nothing left to release it for.
-async function refundUnspentBudget(session) {
+// (fewer items approved than budgeted for, matching confirmSellerPayouts'
+// own cap against itemsTotalKobo above -- a seller can never actually be
+// paid more than the customer approved, so anything past that is always
+// genuinely unspent). Before refunding that leftover, it's applied FIRST
+// against any still-outstanding session-fee/rider-fee shortfall the
+// customer never got around to explicitly topping up (payShopSessionShortfall
+// exists for that, but nothing forces it before completion) -- it's real
+// money already sitting in the customer's own deposit, not a fresh charge,
+// so using it to cover what they still owe on THIS session takes priority
+// over handing it back. Only whatever's left after that goes to their
+// wallet, and always with a real notification -- silently crediting a
+// refund with nothing telling the customer it happened is its own gap.
+async function refundUnspentBudget(session, io) {
   const budgetKobo = session.depositKobo - session.sessionFeeKobo - session.riderFeeKobo;
   if (budgetKobo <= 0) return;
   const paidToSellers = await prisma.sellerPayout.aggregate({
     where: { sessionId: session.id, status: { in: ["PENDING", "PROCESSING", "PAID"] } },
     _sum: { amountKobo: true },
   });
-  const unspentKobo = budgetKobo - (paidToSellers._sum.amountKobo || 0);
+  // Never more than itemsTotalKobo was actually payable to sellers (see
+  // confirmSellerPayouts) -- but this also guards against the leftover
+  // dipping below zero if budgetKobo (deposit-based) is ever smaller than
+  // itemsTotalKobo for any reason.
+  let unspentKobo = budgetKobo - (paidToSellers._sum.amountKobo || 0);
+  if (unspentKobo <= 0) return;
+
+  const sessionFeeCollectedKobo = session.sessionFeeCollectedKobo ?? session.sessionFeeKobo;
+  const riderFeeCollectedKobo = session.riderFeeCollectedKobo ?? session.riderFeeKobo;
+  const sessionShortfallKobo = Math.max(0, session.sessionFeeKobo - sessionFeeCollectedKobo);
+  const riderShortfallKobo = Math.max(0, session.riderFeeKobo - riderFeeCollectedKobo);
+  const totalShortfallKobo = sessionShortfallKobo + riderShortfallKobo;
+
+  if (totalShortfallKobo > 0) {
+    const offsetKobo = Math.min(unspentKobo, totalShortfallKobo);
+    const sessionOffset = Math.min(offsetKobo, sessionShortfallKobo);
+    const riderOffset = offsetKobo - sessionOffset;
+
+    // The session-fee (shopper) side's original hold was sized to whatever
+    // sessionFeeKobo was at match time -- if the real call-duration fee
+    // came in higher and was never separately topped up, the existing hold
+    // is genuinely undersized and needs a fresh one for the covered piece
+    // (same shape confirmShopSessionShortfall already uses for an explicit
+    // top-up payment) -- created and released in the same breath here
+    // since releaseAllHoldsForContext has already run by the time this is
+    // called and nothing else will ever release a hold created after that.
+    if (sessionOffset > 0 && session.shopperId) {
+      const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId } });
+      if (shopper) {
+        const hold = await escrow.createHold({
+          contextType: "SHOP_SESSION",
+          shopSessionId: session.id,
+          payerId: session.customerId,
+          payeeId: shopper.userId,
+          payeeRole: "SHOPPER",
+          amountKobo: sessionOffset,
+        });
+        await escrow.releaseHold(hold.id, { description: "Session-fee shortfall covered from unspent shopping budget on completion." });
+      }
+    }
+    // The rider's hold, by contrast, is already created at acceptDelivery
+    // sized to the full riderFeeKobo regardless of what was actually
+    // collected -- a rider-fee shortfall here only means the deposit
+    // bookkeeping hadn't caught up yet, not that the hold itself is
+    // undersized, so this is bookkeeping-only, no new hold needed.
+
+    if (sessionOffset > 0 || riderOffset > 0) {
+      await prisma.shopSession.update({
+        where: { id: session.id },
+        data: {
+          sessionFeeCollectedKobo: sessionFeeCollectedKobo + sessionOffset,
+          riderFeeCollectedKobo: riderFeeCollectedKobo + riderOffset,
+        },
+      });
+    }
+    unspentKobo -= offsetKobo;
+  }
+
   if (unspentKobo > 0) {
     await walletSvc.creditWallet(session.customerId, unspentKobo, "ADJUSTMENT", { contextType: "SHOP_SESSION", contextId: session.id, description: "Unspent shopping budget refunded on session completion" });
+    await notify(io, session.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(unspentKobo / 100).toLocaleString()} of your unspent shopping budget was refunded to your wallet.`, { sessionId: session.id }).catch(() => {});
   }
 }
 
@@ -1372,7 +1437,7 @@ async function finalizeAutoReleasedSessions(io) {
   for (const session of sessions) {
     const stillHeld = await prisma.escrowHold.count({ where: { contextType: "SHOP_SESSION", shopSessionId: session.id, status: "HELD" } });
     if (stillHeld > 0) continue;
-    await refundUnspentBudget(session);
+    await refundUnspentBudget(session, io);
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
     closeSupportThreadForContext(session.id);
     await notifyPayoutRecipients(io, updated);
@@ -1525,14 +1590,22 @@ async function confirmSellerPayouts(req, res, next) {
     if (!Array.isArray(allocations) || allocations.length === 0) return res.status(400).json({ error: "At least one payout allocation is required." });
     const method = payoutMethod === "ESCROW_DIRECT" ? "ESCROW_DIRECT" : "PAYSTACK";
 
-    const budgetKobo = session.depositKobo - session.sessionFeeKobo - session.riderFeeKobo;
+    // Cap against what the customer actually APPROVED for items
+    // (itemsTotalKobo), never the full deposited items budget. The
+    // deposit's items portion is only an upper estimate the customer set
+    // going in — if the shopper only bought/approved, say, ₦7,000 worth
+    // out of an ₦8,000 budget, the unbought ₦1,000 was never approved for
+    // anything and must not be payable to a seller (see refundUnspentBudget
+    // below, which is what actually returns or reallocates that leftover
+    // once the session completes).
+    const payableKobo = session.itemsTotalKobo;
     const existingPaid = await prisma.sellerPayout.aggregate({
       where: { sessionId: session.id, status: { in: ["PENDING", "PROCESSING", "PAID"] } },
       _sum: { amountKobo: true },
     });
     const requestedTotal = allocations.reduce((sum, a) => sum + a.amountKobo, 0);
-    if ((existingPaid._sum.amountKobo || 0) + requestedTotal > budgetKobo) {
-      return res.status(400).json({ error: "Payout allocations exceed the deposited shopping budget." });
+    if ((existingPaid._sum.amountKobo || 0) + requestedTotal > payableKobo) {
+      return res.status(400).json({ error: "Payout allocations exceed the total the customer approved for items — you can only pay out what was actually approved and bought." });
     }
 
     const results = [];
