@@ -7249,7 +7249,19 @@ function selectEscrowMethod(btn,method){
 function confirmEscrowPayment(){
   document.getElementById('escrow-modal').style.display='none';
   _escrowOnCancel=null;
-  toast('\u20a6'+Number(_escrowTotal).toLocaleString()+' locked in escrow');
+  // Only Wallet is genuinely instant -- that's the one method where
+  // tapping Confirm really does lock the funds immediately. Card/USSD
+  // redirect to Paystack and Bank Transfer just opens the "pay this
+  // account, then tell us" screen -- for both, NOTHING is actually locked
+  // in escrow yet at this exact tap, only once the real payment lands
+  // (Paystack verify, or an admin confirming the transfer). Showing this
+  // toast unconditionally here claimed money was already locked before
+  // the customer had even seen the bank details, let alone paid -- each
+  // real method's own downstream flow (_escrowCallback below) already
+  // shows its own correct confirmation once the payment is genuinely real.
+  if(_escrowMethod==='wallet'){
+    toast('\u20a6'+Number(_escrowTotal).toLocaleString()+' locked in escrow');
+  }
   if(_escrowCallback){_escrowCallback();_escrowCallback=null;}
 }
 
