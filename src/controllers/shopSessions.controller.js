@@ -589,7 +589,26 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRide
         return res.status(409).json({ error: "Mark that you've arrived at the customer's location first." });
       }
 
-      const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: toStatus } });
+      // Atomic compare-and-swap -- the plain read-then-write this used to
+      // be had a real race: two requests (e.g. a customer cancelling and a
+      // rider confirming delivery, arriving within moments of each other)
+      // could both pass the fromStatuses check above against the same
+      // stale read, then both unconditionally overwrite `status` in turn,
+      // with whichever write landed last silently winning -- the loser's
+      // caller had already gotten back a 200 reflecting a transition that
+      // no longer matches the real, final row. Re-asserting the expected
+      // starting status right in the WHERE clause makes only one of two
+      // racing writes actually take effect; the other gets a real 409
+      // instead of a lie.
+      const { count } = await prisma.shopSession.updateMany({
+        where: { id: session.id, status: { in: fromStatuses } },
+        data: { status: toStatus },
+      });
+      if (count === 0) {
+        const current = await prisma.shopSession.findUnique({ where: { id: session.id }, select: { status: true } });
+        return res.status(409).json({ error: `Session status changed (now ${current?.status || "unknown"}) — please refresh and try again.` });
+      }
+      const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
       req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: toStatus });
       if (onSuccess) {
         try {
@@ -1338,9 +1357,25 @@ async function confirmSession(req, res, next) {
     if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "DELIVERED") return res.status(409).json({ error: "Session has not been marked delivered yet." });
 
+    // Claims the DELIVERED->COMPLETED transition atomically before doing
+    // any of the real work below -- this can otherwise race
+    // finalizeAutoReleasedSessions' own sweep (which completes a session
+    // once its holds auto-release with no explicit customer confirm),
+    // and without this guard both paths could run releaseAllHoldsForContext/
+    // refundUnspentBudget concurrently, double-crediting the same unspent
+    // budget refund before either write had settled.
+    const { count } = await prisma.shopSession.updateMany({
+      where: { id: session.id, status: "DELIVERED" },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    if (count === 0) {
+      const current = await prisma.shopSession.findUnique({ where: { id: session.id }, select: { status: true } });
+      return res.status(409).json({ error: `Session status changed (now ${current?.status || "unknown"}) — please refresh and try again.` });
+    }
+
     await escrow.releaseAllHoldsForContext({ contextType: "SHOP_SESSION", shopSessionId: session.id }, { description: "Customer confirmed Shop-For-Me delivery" });
     await refundUnspentBudget(session, req.app.get("io"));
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
     closeSupportThreadForContext(session.id);
     await notifyPayoutRecipients(req.app.get("io"), updated);
     res.json({ session: updated });
@@ -1492,8 +1527,16 @@ async function finalizeAutoReleasedSessions(io) {
   for (const session of sessions) {
     const stillHeld = await prisma.escrowHold.count({ where: { contextType: "SHOP_SESSION", shopSessionId: session.id, status: "HELD" } });
     if (stillHeld > 0) continue;
+    // Same atomic claim as confirmSession's own DELIVERED->COMPLETED
+    // transition, since this sweep and a customer's own manual confirm can
+    // race each other for the same session.
+    const { count } = await prisma.shopSession.updateMany({
+      where: { id: session.id, status: "DELIVERED" },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    if (count === 0) continue;
     await refundUnspentBudget(session, io);
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
     closeSupportThreadForContext(session.id);
     await notifyPayoutRecipients(io, updated);
     finalized++;
@@ -1528,16 +1571,38 @@ async function cancelSession(req, res, next) {
     if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
     if (["DELIVERED", "COMPLETED", "CANCELLED"].includes(session.status)) return res.status(409).json({ error: `Session is already ${session.status.toLowerCase()}.` });
 
+    // Atomic compare-and-swap, re-asserting the session is still in a
+    // cancellable (non-terminal) state right in the WHERE clause -- the
+    // plain read-then-write this used to be raced against the rider's own
+    // delivery confirmation: both could pass the check above against the
+    // same stale read (e.g. the customer cancelling right as the rider
+    // enters the delivery code), then both write their own outcome, with
+    // whichever landed last silently winning -- exactly how a session
+    // could end up DELIVERED on the rider's own screen (their own
+    // successful response) while the customer/shopper's screens showed
+    // CANCELLED (also each their own successful response), with no single
+    // row ever actually holding a mismatched status, just two different
+    // in-flight writes each reflecting a reality that didn't hold by the
+    // time the other one landed.
+    const { count } = await prisma.shopSession.updateMany({
+      where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+    if (count === 0) {
+      const current = await prisma.shopSession.findUnique({ where: { id: session.id }, select: { status: true } });
+      return res.status(409).json({ error: `Session is already ${(current?.status || "unknown").toLowerCase()}.` });
+    }
+    const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
     const io = req.app.get("io");
-    // Refunds the customer's full remaining stake -- not just whatever's
-    // currently backed by a real EscrowHold. A session cancelled while
-    // still SEARCHING has ZERO holds (none are created until a shopper
-    // actually matches / a rider actually accepts), so the plain
+    // Only reachable once the cancel genuinely took effect above -- refunds
+    // the customer's full remaining stake, not just whatever's currently
+    // backed by a real EscrowHold. A session cancelled while still
+    // SEARCHING has ZERO holds (none are created until a shopper actually
+    // matches / a rider actually accepts), so the plain
     // escrow.refundAllHoldsForContext this used to call alone was a silent
     // no-op there -- the customer's real, already-paid deposit was never
     // refunded at all. See refundRemainingDeposit's own comment.
-    await refundRemainingDeposit(session, io, "Session cancelled by customer");
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+    await refundRemainingDeposit(updated, io, "Session cancelled by customer");
     closeSupportThreadForContext(session.id);
     // If this session was still SEARCHING (broadcast to every online
     // shopper, per listSessions' as=available), tell them it's gone --
@@ -1594,8 +1659,17 @@ async function markAway(req, res, next) {
     const allAway = away && !!updated.customerAwayAt && (!updated.shopperId || !!updated.shopperAwayAt) && (!updated.riderId || !!updated.riderAwayAt);
     if (allAway) {
       const io = req.app.get("io");
-      await refundRemainingDeposit(updated, io, "Session auto-cancelled -- every party left");
-      const cancelled = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() } });
+      // Same atomic compare-and-swap as cancelSession -- re-asserts
+      // non-terminal status right in the WHERE clause so this can't race
+      // against, say, the rider confirming delivery in the same moment
+      // everyone else happens to be marked away.
+      const { count } = await prisma.shopSession.updateMany({
+        where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+        data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() },
+      });
+      if (count === 0) return res.json({ session: updated });
+      const cancelled = await prisma.shopSession.findUnique({ where: { id: session.id } });
+      await refundRemainingDeposit(cancelled, io, "Session auto-cancelled -- every party left");
       closeSupportThreadForContext(session.id);
       io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
       io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
