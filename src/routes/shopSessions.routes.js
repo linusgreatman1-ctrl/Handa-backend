@@ -35,6 +35,7 @@ router.post("/:id/rider-arrived-shopper", ctrl.riderArrivedShopper);
 router.post("/:id/pay-shortfall", ctrl.payShopSessionShortfall);
 router.post("/:id/out-for-delivery", ctrl.markOutForDelivery);
 router.post("/:id/confirm-call/start", ctrl.startConfirmCall);
+router.post("/:id/confirm-call/join", ctrl.joinConfirmCall);
 router.post("/:id/confirm-call/complete", ctrl.completeConfirmCall);
 router.post("/:id/handover-confirmed", ctrl.confirmHandover);
 router.post("/:id/rider-arrived-customer", ctrl.riderArrivedCustomer);

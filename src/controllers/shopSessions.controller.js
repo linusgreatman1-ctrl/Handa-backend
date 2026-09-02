@@ -1182,6 +1182,12 @@ async function startConfirmCall(req, res, next) {
     if (session.shopperId !== req.user.shopperProfile.id) return res.status(403).json({ error: "You are not the shopper on this session." });
     if (session.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: `Session must be RIDER_ASSIGNED (currently ${session.status}).` });
 
+    // Fresh round -- a stale join from an earlier abandoned attempt at this
+    // same call must never count toward this new one.
+    const reset = await prisma.shopSession.update({
+      where: { id: session.id },
+      data: { confirmCallCustomerJoinedAt: null, confirmCallShopperJoinedAt: null, confirmCallRiderJoinedAt: null },
+    });
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-invite", { sessionId: session.id });
     // A live socket toast only reaches whoever is already sitting on this
     // exact screen right now -- a real persisted notification means the
@@ -1193,14 +1199,42 @@ async function startConfirmCall(req, res, next) {
     if (session.rider?.userId) {
       await notify(io, session.rider.userId, "ORDER_UPDATE", "3-way call starting", "The shopper is starting a 3-way call with you and the customer to confirm the items — expect it any moment.", { sessionId: session.id }).catch(() => {});
     }
-    res.json({ session });
+    res.json({ session: reset });
   } catch (err) {
     next(err);
   }
 }
 
-// Any of the 3 real parties (rider, shopper, or customer) can mark the
-// confirm call done — idempotent, since more than one side might tap it.
+// Marks THIS party as having genuinely joined the real 3-way audio call --
+// called by the frontend only once they've actually connected (mic access
+// granted, joined the WebRTC room), not just when the invite/screen
+// appears. completeConfirmCall below requires all three of these before
+// it'll let the call be marked done.
+async function joinConfirmCall(req, res, next) {
+  try {
+    const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+
+    let field = null;
+    let role = null;
+    if (session.customerId === req.user.id) { field = "confirmCallCustomerJoinedAt"; role = "customer"; }
+    else if (req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id) { field = "confirmCallShopperJoinedAt"; role = "shopper"; }
+    else if (req.user.riderProfile && session.riderId === req.user.riderProfile.id) { field = "confirmCallRiderJoinedAt"; role = "rider"; }
+    if (!field) return res.status(403).json({ error: "You are not a party to this session." });
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { [field]: new Date() } });
+    req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-joined", { sessionId: session.id, role });
+    res.json({ session: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Only actually completes once ALL THREE real parties have genuinely
+// joined the call themselves (see joinConfirmCall) -- one or two parties
+// cannot mark it done on behalf of whoever hasn't joined yet. Idempotent
+// once truly complete, since more than one side might tap the button in
+// the same instant.
 async function completeConfirmCall(req, res, next) {
   try {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -1211,10 +1245,17 @@ async function completeConfirmCall(req, res, next) {
       (req.user.riderProfile && session.riderId === req.user.riderProfile.id);
     if (!isParty) return res.status(403).json({ error: "You are not a party to this session." });
 
-    const updated = session.confirmCallCompletedAt
-      ? session
-      : await prisma.shopSession.update({ where: { id: session.id }, data: { confirmCallCompletedAt: new Date() } });
+    if (session.confirmCallCompletedAt) return res.json({ session });
 
+    const missing = [];
+    if (!session.confirmCallCustomerJoinedAt) missing.push("the customer");
+    if (!session.confirmCallShopperJoinedAt) missing.push("the shopper");
+    if (!session.confirmCallRiderJoinedAt) missing.push("the rider");
+    if (missing.length > 0) {
+      return res.status(409).json({ error: `Still waiting for ${missing.join(" and ")} to join the call.` });
+    }
+
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { confirmCallCompletedAt: new Date() } });
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:confirm-call-completed", { sessionId: session.id });
     res.json({ session: updated });
   } catch (err) {
@@ -1555,6 +1596,7 @@ module.exports = {
   markDelivered,
   riderArrivedCustomer,
   startConfirmCall,
+  joinConfirmCall,
   completeConfirmCall,
   confirmHandover,
   confirmSession,

@@ -708,7 +708,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
   <div style="padding:16px;" id="history-list"></div>
 </div>
 <div id="screen-etrack" class="escreen"><div style="background:#111;padding:44px 20px 14px;border-bottom:1px solid #2A2850"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><h2 style="font-weight:800;font-size:20px;margin:0">📍 Track Order</h2></div><div id="etrack-body" style="padding:16px;overflow-y:auto;flex:1"><div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div></div></div>
-<nav id="bnav" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;z-index:1000;justify-content:space-around;align-items:center"><button class="ntab active" id="nav-home" onclick="eGo('home')"><div class="ntab-icon">🏠</div><div class="ntab-label">Home</div></button><button class="ntab" id="nav-history" onclick="eGo('history')"><div class="ntab-icon">📋</div><div class="ntab-label">History</div></button><button class="ntab" id="nav-track" onclick="eGo('track')"><div class="ntab-icon">📍</div><div class="ntab-label">Track</div></button><button class="ntab" id="nav-profile" onclick="eGo('profile')"><div class="ntab-icon">👤</div><div class="ntab-label">Me</div></button></nav>
+<nav id="bnav" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;z-index:1000;justify-content:space-around;align-items:center"><button class="ntab active" id="nav-home" onclick="customerGoHome()"><div class="ntab-icon">🏠</div><div class="ntab-label">Home</div></button><button class="ntab" id="nav-history" onclick="eGo('history')"><div class="ntab-icon">📋</div><div class="ntab-label">History</div></button><button class="ntab" id="nav-track" onclick="eGo('track')"><div class="ntab-icon">📍</div><div class="ntab-label">Track</div></button><button class="ntab" id="nav-profile" onclick="eGo('profile')"><div class="ntab-icon">👤</div><div class="ntab-label">Me</div></button></nav>
 <!-- Global notification bell -- one fixed element reused across every
      role's dashboard instead of threading it into each dashboard's own
      header markup. Hidden until login, same visibility pattern as #bnav. -->
@@ -3791,9 +3791,15 @@ function renderShopPhase(phase) {
         <div style="font-size:26px;font-weight:900;letter-spacing:6px;color:#2ECC71;">${window._sfmSession.deliveryCode}</div>
         <div style="font-size:11px;color:#9A9390;margin-top:6px;">Save this — give it to your rider once they arrive to deliver your items</div>
       </div>`:''}
-      ${(liveStatus==='RIDER_ASSIGNED'&&window._sfmSession&&window._sfmSession.riderArrivedShopperAt&&!handoverDone)?`<div style="background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);border-radius:13px;padding:12px 14px;margin-bottom:18px;text-align:left;">
+      ${(liveStatus==='RIDER_ASSIGNED'&&window._sfmSession&&window._sfmSession.riderArrivedShopperAt&&!handoverDone)?(
+        window._sfmSession.confirmCallCompletedAt
+        ? `<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:13px;padding:12px 14px;margin-bottom:18px;text-align:left;">
+        <div style="font-size:12px;color:#2ECC71;font-weight:700;">✅ Items confirmed on the 3-way call — waiting for ${shopperNm} to hand them over to the rider.</div>
+      </div>`
+        : `<div style="background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);border-radius:13px;padding:12px 14px;margin-bottom:18px;text-align:left;">
         <div style="font-size:12px;color:#3B9FE8;font-weight:700;">📞 ${shopperNm} will start a 3-way call with you and the rider shortly to confirm your items before handover — stay ready to join it.</div>
-      </div>`:''}
+      </div>`
+      ):''}
       <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:14px;">
         <div style="font-size:32px;${handoverDone?'':'animation:float 2s ease-in-out infinite;'}flex-shrink:0;">${handoverDone?'✅':'🧑‍💼'}</div>
         <div style="flex:1;">
@@ -5229,6 +5235,21 @@ function bcallBindListeners(){
     // at is definitely stale, not a real ongoing call -- let a new
     // invite through instead of busy-declining it forever.
     var bc=window._bcall, inc=window._bcallIncoming;
+    // The caller now auto-resends the same invite every 3s while ringing
+    // (see bcallStart) so a one-off signaling miss self-heals -- but that
+    // meant EVERY resend re-entered this handler while the FIRST invite
+    // was still sitting unanswered in window._bcallIncoming, and the busy
+    // check below treated that as "I'm on another call" and auto-declined
+    // the caller's own still-pending call back to them. From the caller's
+    // side this looked exactly like "rider is on another call" while it
+    // was visibly still ringing on the rider's screen, then cutting off on
+    // its own a few seconds later. A resend from the SAME caller for the
+    // SAME already-pending incoming call is a heartbeat, not a new call --
+    // just refresh it and keep ringing, no re-decline.
+    if(inc && inc.fromUserId===p.fromUserId && inc.fromSocketId===p.fromSocketId){
+      inc._ts=Date.now();
+      return;
+    }
     var bcStale = bc && bc.status!=='connected' && bc._ts && (Date.now()-bc._ts)>40000;
     var incStale = inc && inc._ts && (Date.now()-inc._ts)>40000;
     var reallyBusy = (bc && !bcStale) || (inc && !incStale);
@@ -5470,7 +5491,13 @@ function confirmCallRemovePeer(remoteSocketId){
 function updateConfirmCallCount(){
   var cc=window._confirmCall;
   var el=document.getElementById('confirmcall-count');
-  if(el&&cc) el.textContent = Object.keys(cc.peers).length+' connected';
+  if(!el||!cc) return;
+  // window._confirmCallJoinedRoles is the durable, backend-confirmed
+  // record (see joinConfirmCall/the confirm-call-joined socket event) --
+  // all 3 must show here before Confirmed—End Call will actually succeed.
+  var joined=window._confirmCallJoinedRoles||{};
+  var count=['customer','shopper','rider'].filter(function(r){return joined[r];}).length;
+  el.textContent = count+'/3 joined';
 }
 
 async function confirmCallJoin(sessionId, myRole){
@@ -5496,6 +5523,11 @@ async function confirmCallJoin(sessionId, myRole){
       if(window._confirmCall===cc) _socket.emit('confirmcall:join', { sessionId: sessionId });
     });
   }
+  // Durable, real signal that THIS party has genuinely joined -- backend
+  // requires all three (customer, shopper, rider) before the call can be
+  // marked complete, so this is what that requirement is checked against,
+  // not just the live socket room membership.
+  api('/shop-sessions/'+sessionId+'/confirm-call/join',{method:'POST'}).catch(function(){});
 }
 
 function confirmCallLeave(){
@@ -5576,8 +5608,19 @@ function confirmCallBindListeners(){
   // an invite banner to whoever's already joined (the shopper themselves).
   _socket.on('shop-session:confirm-call-invite', function(p){
     if(!p||!p.sessionId) return;
+    window._confirmCallJoinedRoles = {}; // fresh round, per startConfirmCall's own reset
     if(window._confirmCall && window._confirmCall.sessionId===p.sessionId) return;
     showConfirmCallInviteBanner(p.sessionId);
+  });
+  // Durable "who's really joined" signal (see joinConfirmCall) -- drives
+  // the live "X/3 joined" status on the panel so everyone can see exactly
+  // who's still missing, instead of only finding out when Confirmed—End
+  // Call is tapped and rejected.
+  _socket.on('shop-session:confirm-call-joined', function(p){
+    if(!p||!p.sessionId||!window._confirmCall||window._confirmCall.sessionId!==p.sessionId) return;
+    window._confirmCallJoinedRoles = window._confirmCallJoinedRoles||{};
+    window._confirmCallJoinedRoles[p.role] = true;
+    updateConfirmCallCount();
   });
   _socket.on('shop-session:confirm-call-completed', function(p){
     if(!p||!p.sessionId) return;
@@ -5729,8 +5772,35 @@ function shopperNav(tab) {
   } else {
     prof.style.display = 'none';
     home.style.display = 'flex';
-    renderShopperHome();
+    shopperGoHome();
   }
+}
+// Same reasoning as riderGoHome -- tapping the shopper's own Home tab
+// after navigating to History/Earnings/etc used to always show the plain
+// dashboard, even mid-session, since the active-session check only ran at
+// login/refresh. Now goes straight back into a genuine active session
+// unless it's been explicitly dismissed via "Return to Homepage".
+async function shopperGoHome(){
+  var activeS = await detectActiveShopSession('shopper');
+  if(activeS && !_isSessionDismissed(activeS.id)){
+    enterActiveShopSession('shopper', activeS);
+    return;
+  }
+  renderShopperHome();
+}
+// Same reasoning as riderGoHome/shopperGoHome, for the customer's own Home
+// button (bottom nav + desktop sidebar) -- only these two specific entry
+// points are rewired, not every eGo('home') call site elsewhere in the
+// app (many of those are "action completed, land on home" navigations
+// that should always show the plain screen, not risk redirecting into an
+// unrelated active session).
+async function customerGoHome(){
+  var activeS = await detectActiveShopSession('customer');
+  if(activeS && !_isSessionDismissed(activeS.id)){
+    enterActiveShopSession('customer', activeS);
+    return;
+  }
+  eGo('home');
 }
 
 
@@ -7700,11 +7770,28 @@ function riderNav(tab){
   var ab=document.getElementById('rnav-'+tab);
   if(ab){ab.classList.add('active');var dot=ab.querySelector('.ntab-dot');if(dot){dot.style.opacity='1';dot.style.background='#F5A623';}var lbl=ab.querySelector('.ntab-label');if(lbl)lbl.style.color='#F5A623';}
   document.querySelectorAll('#app-sidebar-nav .sb-nav-item[data-sbtab]').forEach(function(b){b.classList.toggle('on',b.dataset.sbtab===tab);});
-  if(tab==='deliveries')renderRiderDeliveries();
+  if(tab==='deliveries')riderGoHome();
   else if(tab==='map')renderRiderMap();
   else if(tab==='earnings')renderRiderEarnings();
   else if(tab==='history')showRiderRideHistory();
   else renderRiderProfile();
+}
+// Tapping the rider's own Home tab after navigating to History/Earnings/etc
+// used to always show the plain empty dashboard, even mid-delivery -- the
+// active-session check only ever ran once, at login/refresh
+// (promptOrEnterActiveShopSession), never on ordinary in-app tab
+// navigation. If there's a genuine active session that hasn't been
+// explicitly dismissed (via "Return to Homepage" on that same prompt),
+// Home now goes straight back into it instead of the blank dashboard.
+// Respects an explicit dismissal -- that's the one case Home should stay
+// on the plain dashboard, since the rider asked for exactly that.
+async function riderGoHome(){
+  var activeS = await detectActiveShopSession('rider');
+  if(activeS && !_isSessionDismissed(activeS.id)){
+    enterActiveShopSession('rider', activeS);
+    return;
+  }
+  renderRiderDeliveries();
 }
 async function renderRiderDeliveries(){
   var body=document.getElementById('rider-body');if(!body)return;
@@ -9730,6 +9817,8 @@ function riderMapPhase1(){
     +'</div>'
     +(handoverDone
       ?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Items handed over — press Items Collected below to head to the customer</div>'
+      :(arrived&&s&&s.confirmCallCompletedAt)
+      ?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Items confirmed on the 3-way call — waiting for '+shopperName+' to hand them over to you.</div>'
       :arrived
       ?'<div style="background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#3B9FE8;font-weight:700;font-size:13px;">✅ You marked arrival — '+shopperName+' will start a 3-way call with you and the customer to confirm the items. Stay ready to join it, then wait for handover.</div>'
       :'<button onclick="riderMarkArrivedAtShopper()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F5A623;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
@@ -9941,7 +10030,7 @@ function renderAppSidebarNav(scr){
       +'<button class="sb-nav-item" data-sbtab="profile" onclick="riderNav(\'profile\')"><span class="sb-ic">👤</span>Profile</button>';
   } else {
     el.innerHTML=''
-      +'<button class="sb-nav-item'+(scr==='home'?' on':'')+'" data-scr="home" onclick="eGo(\'home\')"><span class="sb-ic">🏠</span>Home</button>'
+      +'<button class="sb-nav-item'+(scr==='home'?' on':'')+'" data-scr="home" onclick="customerGoHome()"><span class="sb-ic">🏠</span>Home</button>'
       +'<button class="sb-nav-item'+(scr==='history'?' on':'')+'" data-scr="history" onclick="eGo(\'history\')"><span class="sb-ic">📋</span>History</button>'
       +'<button class="sb-nav-item'+(scr==='track'?' on':'')+'" data-scr="track" onclick="eGo(\'track\')"><span class="sb-ic">📍</span>Track</button>'
       +'<button class="sb-nav-item'+(scr==='profile'?' on':'')+'" data-scr="profile" onclick="eGo(\'profile\')"><span class="sb-ic">👤</span>Profile</button>';

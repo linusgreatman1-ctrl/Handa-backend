@@ -680,11 +680,20 @@ model ShopSession {
   // Real 3-way audio call (rider + shopper + customer) the shopper starts
   // once the rider arrives at their location and the two of them have done
   // the joint item check — the rider confirms the items directly with the
-  // customer before the shopper hands them over. Set the moment any of the
-  // 3 real parties marks it done. markOutForDelivery (the shopper->rider
-  // handoff) requires this to be set first, same gating shape as the
-  // pickup/delivery OTP codes.
-  confirmCallCompletedAt DateTime?
+  // customer before the shopper hands them over. markOutForDelivery (the
+  // shopper->rider handoff) requires this to be set first, same gating
+  // shape as the pickup/delivery OTP codes.
+  //
+  // completeConfirmCall only sets confirmCallCompletedAt once all three of
+  // these are set -- one party (or two) cannot mark the call done on
+  // behalf of everyone; each must have genuinely joined the real audio
+  // call themselves. Reset to null every time startConfirmCall begins a
+  // fresh round, so a stale join from an earlier abandoned attempt never
+  // counts toward a later one.
+  confirmCallCustomerJoinedAt DateTime?
+  confirmCallShopperJoinedAt  DateTime?
+  confirmCallRiderJoinedAt    DateTime?
+  confirmCallCompletedAt      DateTime?
 
   // Set the moment the shopper taps "Confirm Handover to Rider" (after the
   // 3-way call), purely a live progress signal for the rider's and
