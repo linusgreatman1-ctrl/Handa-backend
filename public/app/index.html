@@ -5361,10 +5361,26 @@ function bcallBindListeners(){
   _socket.on('bookingcall:declined',function(p){
     var c=window._bcall;
     if(!c||c.role!=='caller'||c.otherUserId!==p.fromUserId)return;
+    // Once the call has actually connected (a real accept landed, from
+    // this or any other of the callee's tabs/devices), a "busy" decline
+    // arriving after that is just a slower stale duplicate catching up --
+    // showing "they're on another call" about someone who has already
+    // answered and is mid-conversation is actively wrong, not just noisy.
+    if(p.reason==='busy'&&c.status!=='ringing')return;
     // "busy" (they're already ringing/on another call) is a real, common,
     // temporary state, not a real decline -- showing the same "declined
     // the call" message for both used to read as a rejection nobody
     // actually made whenever this fired for the busy reason instead.
+    // The invite resends every 3s while ringing (see bcallStart), and a
+    // persistently-stale tab/device re-declines as busy on every single
+    // resend -- with no dedup this repeated the same toast every ~3s for
+    // up to the full 30s ring window, reading as constant noise even
+    // though the call was genuinely going through on the callee's other,
+    // correctly-idle tab the whole time. Show it once per call attempt.
+    if(p.reason==='busy'){
+      if(c._busyToastShown)return;
+      c._busyToastShown=true;
+    }
     var msg = p.reason==='busy'
       ? (c.otherName||'They')+' is on another call right now — try again shortly'
       : (c.otherName||'They')+' declined the call';
@@ -5725,6 +5741,13 @@ function confirmCallBindListeners(){
     }
     if(window._riderActiveSession && window._riderActiveSession.id===p.sessionId){
       window._riderActiveSession.confirmCallCompletedAt = window._riderActiveSession.confirmCallCompletedAt || new Date().toISOString();
+      // Updating the data alone never touched the screen -- riderMapPhase1's
+      // "You marked arrival... stay ready to join it" text is only replaced
+      // by the "confirmed on the 3-way call" text on the NEXT render, and
+      // nothing re-rendered it here, unlike the handover-confirmed listener
+      // right below (which does call riderMapPhase1() again). The rider had
+      // to navigate away and back before the stale text would ever clear.
+      if(S.curScreen==='rider')riderMapPhase1();
     }
     if(window._confirmCall && window._confirmCall.sessionId===p.sessionId){
       showToast&&showToast('Confirm call completed','success');
@@ -10423,8 +10446,22 @@ async function tryRestoreSession(attempt){
     // long as the account still genuinely has that profile.
     try{
       var savedRole=sessionStorage.getItem('handa_active_role');
-      var stillHasIt=savedRole==='home'
-        ||(savedRole==='shopper'&&S.user.shopperProfileId)
+      // 'home' is the CUSTOMER role's own screen name (eGo('home') is what
+      // every customer lands on), not a role name -- it was being assigned
+      // straight into _eRole below, permanently corrupting a customer's own
+      // role tracker to the literal string 'home' the moment they'd ever
+      // visited their home screen (i.e. on every normal customer session).
+      // Every _eRole==='customer' check elsewhere in the app (e.g.
+      // submitReport's shop-session report flow) then silently failed,
+      // since _eRole was 'home', not 'customer' -- which is exactly why a
+      // customer reporting the shopper/rider at a session's end screen
+      // fell through to the generic eGo(_eRole) fallback and got bounced
+      // to Home instead of staying on the report flow's own real logic.
+      // _eRole already correctly defaults to apiRoleToERole(S.user) above
+      // for a plain customer -- 'home' being saved just means "nothing to
+      // restore, stay as whatever role apiRoleToERole already picked."
+      var stillHasIt=
+        (savedRole==='shopper'&&S.user.shopperProfileId)
         ||(savedRole==='rider'&&S.user.riderProfileId)
         ||((savedRole==='cook'||savedRole==='homecook')&&S.user.vendorProfileId&&S.user.vtype!=='event_planner')
         ||(savedRole==='event_planner'&&S.user.vendorProfileId&&S.user.vtype==='event_planner');
