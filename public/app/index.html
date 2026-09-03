@@ -2470,6 +2470,13 @@ function logout(){
   S.role='customer';_eRole='customer';
   try{sessionStorage.removeItem('handa_active_role');}catch(e){}
   document.getElementById('bnav').style.display='none';
+  // The mandatory KYC modal (and its ID-type-picker follow-on) are appended
+  // straight to document.body as fixed overlays, outside any screen
+  // container -- without this they'd survive a logout and sit stuck over
+  // the login screen (it has no dismiss button while mandatory), blocking
+  // even a different account from logging in.
+  closeNinSlipModal();
+  closeIdTypeModal();
   go('login');
 }
 
