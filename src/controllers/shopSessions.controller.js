@@ -282,10 +282,17 @@ async function getSession(req, res, next) {
     // three report buttons (shopper/customer/rider can each report a
     // different other party) independently shows "already reported"
     // instead of one ticket silently covering all of them.
+    // Also scoped to userId: req.user.id -- without this, a ticket ANY
+    // party filed on this session (e.g. the customer reporting the
+    // shopper) showed as "already reported" to EVERY other party who
+    // later opened the same session's history too (e.g. the rider,
+    // looking at their own screen, seeing "Shopper reported" for a report
+    // they never filed and had no part in) -- each party must only ever
+    // see the status of reports THEY THEMSELVES filed.
     const [shopperReportTicket, riderReportTicket, customerReportTicket] = await Promise.all([
-      prisma.supportTicket.findFirst({ where: { context: "SHOP_SESSION", contextId: session.id }, orderBy: { createdAt: "desc" } }),
-      prisma.supportTicket.findFirst({ where: { context: "RIDER", contextId: session.id }, orderBy: { createdAt: "desc" } }),
-      prisma.supportTicket.findFirst({ where: { context: "CUSTOMER", contextId: session.id }, orderBy: { createdAt: "desc" } }),
+      prisma.supportTicket.findFirst({ where: { context: "SHOP_SESSION", contextId: session.id, userId: req.user.id }, orderBy: { createdAt: "desc" } }),
+      prisma.supportTicket.findFirst({ where: { context: "RIDER", contextId: session.id, userId: req.user.id }, orderBy: { createdAt: "desc" } }),
+      prisma.supportTicket.findFirst({ where: { context: "CUSTOMER", contextId: session.id, userId: req.user.id }, orderBy: { createdAt: "desc" } }),
     ]);
     res.json({ session, shopperReportTicket, riderReportTicket, customerReportTicket });
   } catch (err) {
