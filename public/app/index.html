@@ -501,7 +501,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 <div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><div id="e-home-header-extra" style="margin:6px 0 10px"></div><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="position:relative;margin-bottom:16px"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px"><span style="color:#9A9390">🔍</span><input id="e-home-search-input" style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="homeSearchInput(this.value)" onfocus="if(this.value)homeSearchInput(this.value)" onblur="setTimeout(hideHomeSearchResults,180)"></div><div id="e-home-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;max-height:300px;overflow-y:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div></div><div id="customer-active-session-banner" style="display:none;margin-bottom:16px;"><div style="background:linear-gradient(135deg,rgba(59,159,232,.14),rgba(59,159,232,.05));border:2px solid rgba(59,159,232,.35);border-radius:16px;padding:15px 16px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-weight:800;font-size:14px;color:#3B9FE8;">🔴 Live Session Active</div><div style="width:8px;height:8px;border-radius:50%;background:#3B9FE8;animation:pulse 1s infinite;"></div></div><div style="font-size:13px;color:#9A9390;" id="customer-active-session-summary"></div><button class="btn btn-primary" style="margin-top:12px;background:#3B9FE8;font-size:13px;padding:10px;" onclick="restoreActiveShopSession('customer')">▶ Return to Session</button></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><button onclick="eGo('events')" style="width:100%;padding:13px;background:#1C1C1C;border:1.5px solid rgba(46,204,113,.4);border-radius:14px;color:#2ECC71;font-weight:800;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:8px">📢 Post an Event Request</button><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
 <div id="screen-liveshop" class="escreen flex-screen" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
       <div style="padding:52px 22px 14px;display:flex;align-items:center;gap:14px;flex-shrink:0;border-bottom:1px solid #2A2850;background:#111;">
-        <button class="ibtn" onclick="sfmBackToDashboard()">←</button>
+        <button class="ibtn" id="sfm-header-back-btn" onclick="sfmBackToDashboard()">←</button>
         <div class="h3">🛒 Shop for Me</div>
       </div>
       <div class="scrollable" style="padding:16px 22px 30px;" id="shop-body"></div>
@@ -3688,6 +3688,17 @@ function _ongoingSessionChoice(choice){
 
 function renderShopPhase(phase) {
   window._sfmPhase = phase;
+  // Neither party can step away from the live video call itself -- disable
+  // the persistent header arrow for the one phase where leaving would mean
+  // abandoning a call actually in progress; every other phase can freely
+  // step back to the dashboard.
+  var backBtn=document.getElementById('sfm-header-back-btn');
+  if(backBtn){
+    var onCall=phase==='liveCall';
+    backBtn.disabled=onCall;
+    backBtn.style.opacity=onCall?'.3':'1';
+    backBtn.style.cursor=onCall?'not-allowed':'pointer';
+  }
   const body = document.getElementById('shop-body');
 
   // ── PHASE 1: Build Shopping List ──────────────────────────────────────
@@ -3826,7 +3837,6 @@ function renderShopPhase(phase) {
           <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
           <span id="sfm-call-timer" style="font-size:12px;font-weight:800;color:#F2EDE8;background:#242424;padding:2px 8px;border-radius:8px;margin-left:auto;font-variant-numeric:tabular-nums;">00:00</span>
           <span style="font-size:12px;color:#9A9390;">${sfmShopperName()} ★${sfmShopperRating()}</span>
-          <button onclick="sfmSoftExitCall('sfm-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
         </div>
         <div class="video-frame" id="sfm-video-frame" style="margin-bottom:0;height:185px;">
           <video id="rtc-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
@@ -4776,15 +4786,13 @@ function sfmRiderVehicle(){
 // is lost by skipping straight to it.
 var SFM_STATUS_PHASE = { LIVE_CALL:'liveCall', PACKAGING:'packaging', FINDING_RIDER:'packaging', RIDER_ASSIGNED:'packaging', OUT_FOR_DELIVERY:'customerTracking', DELIVERED:'delivered' };
 var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packaging','customerTracking','delivered','done'];
-// The persistent "← Shop for Me" header back arrow (present above every
-// phase) needs different care specifically during a live call -- leaving
-// while the peer connection is still open would keep the camera/mic
-// running in the background with nothing on screen to show for it. Every
-// other phase has nothing live to tear down, so it's a plain navigate; the
-// session itself is never cancelled either way, just stepped away from --
-// the new Return to Session banner on Home is the way back in.
+// The persistent "← Shop for Me" header back arrow, present above every
+// phase except liveCall (disabled there by renderShopPhase -- neither
+// party can step away from a call actually in progress). The session
+// itself is never cancelled by using this, just stepped away from -- the
+// Return to Session banner on Home is the way back in.
 function sfmBackToDashboard(){
-  if(window._sfmPhase==='liveCall')sfmEndCall();
+  if(window._sfmPhase==='liveCall')return;
   eGo('home');
 }
 function onSfmStatus(status){
@@ -6179,7 +6187,6 @@ function renderShopperPhase(phase) {
           <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
           <span id="shopper-call-timer" style="font-size:12px;font-weight:800;color:#F2EDE8;background:#242424;padding:2px 8px;border-radius:8px;margin-left:auto;font-variant-numeric:tabular-nums;">00:00</span>
           <span style="font-size:12px;color:#9A9390;">${live.customer?live.customer.name:'Customer'}</span>
-          <button onclick="sfmSoftExitCall('shopper-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
         </div>
 
         <!-- User's camera (small PiP) + shopper's main camera -->
