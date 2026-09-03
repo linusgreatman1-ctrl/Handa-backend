@@ -5316,7 +5316,17 @@ async function bcallSetupPeer(){
         c.status='connected';c.startedAt=Date.now();
         renderBcallOverlay();
         clearInterval(window._bcallTickTimer);
-        window._bcallTickTimer=setInterval(function(){if(window._bcall&&window._bcall.status==='connected')renderBcallOverlay();},1000);
+        // Update only the duration text node on each tick, not the whole
+        // overlay -- a full renderBcallOverlay() every second replaces the
+        // Mic/End/Speaker buttons' DOM nodes, which can swallow a click
+        // whose mousedown/mouseup straddle a tick (no single element saw
+        // both events, so no click fires) -- the real cause of "the end
+        // button needs several taps before it responds" mid-call.
+        window._bcallTickTimer=setInterval(function(){
+          if(!window._bcall||window._bcall.status!=='connected')return;
+          var el=document.getElementById('bcall-status-text');
+          if(el)el.textContent=bcallFmtDuration(Date.now()-(window._bcall.startedAt||Date.now()));
+        },1000);
       }
       return;
     }
@@ -5568,7 +5578,7 @@ function renderBcallOverlay(){
     body.innerHTML=
       '<div style="width:84px;height:84px;border-radius:50%;background:#242424;border:2px solid #3B9FE8;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px;">'+(c.otherAvatar||'👤')+'</div>'
       +'<div style="font-weight:800;font-size:19px;color:#F2EDE8;">'+(c.otherName||'Contact')+'</div>'
-      +'<div style="font-size:13px;color:#9A9390;margin-top:4px;">'+statusText+'</div>'
+      +'<div id="bcall-status-text" style="font-size:13px;color:#9A9390;margin-top:4px;">'+statusText+'</div>'
       +(c.status==='ringing'?
         '<button onclick="bcallCancelOutgoing()" style="margin-top:34px;width:60px;height:60px;border-radius:50%;border:none;background:#E8392E;color:#fff;font-size:24px;cursor:pointer;">&#x1F4DE;</button>'
         :'<div style="display:flex;gap:14px;margin-top:34px;justify-content:center;">'
