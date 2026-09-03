@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const prisma = require("../config/db");
 const { hashPassword, comparePassword, isStrongPassword } = require("../utils/password");
 const { signAccessToken, signRefreshToken, verifyRefreshToken, hashToken } = require("../utils/jwt");
+const { notifyAllAdmins } = require("../services/notifications.service");
 
 const REFRESH_COOKIE_NAME = "handa_refresh";
 
@@ -91,6 +92,13 @@ async function register(req, res, next) {
       plateNumber,
       // SHOPPER-only
       market,
+      // Identity document -- collected inline in the registration form
+      // itself (not a separate step after the account exists) for the
+      // roles that go through real KYC review. Same field shape as
+      // kyc.controller.js's own upload endpoint.
+      docType,
+      idType,
+      idNumber,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -112,6 +120,17 @@ async function register(req, res, next) {
       if (!bizName || !bizName.trim()) {
         return res.status(400).json({ error: "Business name is required for vendor accounts." });
       }
+    }
+    // Rider/Shopper/Home Cook/Event Planner cannot complete registration
+    // without a real identity document -- validated the same way
+    // kyc.controller.js's own upload endpoint validates one, just before
+    // the account is even created rather than after.
+    const ID_TYPES = ["NIN", "DRIVERS_LICENSE", "INTL_PASSPORT", "VOTERS_CARD"];
+    const requiresIdentity = role === "VENDOR" || role === "RIDER" || role === "SHOPPER";
+    if (requiresIdentity) {
+      if (!req.file) return res.status(400).json({ error: "Please add your identity document to complete registration." });
+      if (!ID_TYPES.includes(idType)) return res.status(400).json({ error: "Select which ID type you're providing (NIN, Driver's License, Int'l Passport, or Voter's Card)." });
+      if (!idNumber || !String(idNumber).trim()) return res.status(400).json({ error: "Enter your ID number." });
     }
 
     if (email) {
@@ -142,10 +161,37 @@ async function register(req, res, next) {
       data.shopperProfile = { create: { market: market || null } };
     }
 
-    const user = await prisma.user.create({
-      data,
-      include: { vendorProfile: true, riderProfile: true, shopperProfile: true, wallet: true },
+    // Atomic: the account and (for the four KYC roles) their identity
+    // document are created together, so a doc-creation failure never
+    // leaves a half-registered account with no clean way to complete the
+    // requirement short of contacting support.
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data,
+        include: { vendorProfile: true, riderProfile: true, shopperProfile: true, wallet: true },
+      });
+      if (requiresIdentity) {
+        await tx.kycDocument.create({
+          data: {
+            userId: created.id,
+            docType: "ID_DOCUMENT",
+            idType,
+            idNumber: String(idNumber).trim(),
+            fileUrl: `/uploads/${req.file.filename}`,
+          },
+        });
+      }
+      return created;
     });
+
+    // Same admin visibility a document uploaded later from the profile
+    // screen already gets (kyc.controller.js's uploadKycDocument) -- a
+    // registration-time submission shouldn't be any less visible to admin
+    // review just because it arrived through a different endpoint.
+    if (requiresIdentity) {
+      const idTypeLabels = { NIN: "NIN", DRIVERS_LICENSE: "Driver's License", INTL_PASSPORT: "Int'l Passport", VOTERS_CARD: "Voter's Card" };
+      notifyAllAdmins(req.app.get("io"), "🪪 New KYC document", `${user.name || "A user"} submitted a ${idTypeLabels[idType]} for review.`, { userId: user.id }).catch(() => {});
+    }
 
     const { accessToken, refreshToken } = await issueSession(res, user);
     res.status(201).json({ user: publicUser(user), accessToken, refreshToken });

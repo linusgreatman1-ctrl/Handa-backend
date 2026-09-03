@@ -3,6 +3,7 @@ const { body } = require("express-validator");
 const rateLimit = require("express-rate-limit");
 const { validate } = require("../middleware/validate");
 const { requireAuth } = require("../middleware/auth");
+const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/auth.controller");
 
 const router = express.Router();
@@ -18,6 +19,13 @@ const authLimiter = rateLimit({
 router.post(
   "/register",
   authLimiter,
+  // The identity document (for Rider/Shopper/Home Cook/Event Planner) now
+  // travels IN the registration request itself, not as a separate call
+  // after the account exists -- multer only actually parses the body when
+  // the request is genuinely multipart, so this is a no-op (req.file stays
+  // undefined, express.json() already populated req.body as before) for
+  // any caller that still posts plain JSON.
+  upload.single("document"),
   [
     body("name").trim().isLength({ min: 2 }).withMessage("Name is required."),
     body("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters."),

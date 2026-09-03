@@ -10657,35 +10657,54 @@ async function doRegister(){
   var bankAcct=(document.getElementById('r-bankacct')||{}).value||'';
   var phone=(document.getElementById('r-phone')||{}).value||'';
   var addr=(document.getElementById('r-addr')||{}).value||'';
-  var body={name:nm.trim(),email:em.trim(),password:pw,phone:phone.trim()||undefined,address:addr.trim()||undefined,bankName:bankName.trim()||undefined,bankAccountNumber:bankAcct.trim()||undefined};
-  if(_eRole==='cook'){body.role='VENDOR';body.vtype='HOME_COOK';body.bizName=nm.trim();}
-  else if(_eRole==='event_planner'){body.role='VENDOR';body.vtype='EVENT_PLANNER';body.bizName=nm.trim();}
-  else if(_eRole==='rider'){body.role='RIDER';}
-  else if(_eRole==='shopper'){body.role='SHOPPER';}
-  else{body.role='CUSTOMER';}
   // Captured before _finishLogin runs below (which may itself touch
   // _eRole as part of landing on the right dashboard) -- this is what
-  // decides whether the NIN slip prompt applies, so it needs the role the
-  // account was actually just registered as, not whatever _eRole ends up
-  // holding a moment later.
+  // decides whether the NIN slip fallback applies, so it needs the role
+  // the account was actually just registered as, not whatever _eRole ends
+  // up holding a moment later.
   var regRole=_eRole;
   var btn=document.getElementById('auth-btn');if(btn)btn.disabled=true;
   setAccessToken(null); setRefreshToken(null); // same reasoning as doAuth() — don't let a mid-request refresh restore a stale prior session
   try{
-    var data=await api('/auth/register',{method:'POST',body:JSON.stringify(body)});
+    // Real multipart submission (not JSON via api()) so the identity photo
+    // travels IN this same registration request, not as a separate call
+    // after the account already exists -- the backend creates the account
+    // and (for the four KYC roles) the KycDocument row together in one
+    // atomic transaction.
+    var fd=new FormData();
+    fd.append('name',nm.trim());
+    fd.append('email',em.trim());
+    fd.append('password',pw);
+    if(phone.trim())fd.append('phone',phone.trim());
+    if(addr.trim())fd.append('address',addr.trim());
+    if(bankName.trim())fd.append('bankName',bankName.trim());
+    if(bankAcct.trim())fd.append('bankAccountNumber',bankAcct.trim());
+    if(_eRole==='cook'){fd.append('role','VENDOR');fd.append('vtype','HOME_COOK');fd.append('bizName',nm.trim());}
+    else if(_eRole==='event_planner'){fd.append('role','VENDOR');fd.append('vtype','EVENT_PLANNER');fd.append('bizName',nm.trim());}
+    else if(_eRole==='rider'){fd.append('role','RIDER');}
+    else if(_eRole==='shopper'){fd.append('role','SHOPPER');}
+    else{fd.append('role','CUSTOMER');}
+    if(_regIdentityComplete()){
+      fd.append('docType','ID_DOCUMENT');
+      fd.append('idType',_regIdentity.idType);
+      fd.append('idNumber',_regIdentity.idNumber);
+      fd.append('document',_regIdentity.file);
+    }
+    var res=await fetch(API_BASE+'/auth/register',{method:'POST',credentials:'include',body:fd});
+    var data={}; try{ data=await res.json(); }catch(e){}
+    if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
     setAccessToken(data.accessToken);
     setRefreshToken(data.refreshToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;
+    _regIdentity={idType:null,idNumber:null,file:null,fileName:null};
     _finishLogin(S.user.name);
-    // The identity document was collected inline during registration
-    // (_regIdentity, validated above) -- no account/token existed yet at
-    // that point, so it only gets submitted for real now, with the token
-    // registration just returned. checkKycMandatoryGate is still called
-    // right after as a safety net: if this upload fails for any reason
-    // (network blip), the fallback modal catches it on the next
-    // login/restore instead of silently losing the requirement -- it's a
-    // pure no-op if the upload above already succeeded.
-    setTimeout(function(){ uploadRegIdentityIfAny().finally(function(){ checkKycMandatoryGate(regRole); }); }, 600);
+    // Safety net only -- the document was already included in the
+    // registration request above for the roles that need one. This just
+    // catches the rare case where something about it didn't actually take
+    // (e.g. the backend rejected the file but still created the account
+    // some other way), so a real retry path exists via the fallback modal
+    // instead of silently losing the requirement.
+    setTimeout(function(){ checkKycMandatoryGate(regRole); }, 600);
   }catch(err){
     showToast&&showToast(err.message||'Registration failed','warning');
   }finally{
@@ -13371,23 +13390,6 @@ function closeRegIdentityModal(){
   if(!_regIdentityComplete())return; // Done stays disabled until all 3 steps are real, but guard here too
   var el=document.getElementById('reg-identity-modal'); if(el)el.remove();
   refreshRegIdentityField();
-}
-// Called right after a successful doRegister() — uploads whatever was
-// collected inline during the registration form, now that a real
-// account/token exists to attach it to. Never throws (caller chains
-// checkKycMandatoryGate as a fallback regardless of the outcome here).
-async function uploadRegIdentityIfAny(){
-  var d=_regIdentity;
-  if(!_regIdentityComplete())return;
-  var fd=new FormData();
-  fd.append('document',d.file);
-  fd.append('docType','ID_DOCUMENT');
-  fd.append('idType',d.idType);
-  fd.append('idNumber',d.idNumber);
-  try{
-    var res=await fetch(API_BASE+'/kyc/documents',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
-    if(res.ok){ _regIdentity={idType:null,idNumber:null,file:null,fileName:null}; }
-  }catch(e){}
 }
 
 function buildRegForm(){
