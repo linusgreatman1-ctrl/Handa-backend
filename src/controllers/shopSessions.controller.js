@@ -1568,7 +1568,15 @@ async function notifyPayoutRecipients(io, session) {
 async function cancelSession(req, res, next) {
   try {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
-    if (!session || session.customerId !== req.user.id) return res.status(404).json({ error: "Shop session not found." });
+    if (!session) return res.status(404).json({ error: "Shop session not found." });
+    const isCustomer = session.customerId === req.user.id;
+    // The assigned shopper can also back out -- but only in the narrow
+    // pre-call window (matched, hasn't started the live call yet, matching
+    // the "accepted" screen's own Cancel button). Once LIVE_CALL begins,
+    // backing out goes through Emergency End instead, which has its own
+    // charge/refund rules for time already spent.
+    const isShopperPreCall = req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id && session.status === "MATCHED";
+    if (!isCustomer && !isShopperPreCall) return res.status(404).json({ error: "Shop session not found." });
     if (["DELIVERED", "COMPLETED", "CANCELLED"].includes(session.status)) return res.status(409).json({ error: `Session is already ${session.status.toLowerCase()}.` });
 
     // Atomic compare-and-swap, re-asserting the session is still in a
@@ -1602,7 +1610,7 @@ async function cancelSession(req, res, next) {
     // escrow.refundAllHoldsForContext this used to call alone was a silent
     // no-op there -- the customer's real, already-paid deposit was never
     // refunded at all. See refundRemainingDeposit's own comment.
-    await refundRemainingDeposit(updated, io, "Session cancelled by customer");
+    await refundRemainingDeposit(updated, io, isCustomer ? "Session cancelled by customer" : "Session cancelled by shopper");
     closeSupportThreadForContext(session.id);
     // If this session was still SEARCHING (broadcast to every online
     // shopper, per listSessions' as=available), tell them it's gone --
@@ -1621,8 +1629,10 @@ async function cancelSession(req, res, next) {
     io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
     // Tell whichever matched party didn't do the cancelling -- previously
     // silent, matching the booking-cancel flow's own "notify the other
-    // side" pattern.
-    if (session.shopperId) {
+    // side" pattern. The customer's own notice comes from
+    // refundRemainingDeposit's "Refund issued" push above (with the reason
+    // text saying who cancelled), not a second one here.
+    if (isCustomer && session.shopperId) {
       const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
       if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session cancelled", "The customer cancelled this Shop-For-Me session.", { sessionId: session.id }).catch(() => {});
     }

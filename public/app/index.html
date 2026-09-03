@@ -498,10 +498,10 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
 
 <!-- ═══════════════════════════════════════════ HOME ═══ -->
 
-<div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><div id="e-home-header-extra" style="margin:6px 0 10px"></div><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="position:relative;margin-bottom:16px"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px"><span style="color:#9A9390">🔍</span><input id="e-home-search-input" style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="homeSearchInput(this.value)" onfocus="if(this.value)homeSearchInput(this.value)" onblur="setTimeout(hideHomeSearchResults,180)"></div><div id="e-home-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;max-height:300px;overflow-y:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><button onclick="eGo('events')" style="width:100%;padding:13px;background:#1C1C1C;border:1.5px solid rgba(46,204,113,.4);border-radius:14px;color:#2ECC71;font-weight:800;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:8px">📢 Post an Event Request</button><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
+<div id="screen-ehome" class="escreen"><div style="background:linear-gradient(160deg,#2d0d2d 0%,#111 60%);padding:44px 20px 22px;position:relative;overflow:hidden"><div style="position:absolute;width:160px;height:160px;background:rgba(155,89,182,.1);border-radius:50%;top:-30px;right:-30px"></div><p style="color:#9B59B6;font-size:11px;font-weight:700;letter-spacing:2px;margin-bottom:4px">HANDA</p><h1 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:900;margin-bottom:4px">Hello, <span id="e-home-name" style="color:#9B59B6">there!</span></h1><div id="e-home-header-extra" style="margin:6px 0 10px"></div><p style="color:#9A9390;font-size:13px">What can we help you with today?</p></div><div style="padding:14px 16px 0"><div style="position:relative;margin-bottom:16px"><div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:0 14px;display:flex;align-items:center;gap:10px"><span style="color:#9A9390">🔍</span><input id="e-home-search-input" style="flex:1;background:transparent;border:none;color:#F2EDE8;font-family:'DM Sans',sans-serif;font-size:14px;padding:13px 0;outline:none" placeholder="Search cooks, planners, services…" oninput="homeSearchInput(this.value)" onfocus="if(this.value)homeSearchInput(this.value)" onblur="setTimeout(hideHomeSearchResults,180)"></div><div id="e-home-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;max-height:300px;overflow-y:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div></div><div id="customer-active-session-banner" style="display:none;margin-bottom:16px;"><div style="background:linear-gradient(135deg,rgba(59,159,232,.14),rgba(59,159,232,.05));border:2px solid rgba(59,159,232,.35);border-radius:16px;padding:15px 16px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-weight:800;font-size:14px;color:#3B9FE8;">🔴 Live Session Active</div><div style="width:8px;height:8px;border-radius:50%;background:#3B9FE8;animation:pulse 1s infinite;"></div></div><div style="font-size:13px;color:#9A9390;" id="customer-active-session-summary"></div><button class="btn btn-primary" style="margin-top:12px;background:#3B9FE8;font-size:13px;padding:10px;" onclick="restoreActiveShopSession('customer')">▶ Return to Session</button></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px"><div onclick="eGo('sfm')" style="background:linear-gradient(135deg,#0d1a2d,#111);border:1.5px solid rgba(59,159,232,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🛒</div><p style="font-weight:800;font-size:14px;color:#3B9FE8;margin:0 0 2px">Shop For Me</p><p style="color:#9A9390;font-size:11px;margin:0">Live shopping sessions</p></div><div onclick="eGo('cooks')" style="background:linear-gradient(135deg,#2d0d2d,#111);border:1.5px solid rgba(155,89,182,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🧑‍🍳</div><p style="font-weight:800;font-size:14px;color:#9B59B6;margin:0 0 2px">Home Cooks</p><p style="color:#9A9390;font-size:11px;margin:0">Cook in your home</p></div><div onclick="eGo('events')" style="background:linear-gradient(135deg,#0d2d1a,#111);border:1.5px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🎊</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">Event Planners</p><p style="color:#9A9390;font-size:11px;margin:0">Weddings &amp; parties</p></div><div onclick="eGo('aiplanner')" style="background:linear-gradient(135deg,#0d1a0d,#111);border:1.5px solid rgba(46,204,113,.25);border-radius:16px;padding:16px;cursor:pointer"><div style="font-size:32px;margin-bottom:8px">🤖</div><p style="font-weight:800;font-size:14px;color:#2ECC71;margin:0 0 2px">AI Meal Planner</p><p style="color:#9A9390;font-size:11px;margin:0">Plans &amp; grocery lists</p></div></div><button onclick="eGo('events')" style="width:100%;padding:13px;background:#1C1C1C;border:1.5px solid rgba(46,204,113,.4);border-radius:14px;color:#2ECC71;font-weight:800;font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:8px">📢 Post an Event Request</button><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">⭐ Featured Cooks</p><div id="e-featured-cooks" style="margin-bottom:16px"></div><p style="color:#9A9390;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">🎊 Featured Event Planners</p><div id="e-featured-ep" style="padding-bottom:80px"></div></div></div>
 <div id="screen-liveshop" class="escreen flex-screen" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
       <div style="padding:52px 22px 14px;display:flex;align-items:center;gap:14px;flex-shrink:0;border-bottom:1px solid #2A2850;background:#111;">
-        <button class="ibtn" onclick="eGo('home')">←</button>
+        <button class="ibtn" onclick="sfmBackToDashboard()">←</button>
         <div class="h3">🛒 Shop for Me</div>
       </div>
       <div class="scrollable" style="padding:16px 22px 30px;" id="shop-body"></div>
@@ -3577,6 +3577,43 @@ async function restoreActiveShopSession(role) {
   return enterActiveShopSession(role, activeS);
 }
 
+// Customer/rider equivalents of the shopper's own #active-session-banner --
+// a persistent, always-checked "you have a session in progress" button on
+// their real home screen, so using a back arrow (or any other navigation)
+// away from an in-progress Shop-For-Me session never strands them with no
+// visible way back. Same sequencing guard as the shopper's version (only
+// the most recently STARTED fetch is allowed to apply its result).
+var _customerBannerReqSeq=0;
+async function refreshCustomerActiveSessionBanner(){
+  var banner=document.getElementById('customer-active-session-banner');
+  if(!banner)return;
+  var mySeq=++_customerBannerReqSeq;
+  try{
+    var active=await detectActiveShopSession('customer');
+    if(mySeq!==_customerBannerReqSeq)return;
+    banner=document.getElementById('customer-active-session-banner');if(!banner)return;
+    if(!active){banner.style.display='none';return;}
+    banner.style.display='block';
+    var sum=document.getElementById('customer-active-session-summary');
+    if(sum)sum.textContent=(active.shopper&&active.shopper.user?active.shopper.user.name+' is shopping for you':'Finding your shopper')+' • '+active.status.replace(/_/g,' ');
+  }catch(e){}
+}
+var _riderBannerReqSeq=0;
+async function refreshRiderActiveSessionBanner(){
+  var banner=document.getElementById('rider-active-session-banner');
+  if(!banner)return;
+  var mySeq=++_riderBannerReqSeq;
+  try{
+    var active=await detectActiveShopSession('rider');
+    if(mySeq!==_riderBannerReqSeq)return;
+    banner=document.getElementById('rider-active-session-banner');if(!banner)return;
+    if(!active){banner.style.display='none';return;}
+    banner.style.display='block';
+    var sum=document.getElementById('rider-active-session-summary');
+    if(sum)sum.textContent=(active.customer?active.customer.name:'Customer')+' • '+(active.deliveryAddress||'Address pending')+' • '+active.status.replace(/_/g,' ');
+  }catch(e){}
+}
+
 // ── Ongoing-session prompt on login/refresh ──────────────────────────────
 // Previously, every login/refresh silently forced the customer/shopper/
 // rider straight back into whatever session was still active -- "Track
@@ -4739,6 +4776,17 @@ function sfmRiderVehicle(){
 // is lost by skipping straight to it.
 var SFM_STATUS_PHASE = { LIVE_CALL:'liveCall', PACKAGING:'packaging', FINDING_RIDER:'packaging', RIDER_ASSIGNED:'packaging', OUT_FOR_DELIVERY:'customerTracking', DELIVERED:'delivered' };
 var SFM_PHASE_ORDER = ['buildList','finding','shopperProfile','liveCall','packaging','customerTracking','delivered','done'];
+// The persistent "← Shop for Me" header back arrow (present above every
+// phase) needs different care specifically during a live call -- leaving
+// while the peer connection is still open would keep the camera/mic
+// running in the background with nothing on screen to show for it. Every
+// other phase has nothing live to tear down, so it's a plain navigate; the
+// session itself is never cancelled either way, just stepped away from --
+// the new Return to Session banner on Home is the way back in.
+function sfmBackToDashboard(){
+  if(window._sfmPhase==='liveCall')sfmEndCall();
+  eGo('home');
+}
 function onSfmStatus(status){
   if(!(S.curScreen==='liveshop'||S.curScreen==='sfm')||!window._sfmSession)return;
   if(status==='CANCELLED'){
@@ -6035,6 +6083,35 @@ async function shopperGoHome(){
   }
   renderShopperHome();
 }
+// The back arrow on every shopper session screen -- deliberately calls
+// renderShopperHome() directly rather than shopperGoHome()/shopperNav('home'),
+// which would auto-detect the same still-active session and instantly
+// bounce right back into this exact screen. That's the right behavior for
+// the Home tab (a real shortcut back in), but it would make a "step away
+// for a moment" back arrow a no-op -- the shopper would never actually see
+// the dashboard or its Return to Session banner. The session itself is
+// untouched either way; this is purely a navigation choice.
+function shopperBackToDashboard(){
+  renderShopperHome();
+}
+// Only reachable from the 'accepted' screen (status MATCHED, before the
+// live call starts) -- the backend only allows a shopper-initiated cancel
+// in that same narrow window; past that, Emergency End is the real
+// mechanism (it has its own charge/refund rules for time already spent).
+async function shopperCancelSession(){
+  var s=window._shopperSession;
+  if(!s)return;
+  if(!confirm('Cancel this session? The customer will be fully refunded.'))return;
+  try{
+    await api('/shop-sessions/'+s.id+'/cancel',{method:'POST'});
+  }catch(err){
+    showToast&&showToast(err.message||'Could not cancel this session','warning');
+    return;
+  }
+  showToast&&showToast('Session cancelled — the customer has been refunded.','success');
+  window._shopperSession=null;window._shopperPhase=null;
+  renderShopperHome();
+}
 // Same reasoning as riderGoHome/shopperGoHome, for the customer's own Home
 // button (bottom nav + desktop sidebar) -- only these two specific entry
 // points are rewired, not every eGo('home') call site elsewhere in the
@@ -6063,6 +6140,7 @@ function renderShopperPhase(phase) {
     var acc=window._shopperSession||{};
     var accBudget=acc.depositKobo!=null?Math.round((acc.depositKobo-acc.sessionFeeKobo)/100):0;
     body.innerHTML = `<div class="fu" style="padding:52px 22px 22px;">
+      <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
       <div style="text-align:center;margin-bottom:20px;">
         <div style="font-size:64px;margin-bottom:12px;">🧑‍💼</div>
         <div class="h3">Session Accepted!</div>
@@ -6088,7 +6166,7 @@ function renderShopperPhase(phase) {
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Only you can end the call, and only once every item is approved — unless you use Emergency End, available any time. Ending because the customer asked charges them just for time spent; ending on your own charges them nothing. Either way it's recorded as an uncompleted session.</div>
       </div>
       <button class="btn btn-primary" style="background:linear-gradient(135deg,#B31010,#8A0000);margin-bottom:9px;" onclick="shopperStartLiveCall()">📹 I'm at the Market — Start Live Call</button>
-      <button class="btn btn-outline" onclick="renderShopperHome()">← Back to Dashboard</button>
+      <button class="btn btn-outline" style="border-color:rgba(232,57,46,.4);color:#E8392E;" onclick="shopperCancelSession()">✕ Cancel Session</button>
     </div>`;
 
   // PHASE B: Shopper's live call view — show items, user approves/rejects
@@ -6170,6 +6248,7 @@ function renderShopperPhase(phase) {
     const _sCallDur=(window._shopperSession&&window._shopperSession.callStartedAt&&window._shopperSession.callEndedAt)
       ? bcallFmtDuration(new Date(window._shopperSession.callEndedAt).getTime()-new Date(window._shopperSession.callStartedAt).getTime()) : null;
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;text-align:center;">
+      <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
       <div style="font-size:68px;margin-bottom:16px;">📦</div>
       <div class="h2">Call Ended!</div>
       ${_sCallDur?`<div style="display:inline-flex;align-items:center;gap:6px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;padding:6px 12px;margin-top:8px;margin-bottom:4px;font-size:12px;color:#9A9390;">📹 Live call lasted <b style="color:#F2EDE8;font-variant-numeric:tabular-nums;">${_sCallDur}</b></div>`:''}
@@ -6203,6 +6282,7 @@ function renderShopperPhase(phase) {
   // PHASE D: Find a Rider (shopper uses app to request delivery)
   } else if (phase === 'findRider') {
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
+      <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
       <div class="h3" style="margin-bottom:4px;">🏍️ Find a Rider</div>
       <p style="color:#9A9390;font-size:14px;margin-bottom:18px;">Request a rider to pick up and deliver the packaged items</p>
       <div class="card" style="margin-bottom:14px;">
@@ -6236,6 +6316,7 @@ function renderShopperPhase(phase) {
   } else if (phase === 'riderSearch') {
     shopperBindStatusListener();
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
+      <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
       <div style="text-align:center;margin-bottom:20px;">
         <div style="position:relative;width:80px;height:80px;margin:0 auto 14px;">
           <div style="position:absolute;inset:0;border-radius:50%;border:2px solid #6430C8;animation:ripple 1.6s ease-out 0s infinite;"></div>
@@ -6289,6 +6370,7 @@ function renderShopperPhase(phase) {
       // the same visual language as the rider's own map screens) instead
       // of just a card, so the shopper can actually see them approaching.
       body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
+        <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
         <div style="text-align:center;margin-bottom:18px;">
           <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
           <div class="h2">Rider Found!</div>
@@ -6308,6 +6390,7 @@ function renderShopperPhase(phase) {
     }
     // State 2: rider has arrived -- confirm items, 3-way call, handover.
     body.innerHTML = `<div class="fi" style="padding:52px 22px 22px;">
+      <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
       <div style="text-align:center;margin-bottom:18px;">
         <div style="font-size:56px;margin-bottom:10px;">🏍️</div>
         <div class="h2">Confirming Items With Rider</div>
@@ -6369,6 +6452,7 @@ function renderShopperPhase(phase) {
     // refundUnspentBudget once the session completes).
     const totalBudget = Math.round((ss.itemsTotalKobo||0)/100);
     body.innerHTML = `<div class="fi" style="padding:20px 18px 100px;position:relative;">
+      <button class="ibtn" onclick="shopperBackToDashboard()" style="margin-bottom:14px;">&#x2190;</button>
       ${ss.pickupCode?`<div style="position:absolute;top:20px;right:18px;background:#1C1C1C;border:1.5px solid #2ECC71;border-radius:12px;padding:7px 12px;text-align:center;z-index:2;">
         <div style="font-size:9px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Pickup Code</div>
         <div style="font-size:18px;font-weight:900;letter-spacing:3px;color:#2ECC71;">${ss.pickupCode}</div>
@@ -6472,7 +6556,7 @@ function renderShopperPhase(phase) {
         <div style="font-size:12px;color:#9A9390;">Your session with ${custNm} is complete. Return to your dashboard to accept new requests while ${rdrNm} completes the delivery.</div>
       </div>
 
-      <button class="btn btn-primary" onclick="renderShopperHome();showToast('Back to dashboard — ready for new sessions! 🛒','success')">🏠 Back to Dashboard</button>
+      <button class="btn btn-primary" onclick="window._shopperSession=null;window._shopperPhase=null;renderShopperHome();showToast('Back to dashboard — ready for new sessions! 🛒','success')">🏠 Back to Dashboard</button>
     </div>`;
   }
 }
@@ -8099,6 +8183,15 @@ async function riderGoHome(){
   }
   renderRiderDeliveries();
 }
+// The back arrow on the rider's map screens -- calls renderRiderDeliveries()
+// directly rather than riderGoHome() (which would auto-detect the same
+// still-assigned delivery and instantly bounce right back into this exact
+// screen). The delivery itself is completely untouched; this just lands on
+// the plain dashboard, where the new Return to Delivery banner is the
+// explicit way back in.
+function riderBackToDashboard(){
+  renderRiderDeliveries();
+}
 async function renderRiderDeliveries(){
   var body=document.getElementById('rider-body');if(!body)return;
   var u=S.user||{};
@@ -8111,6 +8204,16 @@ async function renderRiderDeliveries(){
     +'<div class="status-dot '+(S.rdrOnline?'online':'offline')+'" id="rdr-status-dot"></div>'
     +'<span style="font-size:14px;font-weight:700;color:'+(S.rdrOnline?'#2ECC71':'#9A9390')+';" id="rdr-status-lbl">'+(S.rdrOnline?'Online':'Go Online')+'</span>'
     +'</button></div>'
+
+    // Return-to-session banner -- same pattern as the shopper's own, so a
+    // rider who used a back arrow away from an assigned delivery (or just
+    // navigated elsewhere) always has a visible way back on their own Home.
+    +'<div id="rider-active-session-banner" style="display:none;margin-bottom:16px;">'
+    +'<div style="background:linear-gradient(135deg,rgba(245,166,35,.14),rgba(245,166,35,.05));border:2px solid rgba(245,166,35,.35);border-radius:16px;padding:15px 16px;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-weight:800;font-size:14px;color:#F5A623;">🔴 Delivery In Progress</div><div style="width:8px;height:8px;border-radius:50%;background:#F5A623;animation:pulse 1s infinite;"></div></div>'
+    +'<div style="font-size:13px;color:#9A9390;" id="rider-active-session-summary"></div>'
+    +'<button class="btn btn-primary" style="margin-top:12px;background:#F5A623;font-size:13px;padding:10px;" onclick="restoreActiveShopSession(\'rider\')">▶ Return to Delivery</button>'
+    +'</div></div>'
 
     // Real available deliveries (populated by loadRiderAvailableDeliveries)
     +'<div id="rider-incoming-order" style="display:'+(S.rdrOnline?'block':'none')+';margin-bottom:16px;">'
@@ -8141,6 +8244,7 @@ async function renderRiderDeliveries(){
 
   riderBindDispatchListeners();
   if(S.rdrOnline)loadRiderAvailableDeliveries();
+  refreshRiderActiveSessionBanner();
 }
 
 // Deliveries this rider has dismissed with "Decline" -- client-side only.
@@ -9255,7 +9359,7 @@ function renderShopperHome() {
             <div style="width:8px;height:8px;border-radius:50%;background:#2ECC71;animation:pulse 1s infinite;"></div>
           </div>
           <div style="font-size:13px;color:#9A9390;" id="active-session-summary"></div>
-          <button class="btn btn-primary" style="margin-top:12px;background:#2ECC71;font-size:13px;padding:10px;" onclick="restoreActiveShopSession('shopper')">▶ Track This Delivery</button>
+          <button id="active-session-action-btn" class="btn btn-primary" style="margin-top:12px;background:#2ECC71;font-size:13px;padding:10px;" onclick="restoreActiveShopSession('shopper')">▶ Return to Session</button>
         </div>
       </div>
 
@@ -9339,6 +9443,12 @@ async function refreshShopperActiveSessionBanner(){
     if(sum)sum.textContent=active.riderArrivedCustomerAt
       ? 'Rider has arrived — waiting for confirmation'
       : (active.customer?active.customer.name:'Customer')+' • '+(active.deliveryAddress||'Address pending')+' • '+active.status.replace(/_/g,' ');
+    // "Track This Delivery" is only real once the shopper has actually
+    // finished paying sellers and the rider is on the way -- for every
+    // earlier stage (still shopping, packaging, finding a rider) there's
+    // nothing to "track" yet, just a session to step back into.
+    var actionBtn=document.getElementById('active-session-action-btn');
+    if(actionBtn)actionBtn.textContent=active.status==='OUT_FOR_DELIVERY' ? '▶ Track This Delivery' : '▶ Return to Session';
   }catch(e){}
 }
 
@@ -10173,6 +10283,7 @@ function riderMapPhase1(){
   var pickupHeading=handoverDone?'Items have been handed over to you - press Items Collected':(arrived?'Confirming Items with '+shopperName+' - To be collected for delivery':'Heading to '+shopperName+'’s Location');
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
+    +'<button class="ibtn" onclick="riderBackToDashboard()" style="margin-bottom:12px;">&#x2190;</button>'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
     +'<div style="width:10px;height:10px;border-radius:50%;background:#F5A623;flex-shrink:0;animation:pulse .8s infinite;"></div>'
     +'<div style="font-family:\'Playfair Display\',serif;font-size:17px;font-weight:900;color:#F5A623;">'+pickupHeading+'</div>'
@@ -10233,6 +10344,7 @@ function riderMapPhase2(){
   var arrivedAtCustomer=s&&s.riderArrivedCustomerAt;
   body.innerHTML=''
     +'<div style="padding:52px 16px 10px;">'
+    +'<button class="ibtn" onclick="riderBackToDashboard()" style="margin-bottom:12px;">&#x2190;</button>'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
     // Once arrived, there's nothing left to "track" -- freeze the live-
     // motion cues (pulsing dot, LIVE badge) instead of implying the map is
@@ -10482,6 +10594,7 @@ function eGo(scr){
   if(nbell)nbell.style.display=(scr==='login')?'none':'flex';
   if(scr==='home'){
     window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];
+    refreshCustomerActiveSessionBanner();
     var hn=document.getElementById('e-home-name');if(hn&&S.user)hn.textContent=S.user.name;
     var hx=document.getElementById('e-home-header-extra');
     if(hx&&S.user){
