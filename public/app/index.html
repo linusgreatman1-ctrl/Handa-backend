@@ -2465,6 +2465,7 @@ function logout(){
   setAccessToken(null);
   setRefreshToken(null);
   clearProactiveRefresh();
+  if(typeof _riderStopAvailPoll==='function')_riderStopAvailPoll();
   if(_socket){_socket.disconnect();_socket=null;}
   S.user=null;S.myAddr='';S.cart=[];
   S.role='customer';_eRole='customer';
@@ -3396,7 +3397,6 @@ async function toggleOnline(){
   try{ await api('/users/me/availability',{method:'PATCH',body:JSON.stringify({isOnline:goingOnline})}); }
   catch(err){ showToast&&showToast(err.message||'Could not update availability','warning'); return; }
   S.rdrOnline=goingOnline;
-  clearTimeout(window._riderOnlineTimer);
   var dot=document.getElementById('rdr-status-dot');
   var lbl=document.getElementById('rdr-status-lbl');
   var pill=document.getElementById('rider-pill');
@@ -3408,12 +3408,14 @@ async function toggleOnline(){
     if(inc)inc.style.display='block';
     toast("You are online! Watching for deliveries \uD83D\uDEF5");
     loadRiderAvailableDeliveries();
+    _riderStartAvailPoll();
   } else {
     if(dot){dot.className='status-dot offline';}
     if(lbl){lbl.textContent='Go Online';lbl.style.color='#9A9390';}
     if(pill){pill.style.borderColor='#2A2850';pill.style.background='#242424';}
     if(inc)inc.style.display='none';
     toast('Gone offline');
+    _riderStopAvailPoll();
   }
 }
 
@@ -8261,7 +8263,7 @@ async function renderRiderDeliveries(){
   }).catch(function(){});
 
   riderBindDispatchListeners();
-  if(S.rdrOnline)loadRiderAvailableDeliveries();
+  if(S.rdrOnline){loadRiderAvailableDeliveries();_riderStartAvailPoll();}
   refreshRiderActiveSessionBanner();
 }
 
@@ -8270,6 +8272,11 @@ async function renderRiderDeliveries(){
 // individually assigned to one rider), so declining just hides it from
 // THIS rider's own list; every other online rider still sees it normally.
 var _riderDeclinedSessionIds=new Set();
+// Session ids already surfaced to this rider this session (via the list or
+// a popup) -- lets the polling safety net below tell "still the same
+// deliveries" apart from "something genuinely new just appeared" without
+// re-popping-up the same one repeatedly.
+var _riderSeenAvailableIds = new Set();
 async function loadRiderAvailableDeliveries(){
   var list=document.getElementById('rider-deliveries-list');
   if(!list)return;
@@ -8277,6 +8284,7 @@ async function loadRiderAvailableDeliveries(){
   try{
     var res=await api('/shop-sessions?as=available');
     var sessions=(res.sessions||[]).filter(function(s){return !_riderDeclinedSessionIds.has(s.id);});
+    sessions.forEach(function(s){_riderSeenAvailableIds.add(s.id);});
     if(!sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
     list.innerHTML=sessions.map(function(s){
       return '<div id="rider-delivery-card-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
@@ -8320,6 +8328,38 @@ async function showRiderDispatchPopup(sessionId){
       +'</div></div>';
     document.body.insertAdjacentHTML('beforeend',html);
   }catch(e){}
+}
+// Safety net for dispatch:new-shop-delivery -- a socket push can be missed
+// for reasons that don't show up as any visible "you're offline" state (a
+// connection blip mid-delivery that outlives the tab's own access token,
+// a reconnect that lands between binds, etc.), and a rider who is
+// genuinely still online would otherwise see nothing new appear until they
+// manually toggled offline/online or reloaded the page -- exactly "online
+// but not receiving requests." Same real endpoint the socket path already
+// uses, same "refresh the visible list, or pop up if it's not on screen"
+// decision, just on a timer instead of a push, so the two can never
+// meaningfully disagree about what's actually available.
+async function _riderAvailPollTick(){
+  if(!S.rdrOnline)return;
+  if(document.getElementById('rider-deliveries-list')){
+    loadRiderAvailableDeliveries();
+    return;
+  }
+  try{
+    var res=await api('/shop-sessions?as=available');
+    var sessions=(res.sessions||[]).filter(function(s){return !_riderDeclinedSessionIds.has(s.id);});
+    var fresh=sessions.find(function(s){return !_riderSeenAvailableIds.has(s.id);});
+    sessions.forEach(function(s){_riderSeenAvailableIds.add(s.id);});
+    if(fresh)showRiderDispatchPopup(fresh.id);
+  }catch(e){}
+}
+function _riderStartAvailPoll(){
+  clearInterval(window._riderOnlineTimer);
+  window._riderOnlineTimer=setInterval(_riderAvailPollTick,20000);
+}
+function _riderStopAvailPoll(){
+  clearInterval(window._riderOnlineTimer);
+  window._riderOnlineTimer=null;
 }
 function riderBindDispatchListeners(){
   if(!_socket||_socket._riderDispatchBound)return;
