@@ -1834,7 +1834,15 @@ async function confirmSellerPayouts(req, res, next) {
       }
     }
 
-    res.json({ results });
+    // The rider and customer can already have finished the actual delivery
+    // (DELIVERED/COMPLETED) independently of the shopper's own payout step
+    // -- nothing gates one on the other. A shopper who pays sellers late
+    // (after the session has already wrapped up without them) needs the
+    // frontend to know that, so it can send them home instead of into a
+    // "rider is delivering, track them live" screen describing a delivery
+    // that's already over.
+    const freshSession = await prisma.shopSession.findUnique({ where: { id: session.id }, select: { status: true } });
+    res.json({ results, sessionStatus: freshSession?.status || session.status });
   } catch (err) {
     next(err);
   }

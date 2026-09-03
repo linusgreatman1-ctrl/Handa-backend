@@ -7456,6 +7456,21 @@ async function confirmSellerPayouts() {
       return;
     }
     window._spPaidSellers = paid;
+    // The rider and customer can already have wrapped up the actual
+    // delivery on their own by the time a shopper finally pays sellers
+    // (e.g. paying late) -- escrowReleased's "rider is delivering, track
+    // them live" screen describes a delivery still in progress, which is
+    // no longer true once status has moved past OUT_FOR_DELIVERY. In that
+    // case there's genuinely nothing left for the shopper to do here. One
+    // toast either way -- showToast()/toast() is single-slot, so firing
+    // the generic "sending payment" one first would just get silently
+    // replaced by this one a moment later.
+    if(['DELIVERED','COMPLETED'].indexOf(res.sessionStatus)>-1){
+      showToast(`₦${total.toLocaleString()} sent to ${paid.length} seller${paid.length>1?'s':''} — this session already completed, you're free to accept new sessions 💸`,'success');
+      window._shopperSession=null;window._shopperPhase=null;
+      renderShopperHome();
+      return;
+    }
     showToast(`Sending ₦${total.toLocaleString()} to ${paid.length} seller${paid.length>1?'s':''} 💸`,'success');
     renderShopperPhase('escrowReleased');
   }catch(err){
