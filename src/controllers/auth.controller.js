@@ -268,14 +268,23 @@ async function guestLogin(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    // Prefer a body-supplied token (this tab's own, from sessionStorage)
-    // over the shared cookie -- the cookie is domain-scoped and collides
-    // across every tab of the same browser, which is exactly what let one
-    // tab's login silently invalidate (or, with the sub-mismatch guard,
-    // force-logout) a completely unrelated tab logged into a different
-    // account. Still falls back to the cookie for any caller that never
-    // adopted the body-token path.
-    const token = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE_NAME];
+    // Body-supplied token ONLY (this tab's own, from sessionStorage) -- NOT
+    // the shared cookie. The cookie is domain-scoped, so it collides across
+    // every tab of the same browser: whichever tab most recently logged in
+    // or refreshed owns it at any given moment. Falling back to it here
+    // whenever the body token was missing/empty meant any tab in that state
+    // (one open since before this per-tab design shipped, a lost write,
+    // sessionStorage restored oddly across a browser/OS restart, etc.)
+    // would silently authenticate as WHOEVER'S account currently owned the
+    // shared cookie. The frontend's own sub-mismatch check is supposed to
+    // catch a resulting identity swap and force a clean logout instead of
+    // adopting it -- but relying on that alone means a single frontend bug,
+    // present or future, in that one comparison is the only thing standing
+    // between "briefly wrong" and "silently signed in as someone else."
+    // Refusing the ambient cookie here, at the source, removes the failure
+    // mode entirely: the server now never honors a cross-tab credential for
+    // this endpoint no matter what the client does or doesn't send.
+    const token = req.body?.refreshToken;
     if (!token) return res.status(401).json({ error: "No refresh token." });
 
     let payload;
@@ -310,9 +319,11 @@ async function refresh(req, res, next) {
 
 async function logout(req, res, next) {
   try {
-    // Same body-first fallback as refresh() -- revokes THIS tab's own
-    // token, not whichever one the shared cookie currently happens to hold.
-    const token = req.body?.refreshToken || req.cookies?.[REFRESH_COOKIE_NAME];
+    // Same body-only rule as refresh() -- revokes THIS tab's own token,
+    // never falling back to whichever one the shared cookie currently
+    // happens to hold (that would let one tab's logout silently revoke a
+    // completely different, unrelated tab/account's session instead).
+    const token = req.body?.refreshToken;
     if (token) {
       await prisma.refreshToken.updateMany({ where: { tokenHash: hashToken(token) }, data: { revoked: true } });
     }
