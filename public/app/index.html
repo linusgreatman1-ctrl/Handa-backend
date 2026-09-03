@@ -3545,6 +3545,7 @@ async function enterActiveShopSession(role, activeS) {
         : {MATCHED:'accepted',BUILDING_LIST:'accepted',LIVE_CALL:'liveCall',PACKAGING:'packaging',FINDING_RIDER:'riderSearch',RIDER_ASSIGNED:'riderFound',OUT_FOR_DELIVERY:'escrowReleased'}[activeS.status]||'accepted';
       afterShopperAuth();
       shopperBindItemSocketListeners();
+      shopperBindStatusListener();
       await _joinShopSessionRoom(activeS.id);
       renderShopperPhase(sPhase);
       return true;
@@ -6863,6 +6864,12 @@ async function shopperAcceptSession(sessionId) {
     var full = await api('/shop-sessions/'+sessionId);
     window._shopperSession = full.session;
     if(_socket) _socket.emit('shop-session:join', {sessionId: sessionId});
+    // Was only ever bound much later, inside the 'riderSearch' phase render
+    // -- so a customer cancelling anytime between acceptance and reaching
+    // that phase (e.g. while the shopper is still on "Session Accepted!"
+    // or mid-call) had nothing on the shopper's side listening for it at
+    // all. Bind right away, the moment there's a real session to listen on.
+    shopperBindStatusListener();
     // Only exists in the Home tab's own rendered markup -- accepting from
     // anywhere else (e.g. the new global dispatch popup, which can be
     // accepted from any tab) threw right here (no null-check, unlike the
