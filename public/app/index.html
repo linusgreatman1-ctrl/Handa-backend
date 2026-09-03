@@ -1626,7 +1626,7 @@ function triggerKycUpload(docType, profileType){
 // one highlights it and reveals the number field (step 2) right below,
 // so the two steps visibly follow each other in the same modal instead of
 // separate screens.
-function openIdTypeModal(profileType){
+function openIdTypeModal(profileType,mandatory){
   var options=[['NIN','NIN'],['DRIVERS_LICENSE',"Driver's License"],['INTL_PASSPORT',"Int'l Passport"],['VOTERS_CARD',"Voter's Card"]];
   var html='<div id="id-type-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:380px;width:100%;padding:22px;font-family:\'DM Sans\',sans-serif;">'
@@ -1638,8 +1638,8 @@ function openIdTypeModal(profileType){
     +'<div id="id-number-step" style="display:none;margin-bottom:14px;">'
     +'<input id="id-number-input" type="text" placeholder="Enter the number" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;font-family:\'DM Sans\',sans-serif;">'
     +'</div>'
-    +'<button id="id-type-continue-btn" onclick="continueIdTypeModal(\''+profileType+'\')" disabled style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:not-allowed;opacity:.4;margin-bottom:10px;">Continue — Choose Photo</button>'
-    +'<button onclick="closeIdTypeModal()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
+    +'<button id="id-type-continue-btn" onclick="continueIdTypeModal(\''+profileType+'\','+(mandatory?'true':'false')+')" disabled style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:not-allowed;opacity:.4;margin-bottom:10px;">Continue — Choose Photo</button>'
+    +(mandatory?'':'<button onclick="closeIdTypeModal()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>')
     +'</div></div>';
   var existing=document.getElementById('id-type-modal'); if(existing)existing.remove();
   document.body.insertAdjacentHTML('beforeend',html);
@@ -1674,7 +1674,7 @@ if(!window._idNumberInputBound){
 }
 // Step 2 -> 3: type + number are both set, now open the real file picker
 // for the photo of that same document.
-function continueIdTypeModal(profileType){
+function continueIdTypeModal(profileType,mandatory){
   var inp=document.getElementById('id-number-input');
   var idNumber=inp?inp.value.trim():'';
   if(!_selectedIdType||!idNumber)return;
@@ -1685,17 +1685,23 @@ function continueIdTypeModal(profileType){
   if (!fileInp) {
     fileInp = document.createElement('input');
     fileInp.type='file'; fileInp.accept='image/*'; fileInp.id='kyc-file-input'; fileInp.style.display='none';
-    fileInp.onchange = function(){ submitKycUpload(fileInp); };
     document.body.appendChild(fileInp);
   }
+  fileInp.onchange = function(){ submitKycUpload(fileInp,mandatory); };
   fileInp.click();
 }
-async function submitKycUpload(inputEl){
+async function submitKycUpload(inputEl,mandatory){
   var file = inputEl.files && inputEl.files[0];
   var docType = _kycUploadTarget, profileType = _kycUploadProfileType;
   var idType = _kycUploadIdType, idNumber = _kycUploadIdNumber;
   inputEl.value = '';
-  if (!file || !docType) return;
+  if (!file || !docType) {
+    // Mandatory gate: cancelling the native file picker must not leave the
+    // user free to carry on with nothing ever submitted -- re-show the
+    // same flow instead of silently doing nothing.
+    if(mandatory) promptNinSlipUpload(true);
+    return;
+  }
   var fd = new FormData();
   fd.append('document', file);
   fd.append('docType', docType);
@@ -1714,6 +1720,9 @@ async function submitKycUpload(inputEl){
     if (profileType && renderers[profileType]) renderers[profileType]();
   }catch(err){
     showToast&&showToast(err.message||'Could not upload document','warning');
+    if(mandatory) promptNinSlipUpload(true);
+    _kycUploadIdType=null; _kycUploadIdNumber=null; _selectedIdType=null;
+    return;
   }
   // Always clear -- a stale idType/idNumber must never silently attach
   // itself to a later, unrelated upload (e.g. Proof of Address).
@@ -3711,6 +3720,7 @@ function renderShopPhase(phase) {
         <div style="width:8px;height:8px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out .22s infinite;"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#F5A623;animation:pulse 1.2s ease-in-out .44s infinite;"></div>
       </div>
+      <button onclick="sfmCancelSession()" style="margin-top:26px;background:transparent;border:1.5px solid rgba(232,57,46,.4);border-radius:12px;padding:11px 20px;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Cancel &amp; Get Full Refund</button>
     </div>`;
     // Real wait now — the socket 'shop-session:status' handler (bound in
     // depositAndFindShopper) fires onSfmStatus('MATCHED') the moment a
@@ -3759,6 +3769,7 @@ function renderShopPhase(phase) {
         <span class="spin" style="display:inline-block;width:16px;height:16px;border:2px solid #2A2850;border-top-color:#E8392E;border-radius:50%;animation:spin 1s linear infinite;"></span>
         Waiting for your shopper to start the call…
       </div>
+      <button onclick="sfmCancelSession()" style="width:100%;margin-bottom:28px;background:transparent;border:1.5px solid rgba(232,57,46,.4);border-radius:12px;padding:11px 20px;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">✕ Cancel &amp; Get Full Refund</button>
     </div>`;
 
   // ── PHASE 4: LIVE VIDEO CALL — item approval ───────────────────────────
@@ -4725,7 +4736,7 @@ function onSfmStatus(status){
   if(status==='CANCELLED'){
     if(window._sfmPhase==='liveCall')sfmEndCall();
     clearInterval(window._sfmPollIv);
-    showToast&&showToast("No shopper accepted in time — you've been refunded. Please search again.",'warning');
+    showToast&&showToast("Session cancelled — your deposit has been refunded to your wallet.",'warning');
     window._sfmSession=null;window._sfmPhase=null;
     renderShopPhase('buildList');
     return;
@@ -4764,6 +4775,28 @@ function onSfmStatus(status){
     window._sfmSession=res.session;
     renderShopPhase(nextPhase);
   });
+}
+
+// Customer-initiated cancel, only ever offered while still searching for a
+// shopper or matched-but-waiting-for-the-call-to-start -- once the shopper
+// actually starts the live call, this button is no longer shown (see the
+// 'finding'/'shopperProfile' phases). Full refund and the "the customer
+// cancelled" notification/live-status push both already happen server-side
+// (cancelSession), regardless of whether a shopper had matched yet.
+async function sfmCancelSession(){
+  var sid=window._sfmSession&&window._sfmSession.id;
+  if(!sid)return;
+  if(!confirm('Cancel this session? Your full deposit will be refunded to your wallet.'))return;
+  try{
+    await api('/shop-sessions/'+sid+'/cancel',{method:'POST'});
+  }catch(err){
+    showToast&&showToast(err.message||'Could not cancel this session','warning');
+    return;
+  }
+  clearInterval(window._sfmPollIv);
+  showToast&&showToast('Session cancelled — your deposit has been refunded to your wallet.','success');
+  window._sfmSession=null;window._sfmPhase=null;
+  renderShopPhase('buildList');
 }
 
 function renderEtrack(){
@@ -6598,6 +6631,16 @@ function shopperBindStatusListener(){
     if(p.status==='PACKAGING'&&window._shopperPhase==='liveCall'){
       sfmEndCall();
       renderShopperPhase('packaging');
+    }
+    // Customer cancelled while this shopper was matched (waiting to head
+    // to market, or mid-call) -- nothing else here ever moves the shopper
+    // off this session, so without this they'd be stuck on a screen for a
+    // session that no longer exists.
+    if(p.status==='CANCELLED'){
+      if(window._shopperPhase==='liveCall')sfmEndCall();
+      window._shopperSession=null;window._shopperPhase=null;
+      showToast&&showToast('The customer cancelled this session.','warning');
+      renderShopperHome();
     }
   });
 }
@@ -10546,6 +10589,10 @@ async function doAuth(){
     setRefreshToken(data.refreshToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
     _finishLogin(S.user.name);
+    // Catches a rider/shopper/cook/EP who dodged the mandatory upload last
+    // time (closed the tab mid-flow, etc.) -- re-blocks them here too, not
+    // just right after a fresh registration.
+    setTimeout(function(){ checkKycMandatoryGate(_eRole); }, 600);
   }catch(err){
     showToast&&showToast(err.message||'Login failed','warning');
   }finally{
@@ -10590,12 +10637,13 @@ async function doRegister(){
     S.user=mapApiUser(data.user);S.role=S.user.role;
     _finishLogin(S.user.name);
     // Customer never needs this -- only the four roles that go through
-    // real KYC review (Rider/Shopper/Home Cook/Event Planner). Fires once
-    // the dashboard has had a moment to render underneath, matching the
-    // same settle-then-overlay pattern used elsewhere in this file.
-    if(['rider','shopper','cook','event_planner'].indexOf(regRole)>-1){
-      setTimeout(function(){ promptNinSlipUpload(); }, 600);
-    }
+    // real KYC review (Rider/Shopper/Home Cook/Event Planner), and it's
+    // mandatory for them: registration isn't considered complete without a
+    // real ID document submitted (admin approval itself can still happen
+    // later and never blocks login). Fires once the dashboard has had a
+    // moment to render underneath, matching the same settle-then-overlay
+    // pattern used elsewhere in this file.
+    setTimeout(function(){ checkKycMandatoryGate(regRole); }, 600);
   }catch(err){
     showToast&&showToast(err.message||'Registration failed','warning');
   }finally{
@@ -10603,29 +10651,44 @@ async function doRegister(){
   }
 }
 
-// One-time prompt right after registration for the four roles that go
-// through real KYC review -- a short intro screen whose one real action
-// opens the exact same ID-type picker (pick NIN/Driver's License/Int'l
-// Passport/Voter's Card, type its number, then choose the photo of that
-// same document -- all three steps follow each other in one flow) already
-// built for the profile's own Documents section, so skipping here and
-// uploading later from there works identically either way. Skippable, not
-// a hard registration gate -- going online is already separately gated on
-// admin-verified status, so nothing here needs to force the issue.
-function promptNinSlipUpload(){
+// Prompt for the four roles that go through real KYC review -- a short
+// intro screen whose one real action opens the exact same ID-type picker
+// (pick NIN/Driver's License/Int'l Passport/Voter's Card, type its number,
+// then choose the photo of that same document -- all three steps follow
+// each other in one flow) already built for the profile's own Documents
+// section. mandatory:true (the only mode this is ever actually called in
+// now) removes the "Skip for now" escape hatch and every Cancel button
+// down the whole chain (see openIdTypeModal/continueIdTypeModal/
+// submitKycUpload) -- registration/login is not considered complete until
+// a real ID_DOCUMENT row exists, though admin review itself can happen
+// later and never blocks login (see checkKycMandatoryGate).
+function promptNinSlipUpload(mandatory){
   var html='<div id="nin-upload-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">'
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:380px;width:100%;padding:24px;font-family:\'DM Sans\',sans-serif;text-align:center;">'
     +'<div style="font-size:42px;margin-bottom:10px;">🪪</div>'
     +'<div style="font-weight:900;font-size:16px;color:#F2EDE8;margin-bottom:6px;">Verify Your Identity</div>'
-    +'<div style="font-size:12px;color:#9A9390;margin-bottom:18px;line-height:1.5;">Pick which government-issued ID you\'ll provide (NIN, Driver\'s License, Int\'l Passport, or Voter\'s Card), enter its number, then upload a photo of it. Our team will review it — you can still explore the app while it\'s pending.</div>'
-    +'<button onclick="closeNinSlipModal();openIdTypeModal(null);" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:10px;">🪪 Get Started</button>'
-    +'<button onclick="closeNinSlipModal()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Skip for now</button>'
+    +'<div style="font-size:12px;color:#9A9390;margin-bottom:18px;line-height:1.5;">'+(mandatory?'This is required to finish registration. ':'')+'Pick which government-issued ID you\'ll provide (NIN, Driver\'s License, Int\'l Passport, or Voter\'s Card), enter its number, then upload a photo of it. Our team will review it — you can still log in and use the app while it\'s pending.</div>'
+    +'<button onclick="closeNinSlipModal();openIdTypeModal(null,'+(mandatory?'true':'false')+');" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:10px;">🪪 Get Started</button>'
+    +(mandatory?'':'<button onclick="closeNinSlipModal()" style="width:100%;padding:11px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Skip for now</button>')
     +'</div></div>';
   var existing=document.getElementById('nin-upload-modal'); if(existing)existing.remove();
   document.body.insertAdjacentHTML('beforeend',html);
 }
 function closeNinSlipModal(){
   var el=document.getElementById('nin-upload-modal'); if(el)el.remove();
+}
+// Gate checked on fresh registration, fresh login, and every session
+// restore for the four KYC roles -- not just once right after signup, so
+// closing the tab mid-flow (or logging in from a different device) can't
+// be used to dodge it. Never blocks on a fetch failure (cold start/network
+// blip) -- only a genuine, confirmed "no ID_DOCUMENT row yet" triggers it.
+async function checkKycMandatoryGate(role){
+  if(['rider','shopper','cook','event_planner'].indexOf(role)===-1)return;
+  var docs;
+  try{ var res=await api('/kyc/documents'); docs=res.documents||[]; window._kycDocs=docs; }
+  catch(e){ return; }
+  var hasIdDoc=docs.some(function(d){return d.docType==='ID_DOCUMENT';});
+  if(!hasIdDoc) promptNinSlipUpload(true);
 }
 
 async function guestLogin(){
@@ -10708,6 +10771,10 @@ async function tryRestoreSession(attempt){
       promptOrEnterActiveShopSession('customer');
     }
     scheduleProactiveRefresh();
+    // A rider/shopper/cook/EP who never finished the mandatory ID upload
+    // (closed the tab mid-flow last time, etc.) gets re-blocked on every
+    // return visit too, not just once right after registration/login.
+    setTimeout(function(){ checkKycMandatoryGate(_eRole); }, 600);
     return true;
   }catch(err){
     // A 401 here means the token is genuinely dead (rejected, not just

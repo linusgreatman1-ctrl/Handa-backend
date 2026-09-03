@@ -1612,6 +1612,13 @@ async function cancelSession(req, res, next) {
     // never saw it disappear until they manually reloaded the page, even
     // though the customer had already cancelled it.
     io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
+    // A matched shopper (already accepted, waiting on their own "head to
+    // market / start the call" screen) has no other live signal that the
+    // customer just cancelled -- without this push they'd sit there
+    // indefinitely until the notify() below happens to be checked. Every
+    // other real status transition in this file already pushes to this
+    // room; this manual customer-cancel path was the one missing it.
+    io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
     // Tell whichever matched party didn't do the cancelling -- previously
     // silent, matching the booking-cancel flow's own "notify the other
     // side" pattern.
