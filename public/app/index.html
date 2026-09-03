@@ -3688,17 +3688,11 @@ function _ongoingSessionChoice(choice){
 
 function renderShopPhase(phase) {
   window._sfmPhase = phase;
-  // Neither party can step away from the live video call itself -- disable
-  // the persistent header arrow for the one phase where leaving would mean
-  // abandoning a call actually in progress; every other phase can freely
-  // step back to the dashboard.
+  // The back arrow has no place on the live video call screen itself, for
+  // either party -- hidden entirely (not just disabled) for this one
+  // phase; every other phase shows it normally.
   var backBtn=document.getElementById('sfm-header-back-btn');
-  if(backBtn){
-    var onCall=phase==='liveCall';
-    backBtn.disabled=onCall;
-    backBtn.style.opacity=onCall?'.3':'1';
-    backBtn.style.cursor=onCall?'not-allowed':'pointer';
-  }
+  if(backBtn) backBtn.style.display = (phase==='liveCall') ? 'none' : 'flex';
   const body = document.getElementById('shop-body');
 
   // ── PHASE 1: Build Shopping List ──────────────────────────────────────
@@ -3837,6 +3831,7 @@ function renderShopPhase(phase) {
           <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE — Mile 12 Market</span>
           <span id="sfm-call-timer" style="font-size:12px;font-weight:800;color:#F2EDE8;background:#242424;padding:2px 8px;border-radius:8px;margin-left:auto;font-variant-numeric:tabular-nums;">00:00</span>
           <span style="font-size:12px;color:#9A9390;">${sfmShopperName()} ★${sfmShopperRating()}</span>
+          <button onclick="sfmSoftExitCall('sfm-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
         </div>
         <div class="video-frame" id="sfm-video-frame" style="margin-bottom:0;height:185px;">
           <video id="rtc-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
@@ -6187,6 +6182,7 @@ function renderShopperPhase(phase) {
           <span style="font-weight:800;font-size:14px;color:#C01010;">LIVE SESSION</span>
           <span id="shopper-call-timer" style="font-size:12px;font-weight:800;color:#F2EDE8;background:#242424;padding:2px 8px;border-radius:8px;margin-left:auto;font-variant-numeric:tabular-nums;">00:00</span>
           <span style="font-size:12px;color:#9A9390;">${live.customer?live.customer.name:'Customer'}</span>
+          <button onclick="sfmSoftExitCall('shopper-video-frame')" style="background:rgba(232,57,46,0.10);border:1px solid rgba(204,31,54,.3);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700;color:#E8392E;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x2190; Exit</button>
         </div>
 
         <!-- User's camera (small PiP) + shopper's main camera -->
