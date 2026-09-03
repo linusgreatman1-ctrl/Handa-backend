@@ -247,7 +247,23 @@ enum KycDocType {
   GOVERNMENT_ID
   PROOF_OF_ADDRESS
   VEHICLE_DOCUMENT
+  // Superseded by ID_DOCUMENT (a real type picker + number field) below --
+  // left in place, unused going forward, matching this project's
+  // additive-only enum convention (never drop a value once shipped).
   NIN_SLIP
+  // The real "prove your identity" slot: the user picks which kind of ID
+  // they're presenting (see KycIdType) and types its number, THEN uploads
+  // that same document's photo -- one linked submission, not an
+  // independent free-floating upload.
+  ID_DOCUMENT
+}
+
+// Which specific government-issued ID an ID_DOCUMENT submission is.
+enum KycIdType {
+  NIN
+  DRIVERS_LICENSE
+  INTL_PASSPORT
+  VOTERS_CARD
 }
 
 enum KycStatus {
@@ -262,6 +278,10 @@ model KycDocument {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   docType         KycDocType
+  // Only set (and only meaningful) when docType is ID_DOCUMENT -- which
+  // real ID was selected, and the number typed in for it.
+  idType          KycIdType?
+  idNumber        String?
   fileUrl         String
   status          KycStatus  @default(PENDING)
   rejectionReason String?

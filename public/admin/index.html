@@ -1091,13 +1091,20 @@ async function renderKycDocuments(status) {
     + '<div id="kyc-table" class="empty">Loading...</div>';
   try {
     const data = await api('/admin/kyc-documents?status=' + status);
+    const idTypeLabels = { NIN: 'NIN', DRIVERS_LICENSE: "Driver's License", INTL_PASSPORT: "Int'l Passport", VOTERS_CARD: "Voter's Card" };
     const rows = data.documents.map(function(d){
       const who = d.user ? d.user.name + ' (' + d.user.role + ')' : '—';
+      // ID_DOCUMENT alone doesn't say which real ID this is -- show the
+      // picked type + the number the user typed in, same linked submission
+      // the upload itself requires.
+      const typeLabel = d.docType === 'ID_DOCUMENT'
+        ? (idTypeLabels[d.idType] || d.idType || 'ID Document') + (d.idNumber ? ' — ' + d.idNumber : '')
+        : d.docType;
       const actions = status === 'PENDING'
         ? '<button class="action-btn" onclick="reviewKycDoc(\'' + d.id + '\',\'APPROVED\')">Approve</button> '
           + '<button class="action-btn" onclick="reviewKycDoc(\'' + d.id + '\',\'REJECTED\')">Reject</button>'
         : (d.rejectionReason || '');
-      return '<tr><td><button class="action-btn" onclick="openUploadedFile(\'' + d.fileUrl + '\')">View</button></td><td>' + who + '</td><td>' + d.docType + '</td>'
+      return '<tr><td><button class="action-btn" onclick="openUploadedFile(\'' + d.fileUrl + '\')">View</button></td><td>' + who + '</td><td>' + typeLabel + '</td>'
         + '<td>' + pill(d.status) + '</td><td>' + new Date(d.createdAt).toLocaleString() + '</td><td>' + actions + '</td></tr>';
     }).join('');
     document.getElementById('kyc-table').outerHTML = data.documents.length
