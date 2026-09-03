@@ -6069,7 +6069,7 @@ function renderShopperPhase(phase) {
         <p style="color:#9A9390;font-size:14px;margin-top:6px;">Head to the market and start the live video call when ready</p>
       </div>
       <div class="card" style="margin-bottom:14px;">
-        <div style="font-weight:800;font-size:15px;margin-bottom:12px;">📋 User's Shopping List</div>
+        <div style="font-weight:800;font-size:15px;margin-bottom:12px;">📋 Customer's Shopping List</div>
         ${(acc.items||[]).map(function(i){return '<div style="padding:9px 0;border-bottom:1px solid #2A2850;font-size:13px;">• '+i.text+'</div>';}).join('')}
         <div style="margin-top:12px;border-top:1px solid #2A2850;padding-top:12px;display:flex;justify-content:space-between;">
           <span style="font-size:13px;color:#9A9390;">Total Budget</span>
@@ -6081,7 +6081,7 @@ function renderShopperPhase(phase) {
       </div>
       <div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 15px;margin-bottom:16px;">
         <div style="font-weight:700;font-size:13px;margin-bottom:8px;">⚠️ Remember</div>
-        <div style="font-size:12px;color:#9A9390;">• Only buy items the user <strong>approves</strong> on the live call</div>
+        <div style="font-size:12px;color:#9A9390;">• Only buy items the customer <strong>approves</strong> on the live call</div>
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Stay within the ₦${Number(accBudget).toLocaleString()} budget</div>
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• You will allocate seller payments in the app after rider confirms pickup</div>
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Timing starts the moment you tap Start Live Call. If <strong>you</strong> step away it pauses until you rejoin; it keeps running if the customer steps away.</div>
@@ -6213,7 +6213,7 @@ function renderShopperPhase(phase) {
         <div style="display:flex;justify-content:space-between;padding:8px 0;"><span style="font-size:13px;color:#9A9390;">Delivery fee</span><span style="font-weight:700;font-size:13px;color:#E8392E;">₦${Number(Math.round(((window._shopperSession&&window._shopperSession.riderFeeKobo)||0)/100)).toLocaleString()} (from escrow)</span></div>
       </div>
       <div style="background:rgba(46,204,113,0.10);border:1px solid rgba(26,140,80,.2);border-radius:12px;padding:12px 14px;margin-bottom:16px;">
-        <div style="font-size:13px;color:#9A9390;">🔒 Rider delivery fee is deducted from the user's escrow. You do not pay the rider — the app handles it automatically.</div>
+        <div style="font-size:13px;color:#9A9390;">🔒 Rider delivery fee is deducted from the customer's escrow. You do not pay the rider — the app handles it automatically.</div>
       </div>
       ${(window._shopperSession&&window._shopperSession.pickupCode)?`<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:16px;text-align:center;">
         <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🔑 Pickup Code</div>
@@ -9269,16 +9269,16 @@ function renderShopperHome() {
       <div class="card" style="margin-bottom:13px;">
         <div style="font-weight:800;font-size:14px;margin-bottom:12px;">📋 Your Session Procedure</div>
         ${[
-          ['1','User requests live session — you accept'],
+          ['1','Customer requests live session — you accept'],
           ['2','Head to the market named in the request'],
-          ['3','Start video call — user watches you live'],
-          ['4','Show each item — user approves or rejects each one'],
+          ['3','Start video call — customer watches you live'],
+          ['4','Show each item — customer approves or rejects each one'],
           ['5','Only buy the approved items, pack them up'],
           ['6','Open the app — find a rider to pick up the items'],
           ['7','Rider arrives — you & rider jointly confirm all items in the app'],
           ['8','Select your market sellers in the app — escrow pays them directly'],
           ['9','Session fee &amp; rider fee held — released after customer confirms delivery'],
-          ['10','Rider leaves with items — both you & user track rider live'],
+          ['10','Rider leaves with items — both you & customer track rider live'],
           ['11','You are now free to accept a new session immediately']
         ].map(([n,t]) => `<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:9px;">
           <div style="width:22px;height:22px;border-radius:7px;background:rgba(245,166,35,0.12);color:#F5A623;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">${n}</div>
