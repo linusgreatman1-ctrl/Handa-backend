@@ -6870,6 +6870,19 @@ async function shopperAcceptSession(sessionId) {
     // or mid-call) had nothing on the shopper's side listening for it at
     // all. Bind right away, the moment there's a real session to listen on.
     shopperBindStatusListener();
+    // Accepting from the global dispatch popup (or from the Profile tab,
+    // whose #shopper-profile-view is a genuinely separate DOM container
+    // from #shopper-body) previously left the accepted-session screen
+    // rendered invisibly behind whatever was showing -- forcing a manual
+    // trip back to Home before it was ever seen. Force the real screen and
+    // the Home sub-view directly (not shopperNav('home'), which kicks off
+    // its own async active-session check that would race the render
+    // below) before doing anything else.
+    if(S.curScreen!=='shopper')eGo('shopper');
+    var homeView=document.getElementById('shopper-home-view');
+    var profView=document.getElementById('shopper-profile-view');
+    if(homeView)homeView.style.display='flex';
+    if(profView)profView.style.display='none';
     // Only exists in the Home tab's own rendered markup -- accepting from
     // anywhere else (e.g. the new global dispatch popup, which can be
     // accepted from any tab) threw right here (no null-check, unlike the
@@ -10112,6 +10125,12 @@ async function acceptRiderDelivery(sessionId){
     var res=await api('/shop-sessions/'+sessionId+'/accept-delivery',{method:'POST'});
     window._riderActiveSession=res.session;
     if(_socket)_socket.emit('shop-session:join',{sessionId:sessionId});
+    // Accepting from the global dispatch popup can happen from ANY screen
+    // (it's a fixed overlay shown regardless of S.curScreen) -- without
+    // forcing the real screen switch first, the accepted delivery rendered
+    // invisibly behind whatever screen was actually showing, and the rider
+    // had to manually navigate to Rider before ever seeing it.
+    if(S.curScreen!=='rider')eGo('rider');
     riderNav('map');
     setTimeout(function(){riderMapPhase1();},350);
   }catch(err){
@@ -10621,6 +10640,14 @@ async function doRegister(){
   if(!nm.trim()){showToast&&showToast('Enter your full name','warning');return;}
   if(!em.trim()){showToast&&showToast('Enter your email','warning');return;}
   if(!pw||pw.length<6){showToast&&showToast('Password must be at least 6 characters','warning');return;}
+  // The four KYC roles cannot complete registration without a real
+  // identity document -- checked here, client-side, before the account is
+  // even created, matching the ask that this be part of the registration
+  // form/flow itself rather than a courtesy prompt afterward.
+  if(['rider','shopper','cook','event_planner'].indexOf(_eRole)>-1 && !_regIdentityComplete()){
+    showToast&&showToast('Please add your identity document (tap "Your Identity") to complete registration','warning');
+    return;
+  }
   var bankCodeSel=document.getElementById('r-bankcode');
   var bankName='';
   if(bankCodeSel){
@@ -10650,14 +10677,15 @@ async function doRegister(){
     setRefreshToken(data.refreshToken);
     S.user=mapApiUser(data.user);S.role=S.user.role;
     _finishLogin(S.user.name);
-    // Customer never needs this -- only the four roles that go through
-    // real KYC review (Rider/Shopper/Home Cook/Event Planner), and it's
-    // mandatory for them: registration isn't considered complete without a
-    // real ID document submitted (admin approval itself can still happen
-    // later and never blocks login). Fires once the dashboard has had a
-    // moment to render underneath, matching the same settle-then-overlay
-    // pattern used elsewhere in this file.
-    setTimeout(function(){ checkKycMandatoryGate(regRole); }, 600);
+    // The identity document was collected inline during registration
+    // (_regIdentity, validated above) -- no account/token existed yet at
+    // that point, so it only gets submitted for real now, with the token
+    // registration just returned. checkKycMandatoryGate is still called
+    // right after as a safety net: if this upload fails for any reason
+    // (network blip), the fallback modal catches it on the next
+    // login/restore instead of silently losing the requirement -- it's a
+    // pure no-op if the upload above already succeeded.
+    setTimeout(function(){ uploadRegIdentityIfAny().finally(function(){ checkKycMandatoryGate(regRole); }); }, 600);
   }catch(err){
     showToast&&showToast(err.message||'Registration failed','warning');
   }finally{
@@ -13253,8 +13281,118 @@ function selectEPPackage(id){
 
 
 
+// Real identity capture, INSIDE the registration form itself (not a modal
+// that only appears after the account already exists) -- required for the
+// four roles that go through real KYC review. No account/token exists yet
+// at this point, so the picked type/number/photo just sit in memory until
+// doRegister() actually creates the account, then get uploaded for real
+// with the fresh token that registration just returned. checkKycMandatoryGate
+// (fired from doAuth/doRegister/tryRestoreSession) stays as a fallback --
+// if that immediate upload fails for any reason (network blip), the next
+// login/restore re-blocks with the old modal flow instead of silently
+// losing the requirement.
+var _regIdentity = {idType:null, idNumber:null, file:null, fileName:null};
+function _regIdentityComplete(){ return !!(_regIdentity.idType && _regIdentity.idNumber && _regIdentity.file); }
+function regIdentityFieldHtml(){
+  var d=_regIdentity;
+  var complete=_regIdentityComplete();
+  var summary=complete
+    ? (KYC_ID_TYPE_LABELS[d.idType]||d.idType)+' — '+d.idNumber+' • Photo attached'
+    : 'Tap to add — required to complete registration';
+  return '<label class="il">Your Identity</label>'
+    +'<div onclick="openRegIdentityModal()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-radius:12px;border:1.5px solid '+(complete?'#2ECC71':'#2A2850')+';background:#1C1C1C;cursor:pointer;margin-bottom:12px;">'
+      +'<span style="font-size:13px;color:'+(complete?'#4ADE80':'#9A9390')+';">'+(complete?'&#x2705; ':'&#x1FAAA; ')+summary+'</span>'
+      +'<span style="color:#9A9390;font-size:16px;flex-shrink:0;">&#8250;</span>'
+    +'</div>';
+}
+function refreshRegIdentityField(){
+  var el=document.getElementById('reg-identity-field');
+  if(el)el.innerHTML=regIdentityFieldHtml();
+}
+// Step 1+2: pick the ID type, then type its number (same two steps as the
+// profile's own ID-document flow) -- step 3 (Upload ID) sits right next to
+// the number input as its own column, only enabled once a number is typed,
+// matching "type in id number, then next column Upload ID."
+function openRegIdentityModal(){
+  var options=[['NIN','NIN'],['DRIVERS_LICENSE',"Driver's License"],['INTL_PASSPORT',"Int'l Passport"],['VOTERS_CARD',"Voter's Card"]];
+  var d=_regIdentity;
+  var html='<div id="reg-identity-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">'
+    +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:380px;width:100%;padding:22px;font-family:\'DM Sans\',sans-serif;">'
+    +'<div style="font-weight:900;font-size:16px;color:#F2EDE8;margin-bottom:4px;text-align:center;">Your Identity</div>'
+    +'<div style="font-size:12px;color:#9A9390;margin-bottom:16px;text-align:center;">Pick your ID, enter its number, then upload a photo of it.</div>'
+    +'<div id="reg-id-type-options" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">'
+    + options.map(function(o){return '<button type="button" onclick="selectRegIdType(this,\''+o[0]+'\')" data-idtype="'+o[0]+'" style="padding:12px 8px;border-radius:11px;border:1.5px solid '+(d.idType===o[0]?'#2ECC71':'#2A2850')+';background:'+(d.idType===o[0]?'rgba(46,204,113,.10)':'#242424')+';color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+o[1]+'</button>';}).join('')
+    +'</div>'
+    +'<div id="reg-id-number-step" style="display:'+(d.idType?'flex':'none')+';gap:8px;align-items:flex-end;margin-bottom:16px;">'
+      +'<div style="flex:1;min-width:0;"><label class="il" style="display:block;margin-bottom:6px;">ID Number</label><input id="reg-id-number-input" type="text" value="'+(d.idNumber||'').replace(/"/g,'&quot;')+'" oninput="onRegIdNumberInput()" placeholder="Enter the number" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;font-family:\'DM Sans\',sans-serif;"></div>'
+      +'<button type="button" id="reg-id-upload-btn" onclick="triggerRegIdUpload()" '+(d.idNumber?'':'disabled')+' style="flex-shrink:0;padding:12px 12px;border-radius:10px;border:none;background:'+(d.file?'#2ECC71':(d.idNumber?'#F5A623':'#333'))+';color:#111;font-weight:800;font-size:12px;cursor:'+(d.idNumber?'pointer':'not-allowed')+';opacity:'+(d.idNumber?'1':'.5')+';white-space:nowrap;">'+(d.file?'&#x2705; Photo Added':'&#x1F4F7; Upload ID')+'</button>'
+    +'</div>'
+    +'<button type="button" onclick="closeRegIdentityModal()" '+(_regIdentityComplete()?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:'+(_regIdentityComplete()?'pointer':'not-allowed')+';opacity:'+(_regIdentityComplete()?'1':'.4')+';">Done</button>'
+    +'</div></div>';
+  var existing=document.getElementById('reg-identity-modal'); if(existing)existing.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function selectRegIdType(btn,idType){
+  _regIdentity.idType=idType;
+  openRegIdentityModal(); // full re-render — cheap, and correctly reflects the new selection/highlight everywhere at once
+  var inp=document.getElementById('reg-id-number-input'); if(inp)inp.focus();
+}
+function onRegIdNumberInput(){
+  var inp=document.getElementById('reg-id-number-input');
+  _regIdentity.idNumber=inp?inp.value.trim():'';
+  var btn=document.getElementById('reg-id-upload-btn');
+  if(!btn)return;
+  var ready=!!_regIdentity.idNumber;
+  btn.disabled=!ready;
+  btn.style.cursor=ready?'pointer':'not-allowed';
+  btn.style.opacity=ready?'1':'.5';
+  btn.style.background=_regIdentity.file?'#2ECC71':(ready?'#F5A623':'#333');
+  var doneBtn=document.querySelector('#reg-identity-modal button[onclick="closeRegIdentityModal()"]');
+  if(doneBtn){var c=_regIdentityComplete();doneBtn.disabled=!c;doneBtn.style.cursor=c?'pointer':'not-allowed';doneBtn.style.opacity=c?'1':'.4';}
+}
+function triggerRegIdUpload(){
+  if(!_regIdentity.idNumber)return;
+  var inp=document.getElementById('reg-id-file-input');
+  if(!inp){
+    inp=document.createElement('input');
+    inp.type='file'; inp.accept='image/*'; inp.id='reg-id-file-input'; inp.style.display='none';
+    document.body.appendChild(inp);
+  }
+  inp.onchange=function(){
+    var f=inp.files&&inp.files[0];
+    inp.value='';
+    if(!f)return;
+    _regIdentity.file=f; _regIdentity.fileName=f.name;
+    openRegIdentityModal(); // refresh to show the checkmark + enable Done
+  };
+  inp.click();
+}
+function closeRegIdentityModal(){
+  if(!_regIdentityComplete())return; // Done stays disabled until all 3 steps are real, but guard here too
+  var el=document.getElementById('reg-identity-modal'); if(el)el.remove();
+  refreshRegIdentityField();
+}
+// Called right after a successful doRegister() — uploads whatever was
+// collected inline during the registration form, now that a real
+// account/token exists to attach it to. Never throws (caller chains
+// checkKycMandatoryGate as a fallback regardless of the outcome here).
+async function uploadRegIdentityIfAny(){
+  var d=_regIdentity;
+  if(!_regIdentityComplete())return;
+  var fd=new FormData();
+  fd.append('document',d.file);
+  fd.append('docType','ID_DOCUMENT');
+  fd.append('idType',d.idType);
+  fd.append('idNumber',d.idNumber);
+  try{
+    var res=await fetch(API_BASE+'/kyc/documents',{method:'POST',headers:{'Authorization':'Bearer '+_accessToken},body:fd});
+    if(res.ok){ _regIdentity={idType:null,idNumber:null,file:null,fileName:null}; }
+  }catch(e){}
+}
+
 function buildRegForm(){
   var role=_eRole;
+  _regIdentity={idType:null,idNumber:null,file:null,fileName:null};
   var states=['','Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
   var stateOpts=states.map(function(s){return '<option'+(s?'':' value=""')+'>'+(s||'Select State\u2026')+'</option>';}).join('');
   var stateLGA='<label class="il">State</label><select class="if" id="r-state" onchange="loadLGAs(this.value)" style="margin-bottom:12px">'+stateOpts+'</select><label class="il">Local Government</label><select class="if" id="r-lga" style="margin-bottom:12px"><option value="">Select LGA\u2026</option></select>';
@@ -13283,10 +13421,10 @@ function buildRegForm(){
   var switchRow='<div style="display:flex;gap:6px;margin-bottom:16px;">'+roleSwitchBar+'</div>';
   var h='';
   if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+stateLGA;}
-  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+fld('Rate per Session (&#x20a6;) (Your charge for cooking)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cooking experience...')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
-  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Event Speciality','r-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>')+ta('Short Bio','r-bio','Describe your event planning experience...')+bank+stateLGA;}
-  else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
-  else if(role==='shopper'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Primary Market','&#x1F6D2;','r-market','e.g. Mile 12 Market, Lagos','')+ta('Short Bio','r-bio','e.g. I specialise in fresh produce at Mile 12 Market...')+fld('NIN','&#x1FAA6;','r-nin','11-digit NIN','')+bank+stateLGA;}
+  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+fld('Rate per Session (&#x20a6;) (Your charge for cooking)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cooking experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Event Speciality','r-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>')+ta('Short Bio','r-bio','Describe your event planning experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='shopper'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Primary Market','&#x1F6D2;','r-market','e.g. Mile 12 Market, Lagos','')+ta('Short Bio','r-bio','e.g. I specialise in fresh produce at Mile 12 Market...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   var rf=document.getElementById('reg-form');if(rf)rf.innerHTML=switchRow+h;
 }
 
