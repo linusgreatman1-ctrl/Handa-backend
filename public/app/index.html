@@ -9126,7 +9126,17 @@ function shopperBindAvailableSessionsListener(){
   _socket._shopperAvailBound=true;
   _socket.on('shop-session:new',function(p){
     if(!isShopperOnline)return;
-    if(document.getElementById('shopper-sessions-list'))loadShopperAvailableSessions();
+    // A stale #shopper-sessions-list can still exist in the DOM while the
+    // shopper is on the Profile tab (a genuinely separate container from
+    // #shopper-body -- Home's own markup just sits hidden behind it, never
+    // torn down on switch) -- checking mere existence wrongly suppressed
+    // the popup there, leaving the shopper with no visible signal at all
+    // that a request had come in. offsetParent is null whenever the
+    // element (or an ancestor) is display:none, so this only takes the
+    // "already visible, just refresh it" branch when the list is actually
+    // on screen.
+    var list=document.getElementById('shopper-sessions-list');
+    if(list&&list.offsetParent)loadShopperAvailableSessions();
     else if(p&&p.sessionId)showShopperDispatchPopup(p.sessionId);
   });
   _socket.on('shop-session:taken',function(p){
