@@ -39,11 +39,11 @@ async function createHold({ contextType, bookingId, shopSessionId, payerId, paye
 // PLATFORM-role hold. A commission that rounds to 0 kobo (a very small
 // hold) intentionally skips creating a zero-amount PLATFORM row rather
 // than recording a no-op.
-async function creditPayeeWithCommission(tx, hold, { reference, description } = {}) {
+async function creditPayeeWithCommission(tx, hold, amountKobo, { reference, description } = {}) {
   if (!hold.payeeId || hold.payeeRole === "PLATFORM") return;
   const commissionRate = PLATFORM_COMMISSION_RATES[hold.payeeRole] || 0;
-  const commissionKobo = Math.round(hold.amountKobo * commissionRate);
-  const payoutKobo = hold.amountKobo - commissionKobo;
+  const commissionKobo = Math.round(amountKobo * commissionRate);
+  const payoutKobo = amountKobo - commissionKobo;
 
   await wallet.creditWallet(
     hold.payeeId,
@@ -84,9 +84,37 @@ async function releaseHold(holdId, { reference, description } = {}) {
     if (!hold) throw Object.assign(new Error("Escrow hold not found."), { status: 404 });
     if (hold.status !== "HELD") throw Object.assign(new Error(`Escrow hold is already ${hold.status.toLowerCase()}.`), { status: 409 });
 
-    await creditPayeeWithCommission(tx, hold, { reference, description });
+    await creditPayeeWithCommission(tx, hold, hold.amountKobo, { reference, description });
 
     return tx.escrowHold.update({ where: { id: holdId }, data: { status: "RELEASED", releasedAt: new Date() } });
+  });
+}
+
+// Releases only PART of a still-HELD hold, crediting the beneficiary for
+// exactly amountKobo (minus their commission) and decrementing the hold's
+// own amountKobo by that much -- the hold stays HELD, now correctly
+// representing "what's still held," not "the original amount." Used by
+// the negotiated-booking release flow (bookings.controller.js) so a
+// vendor can be paid in stages instead of all-at-once. A hold drained down
+// to exactly 0 is flipped to RELEASED, same terminal state a normal full
+// releaseHold would leave it in -- every other function here already
+// treats hold.amountKobo as "the live remaining balance," so completion
+// payout, cancellation refund, and the admin escrow table all continue to
+// work correctly against a partially-drained hold with no changes.
+async function partialReleaseHold(holdId, amountKobo, { reference, description } = {}) {
+  return prisma.$transaction(async (tx) => {
+    const hold = await tx.escrowHold.findUnique({ where: { id: holdId } });
+    if (!hold) throw Object.assign(new Error("Escrow hold not found."), { status: 404 });
+    if (hold.status !== "HELD") throw Object.assign(new Error(`Escrow hold is already ${hold.status.toLowerCase()}.`), { status: 409 });
+    if (amountKobo <= 0) throw Object.assign(new Error("Release amount must be positive."), { status: 400 });
+    if (amountKobo > hold.amountKobo) throw Object.assign(new Error("Release amount exceeds what's still held."), { status: 400 });
+
+    await creditPayeeWithCommission(tx, hold, amountKobo, { reference, description });
+
+    if (amountKobo === hold.amountKobo) {
+      return tx.escrowHold.update({ where: { id: holdId }, data: { status: "RELEASED", releasedAt: new Date(), amountKobo: 0 } });
+    }
+    return tx.escrowHold.update({ where: { id: holdId }, data: { amountKobo: hold.amountKobo - amountKobo } });
   });
 }
 
@@ -164,7 +192,7 @@ async function resolveDisputedHold(holdId, outcome, { reference, description, sk
     if (hold.status !== "DISPUTED") throw Object.assign(new Error(`Escrow hold is not disputed (currently ${hold.status.toLowerCase()}).`), { status: 409 });
 
     if (outcome === "RELEASE") {
-      if (!skipCredit) await creditPayeeWithCommission(tx, hold, { reference, description });
+      if (!skipCredit) await creditPayeeWithCommission(tx, hold, hold.amountKobo, { reference, description });
       return tx.escrowHold.update({ where: { id: holdId }, data: { status: "RELEASED", releasedAt: new Date() } });
     }
     if (!skipCredit) {
@@ -208,6 +236,7 @@ async function runAutoReleaseSweep() {
 module.exports = {
   createHold,
   releaseHold,
+  partialReleaseHold,
   releaseAllHoldsForContext,
   refundHold,
   refundAllHoldsForContext,

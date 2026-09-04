@@ -185,6 +185,17 @@ async function autoCompleteOverdueEventPlannerBookings(io) {
   for (const booking of bookings) {
     const eventInstant = combineDateAndTime(booking.eventDate, booking.eventTime).getTime();
     if (now - eventInstant < AUTO_COMPLETE_EP_MS) continue;
+    // EP bookings now go through the negotiated-release flow
+    // (bookings.controller.js's isNegotiatedBooking) -- calling
+    // completeEventPlanningBooking releases WHATEVER remains in the
+    // escrow hold, which for a booking still mid-negotiation (nothing
+    // ever released) would be the entire amount, dumped to the vendor
+    // with no negotiation ever having concluded. Mirrors completeBooking's
+    // own new guard: skip (don't auto-complete) any booking whose job
+    // never started -- same "no timer for an unstarted job" tradeoff
+    // accepted for the hold's own autoRelease:false (orderFlow.service.js).
+    // These accumulate for manual admin follow-up instead.
+    if (!booking.vendorJobStartedAt) continue;
     await bookingsCtrl.completeEventPlanningBooking(booking, io, "Event planning booking auto-completed 24h after the scheduled event -- vendor never marked it complete.");
     completed++;
   }

@@ -2101,8 +2101,15 @@ async function acceptEventProposal(requestId, proposalId){
     var res=await api('/event-requests/'+requestId+'/proposals/'+proposalId+'/accept',{method:'POST'});
     closeEventDetailModal();
     closeMyEventRequestsModal();
-    showToast&&showToast('Booking confirmed!','success');
-    if(res.booking&&typeof openCustomerHistoryDetail==='function')openCustomerHistoryDetail('booking',res.booking.id);
+    // The booking comes back REQUESTED, not CONFIRMED -- the vendor already
+    // committed to this price by proposing, but the customer still needs
+    // to pay it into escrow (same pattern as any other booking) before
+    // it's real. payForBooking drives them through that now.
+    if(res.booking&&res.booking.id){
+      payForBooking(res.booking.id, res.booking.totalKobo, function(){
+        if(typeof openCustomerHistoryDetail==='function')openCustomerHistoryDetail('booking',res.booking.id);
+      });
+    }
   }catch(err){
     showToast&&showToast(err.message||'Could not accept proposal','warning');
   }
@@ -11520,7 +11527,7 @@ async function openVendorBookingDetail(id){
       ['Venue',b.venue||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')],
       ['Total',N(Math.round(b.totalKobo/100))],
-      ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with you (not via the app)':(b.paymentMethod||'—')],
+      ['Payment Method',b.paymentMethod||'—'],
     ];
     // Guest count is only meaningful for Event Planning bookings -- Home
     // Cook bookings never collect it, so showing "Guests: Not set" there
@@ -11533,6 +11540,11 @@ async function openVendorBookingDetail(id){
     var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
     var isCookB=b.type==='HOME_COOK';
+    // Event Planner (always) and Home Cook's Event Catering Package
+    // (packageKey "premium") go through the negotiated-release flow --
+    // negotiate -> customer releases chosen amounts -> Job Started ->
+    // vendor can request more -> whatever's left pays out at completion.
+    var isNegotiated=b.type==='EVENT_PLANNING'||b.packageKey==='premium';
     var vendorStatusBlock='';
     if(vendorHasOpenDispute){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
@@ -11576,10 +11588,18 @@ async function openVendorBookingDetail(id){
         vendorStatusBlock='';
       }else if(b.vendorConfirmedCompleteAt){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>';
-      }else if(isCookB&&!b.vendorJobStartedAt){
+      }else if(isNegotiated&&!b.negotiationEndedAt){
+        vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F91D; Negotiations Ongoing</div><div style="color:#9A9390;font-size:11px;margin-top:2px;">Chat with the customer, then end negotiation when you\'ve agreed.</div></div>'
+          +'<button onclick="vendorEndBookingNegotiation(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Negotiation Ended</button>';
+      }else if(isNegotiated&&b.pendingPaymentRequestKobo){
+        vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">&#x23F3; Waiting for the customer to respond to your &#x20a6;'+Number(Math.round(b.pendingPaymentRequestKobo/100)).toLocaleString()+' request</div>';
+      }else if(isNegotiated&&b.negotiationEndedAt&&b.amountReleasedKobo===0){
+        vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;color:#9A9390;font-size:12px;font-weight:700;text-align:center;">&#x23F3; Waiting for the customer to release payment</div>';
+      }else if((isCookB||isNegotiated)&&!b.vendorJobStartedAt){
         vendorStatusBlock='<button onclick="vendorStartJob(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">&#x25B6;&#xFE0F; Job Started</button>';
       }else{
-        vendorStatusBlock='<button onclick="vendorMarkBookingComplete(\''+b.id+'\','+(!isCookB)+')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>';
+        vendorStatusBlock=(isNegotiated?'<button onclick="vendorRequestAdditionalPayment(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:1.5px solid rgba(155,89,182,.4);background:transparent;color:#9B59B6;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4B5; Request Additional Payment</button>':'')
+          +'<button onclick="vendorMarkBookingComplete(\''+b.id+'\','+(!isCookB)+')" style="width:100%;margin-top:'+(isNegotiated?'10':'14')+'px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>';
       }
     }
     var pendingEditBlock='';
@@ -11609,7 +11629,7 @@ async function openVendorBookingDetail(id){
     // the vendor has accepted the booking.
     var vendorNotYetDecided=b.status===(isCookB?'PAID':'REQUESTED');
     var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute;
-    var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
+    var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&!(isNegotiated&&b.amountReleasedKobo>0)&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var contactAndCancelBlock=(vendorHideContactButtons&&!vendorCancellable)?'':(
       '<div style="margin-top:14px;">'
       +(vendorHideContactButtons?'':(
@@ -11678,6 +11698,65 @@ function vendorStartJob(id){
     openVendorBookingDetail(id);
     _refreshVendorBookingsListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not start the job','warning');});
+}
+function vendorEndBookingNegotiation(id){
+  api('/bookings/'+id+'/negotiation/end',{method:'POST'}).then(function(){
+    showToast&&showToast('Negotiation ended — the customer can now release payment.','success');
+    openVendorBookingDetail(id);
+    _refreshVendorBookingsListIfOpen();
+  }).catch(function(err){showToast&&showToast(err.message||'Could not end negotiation','warning');});
+}
+function openVendorRequestPaymentModal(id){
+  showProcedureModal('<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Request Additional Payment</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Enter the amount you\'re asking the customer to release now.</p>'
+    +'<input id="vrp-amount" type="number" min="1" placeholder="Amount (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
+    +'<button onclick="confirmVendorRequestPayment(\''+id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Send Request</button>'
+    +'</div>');
+}
+function vendorRequestAdditionalPayment(id){ openVendorRequestPaymentModal(id); }
+async function confirmVendorRequestPayment(id){
+  var naira=parseFloat((document.getElementById('vrp-amount')||{}).value);
+  if(!(naira>0)){showToast&&showToast('Enter a valid amount','warning');return;}
+  try{
+    await api('/bookings/'+id+'/request-additional-payment',{method:'POST',body:JSON.stringify({amountKobo:Math.round(naira*100)})});
+    closeProcedureModal();
+    showToast&&showToast('Request sent — waiting on the customer.','success');
+    openVendorBookingDetail(id);
+    _refreshVendorBookingsListIfOpen();
+  }catch(err){showToast&&showToast(err.message||'Could not send the request','warning');}
+}
+function customerEndBookingNegotiation(id){
+  api('/bookings/'+id+'/negotiation/end',{method:'POST'}).then(function(){
+    showToast&&showToast('Negotiation ended — you can now release payment.','success');
+    openCustomerHistoryDetail('booking',id);
+  }).catch(function(err){showToast&&showToast(err.message||'Could not end negotiation','warning');});
+}
+function openCustomerReleasePaymentModal(id,remainingKobo){
+  showProcedureModal('<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Release Payment</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Up to &#x20a6;'+Number(Math.round(remainingKobo/100)).toLocaleString()+' available in escrow.</p>'
+    +'<input id="crp-amount" type="number" min="1" max="'+Math.round(remainingKobo/100)+'" placeholder="Amount (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
+    +'<button onclick="confirmCustomerReleasePayment(\''+id+'\','+remainingKobo+')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Release</button>'
+    +'</div>');
+}
+async function confirmCustomerReleasePayment(id,remainingKobo){
+  var naira=parseFloat((document.getElementById('crp-amount')||{}).value);
+  if(!(naira>0)){showToast&&showToast('Enter a valid amount','warning');return;}
+  var kobo=Math.round(naira*100);
+  if(kobo>remainingKobo){showToast&&showToast('That\'s more than what\'s still held in escrow','warning');return;}
+  try{
+    await api('/bookings/'+id+'/release-payment',{method:'POST',body:JSON.stringify({amountKobo:kobo})});
+    closeProcedureModal();
+    showToast&&showToast('Payment released to the vendor.','success');
+    openCustomerHistoryDetail('booking',id);
+  }catch(err){showToast&&showToast(err.message||'Could not release payment','warning');}
+}
+function customerRespondAdditionalPayment(id,approve){
+  api('/bookings/'+id+'/respond-additional-payment',{method:'POST',body:JSON.stringify({approve:approve})}).then(function(){
+    showToast&&showToast(approve?'Payment released to the vendor.':'Request declined.','success');
+    openCustomerHistoryDetail('booking',id);
+  }).catch(function(err){showToast&&showToast(err.message||'Could not respond to the request','warning');});
 }
 async function customerConfirmBookingComplete(id,completed,isEP){
   if(completed){
@@ -11946,7 +12025,7 @@ async function openCustomerHistoryDetail(kind,id){
       ['Venue',b.venue||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')],
       ['Total',N(Math.round(b.totalKobo/100))],
-      ['Payment Method',b.type==='EVENT_PLANNING'?'Paid directly with the vendor (not via the app)':(b.paymentMethod||'—')],
+      ['Payment Method',b.paymentMethod||'—'],
     ];
     // The current items -- reflects whatever the booking's real state is
     // right now, so once an edit is accepted this naturally shows the NEW
@@ -11993,6 +12072,14 @@ async function openCustomerHistoryDetail(kind,id){
     var isEP=b.type==='EVENT_PLANNING';
     var isCookB=!isEP;
     var hasPendingEdit=!!b.pendingEditSnapshot;
+    // Event Planner (always) and Home Cook's Event Catering Package
+    // (packageKey "premium") go through the negotiated-release flow --
+    // negotiate -> customer releases chosen amounts -> Job Started ->
+    // vendor can request more -> whatever's left pays out at completion.
+    var isNegotiated=isEP||b.packageKey==='premium';
+    var negotiationOngoing=!isTerminal&&!hasPendingEdit&&isNegotiated&&b.status==='CONFIRMED'&&!b.negotiationEndedAt;
+    var awaitingRelease=!isTerminal&&!hasPendingEdit&&isNegotiated&&b.negotiationEndedAt&&b.amountReleasedKobo===0;
+    var hasPaymentRequest=!isTerminal&&!!b.pendingPaymentRequestKobo;
     // Home Cook only: before the vendor taps "Job Started", the customer
     // still sees a "waiting to start" message and can edit/cancel; once
     // started, editing/cancelling is over and the message changes to
@@ -12005,7 +12092,11 @@ async function openCustomerHistoryDetail(kind,id){
     // which point this reverts to its normal state either way (accepted:
     // pendingEditSnapshot is cleared and the booking already reflects the
     // new details; declined: also cleared, booking unchanged).
-    var awaitingJobStart=!isTerminal&&!hasPendingEdit&&isCookB&&b.status==='CONFIRMED'&&!b.vendorJobStartedAt;
+    // Negotiated bookings (EP always, Cook catering) only reach "awaiting
+    // job start" once negotiation has ended AND the first payment has been
+    // released -- before that they're in negotiationOngoing/awaitingRelease
+    // instead (both rendered above this point in precedence).
+    var awaitingJobStart=!isTerminal&&!hasPendingEdit&&b.status==='CONFIRMED'&&!b.vendorJobStartedAt&&(isNegotiated?(b.negotiationEndedAt&&b.amountReleasedKobo>0):isCookB);
     // Chat/Call/WhatsApp are removed once the job is actually completed,
     // AND once the vendor has marked it complete and it's the customer's
     // turn for the Yes/No response -- that prompt is meant to stand alone,
@@ -12025,25 +12116,39 @@ async function openCustomerHistoryDetail(kind,id){
     // Event Planner: visible from REQUESTED through CONFIRMED, and
     // disappears once the scheduled date/time passes (there's no Job
     // Started concept for EP) or the customer cancels.
-    var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (isCookB ? !b.vendorJobStartedAt : _jobNotPassed);
-    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && (isCookB ? !b.vendorJobStartedAt : _jobNotPassed);
-    var awaitingVendor=!isTerminal&&!awaitingJobStart&&!hasPendingEdit&&b.status==='CONFIRMED'&&!b.vendorConfirmedCompleteAt;
+    // Event Planner now also sets a real vendorJobStartedAt (see
+    // startBookingJob) -- both types check it directly; _jobNotPassed
+    // stays as an EP-only extra safety net so a forgotten Job Started tap
+    // doesn't leave an already-past-date event edit/cancel-able forever.
+    // Negotiated bookings additionally lock BOTH the moment any part
+    // payment has been released, per the same reasoning as the backend's
+    // own guards on updateBooking/cancelBooking -- releasing changes what
+    // the vendor is actually owed in a way an edit or a full refund would
+    // corrupt or unfairly claw back.
+    var negotiatedLocked=isNegotiated&&b.amountReleasedKobo>0;
+    var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && !b.vendorJobStartedAt && (isCookB||_jobNotPassed) && !negotiatedLocked;
+    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && !b.vendorJobStartedAt && (isCookB||_jobNotPassed) && !negotiatedLocked;
+    var awaitingVendor=!isTerminal&&!hasPendingEdit&&b.status==='CONFIRMED'&&!!b.vendorJobStartedAt&&!b.vendorConfirmedCompleteAt;
     // Two genuinely different waiting states, easy to conflate: the vendor
     // hasn't even accepted yet (Event Planner: still REQUESTED, no payment
     // step at all; Home Cook: PAID -- REQUESTED there just means "not paid
     // yet", a brief in-flight window, not a real wait) vs. CONFIRMED (above)
     // meaning they already accepted and it's the JOB itself not done yet.
-    // Both need their own message -- previously only CONFIRMED had one, so
-    // a Home Cook booking sitting at PAID (or an EP one still at REQUESTED)
-    // showed nothing at all while waiting on the vendor's decision.
-    var awaitingVendorDecision=!isTerminal&&((isEP&&b.status==='REQUESTED')||(!isEP&&b.status==='PAID'));
-    // Home Cook only, genuinely unpaid: the customer backed out of the
-    // escrow modal (or never reached it) right after sending the request,
-    // so the booking is sitting at REQUESTED with nothing paid yet -- the
-    // vendor's own dashboard already shows this exact state as "Awaiting
-    // customer payment." Give the customer a real way back in instead of
-    // an idle screen with no path forward.
-    var unpaidCook=!isTerminal&&isCookB&&b.status==='REQUESTED';
+    // Both need their own message. Event Planner now pays upfront too
+    // (direct-booking path only -- a proposal-accepted EP booking skips
+    // PAID entirely and auto-CONFIRMs the moment payment clears, since the
+    // vendor already committed to the price by proposing), so this is now
+    // type-agnostic: PAID always means "paid, waiting on the vendor's
+    // decision" regardless of type.
+    var awaitingVendorDecision=!isTerminal&&b.status==='PAID';
+    // Genuinely unpaid: the customer backed out of the escrow modal (or
+    // never reached it) right after sending the request, so the booking is
+    // sitting at REQUESTED with nothing paid yet -- the vendor's own
+    // dashboard already shows this exact state as "Awaiting customer
+    // payment." Give the customer a real way back in instead of an idle
+    // screen with no path forward. Applies to Event Planner too now that
+    // it pays through the app.
+    var unpaidCook=!isTerminal&&b.status==='REQUESTED';
     var confirmCopy='Confirm so payment can be released, or let us know if it wasn\'t actually completed.';
     var terminalBanner='';
     if(hasOpenDispute){
@@ -12120,6 +12225,28 @@ async function openCustomerHistoryDetail(kind,id){
         +'<div style="font-size:12px;color:#9A9390;margin-bottom:12px;">The vendor can\'t see or act on it until payment goes through.</div>'
         +'<button onclick="payForBooking(\''+b.id+'\','+b.totalKobo+',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="width:100%;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B3; Resume Payment</button>'
         +'</div>'
+      ):'')
+      +(negotiationOngoing?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;">'
+        +'<div style="color:#9B59B6;font-size:14px;font-weight:800;margin-bottom:2px;">&#x1F91D; Negotiations Ongoing</div>'
+        +'<div style="color:#9A9390;font-size:12px;margin-bottom:12px;">Chat with the vendor, then end negotiation when you\'ve agreed.</div>'
+        +'<button onclick="customerEndBookingNegotiation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">Negotiation Ended</button>'
+        +'</div>'
+      ):'')
+      +(awaitingRelease?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
+        +'<div style="color:#F2EDE8;font-size:13px;margin-bottom:12px;">Negotiation ended. Release payment to the vendor to continue.</div>'
+        +'<button onclick="openCustomerReleasePaymentModal(\''+b.id+'\','+res.escrowHoldRemainingKobo+')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B0; Release Payment</button>'
+        +'</div>'
+      ):'')
+      +(hasPaymentRequest?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
+        +'<div style="color:#F2EDE8;font-weight:800;font-size:14px;margin-bottom:2px;">Vendor is requesting &#x20a6;'+Number(Math.round(b.pendingPaymentRequestKobo/100)).toLocaleString()+'</div>'
+        +'<div style="color:#9A9390;font-size:12px;margin-bottom:12px;">Release it now, or decline if you\'re not ready.</div>'
+        +'<div style="display:flex;gap:10px;">'
+        +'<button onclick="customerRespondAdditionalPayment(\''+b.id+'\',false)" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline</button>'
+        +'<button onclick="customerRespondAdditionalPayment(\''+b.id+'\',true)" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">Release</button>'
+        +'</div></div>'
       ):'')
       +(awaitingJobStart?(
         '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Job To Start</div>'
@@ -12866,7 +12993,11 @@ function cookBkRender(phase){
   var h='';
 
   if(phase==='packages'){
-    var totalSel=Object.values(_cb.selected).reduce(function(s,item){return s+(item?item.pr:0);},0)+(_cb.selectedPkg?_cb.selectedPkg.pr:0);
+    // A needsGuestCount package's .pr is a PER-HEAD figure, not a real
+    // amount -- excluded from the sum here since there's no real total
+    // until a guest count is entered (cookBkRender('details')).
+    var _pkgIsPerHead=_cb.selectedPkg&&_cb.selectedPkg.needsGuestCount;
+    var totalSel=Object.values(_cb.selected).reduce(function(s,item){return s+(item?item.pr:0);},0)+((_cb.selectedPkg&&!_pkgIsPerHead)?_cb.selectedPkg.pr:0);
     h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
         +'<button onclick="closeCookBooking()" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)">&#x2190;</button>'
@@ -12889,7 +13020,7 @@ function cookBkRender(phase){
             if(!isPicker&&!real)return '';
             var selP=_cb.selectedPkg&&_cb.selectedPkg.id===pkg.id;
             var label=isPicker?(selP?_cb.selectedPkg.nm:pkg.nm):real.label;
-            var priceDisplay=isPicker?(selP?Number(_cb.selectedPkg.pr).toLocaleString():'Select meals'):Number(real.price).toLocaleString();
+            var priceDisplay=isPicker?(selP?(Number(_cb.selectedPkg.pr).toLocaleString()+(_cb.selectedPkg.needsGuestCount?'/head':'')):'Select meals'):Number(real.price).toLocaleString();
             var subDesc=isPicker?pkg.desc:(pkg.desc+(real.guests?' &bull; '+real.guests+' guests':''));
             return '<div onclick="selectCookPackage(\''+pkg.id+'\')" style="background:'+(selP?'rgba(155,89,182,.12)':'#1C1C1C')+';border:2px solid '+(selP?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
               +'<div style="display:flex;align-items:center;gap:12px">'
@@ -12910,11 +13041,13 @@ function cookBkRender(phase){
               +'</div></div>';
           }).join(''))
       +'</div>'
-      +'<div id="__cb_total_bar" style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px;display:'+(totalSel>0?'block':'none')+'">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
-          +'<span style="color:#9A9390;font-size:13px">Selected Total</span>'
-          +'<span id="__cb_total_amt" style="font-weight:900;font-size:18px;color:#9B59B6">&#x20a6;'+Number(totalSel).toLocaleString()+'</span>'
-        +'</div>'
+      +'<div id="__cb_total_bar" style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px;display:'+((totalSel>0||_pkgIsPerHead)?'block':'none')+'">'
+        +(_pkgIsPerHead
+          ?'<div style="text-align:center;margin-bottom:12px;color:#9A9390;font-size:12px;">Guest count set next — total calculated after</div>'
+          :('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+            +'<span style="color:#9A9390;font-size:13px">Selected Total</span>'
+            +'<span id="__cb_total_amt" style="font-weight:900;font-size:18px;color:#9B59B6">&#x20a6;'+Number(totalSel).toLocaleString()+'</span>'
+          +'</div>'))
         +'<button onclick="cookBkProceedToPayment()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">Proceed</button>'
       +'</div>';
 
@@ -12934,6 +13067,11 @@ function cookBkRender(phase){
         +'<input id="cb-time" type="time" class="if" style="margin-bottom:12px;display:block;width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px 14px;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px">'
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Phone Number</label>'
         +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:0 14px;display:flex;align-items:center;gap:10px;margin-bottom:12px"><span>&#x1F4F1;</span><input id="cb-phone" type="tel" class="if" style="border:none;flex:1;padding:13px 0" placeholder="+234 800 000 0000"></div>'
+        +(_cb.selectedPkg&&_cb.selectedPkg.needsGuestCount?(
+          '<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Number of Guests</label>'
+          +'<input id="cb-guests" type="number" min="1" oninput="_updateCateringGuestTotal()" class="if" style="margin-bottom:6px;display:block;width:100%;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px 14px;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px" placeholder="e.g. 100">'
+          +'<div id="cb-guest-total" style="margin-bottom:12px;font-size:13px;font-weight:800;color:#9B59B6;">Enter guests to see the total</div>'
+        ):'')
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Special Requests (optional)</label>'
         +'<textarea id="cb-notes" class="if" rows="3" placeholder="Any special instructions, dietary needs or preferences..." style="margin-bottom:20px;width:100%;display:block"></textarea>'
         +'<button id="cb-confirm-btn" onclick="cookBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm Booking</button>'
@@ -13168,7 +13306,6 @@ function renderEventCateringPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
   var c=_cb.cook,menu=c.menu||[];
   var ec=_eventCatering;
-  var total=ec.selections.reduce(function(s,x){return s+x.priceKobo;},0);
   var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
     +'<button onclick="cookBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
     +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+ec.tpl.nm+'</h2>'
@@ -13186,14 +13323,14 @@ function renderEventCateringPicker(){
         +'<input type="checkbox" '+(picked?'checked':'')+' onchange="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0">'
         +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
         +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div></div>'
-        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'</div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
         +'</label>';
     }).join('')
     +ec.selections.filter(function(x){return x.custom;}).map(function(x){
       return '<div style="display:flex;align-items:center;gap:12px;background:rgba(155,89,182,.12);border:1.5px solid #9B59B6;border-radius:14px;padding:14px;margin-bottom:10px">'
         +'<span style="font-size:26px;flex-shrink:0">✍️</span>'
         +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request</div></div>'
-        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'</div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'/head</div>'
         +'<span onclick="removeEventCateringCustom(\''+x._cid+'\')" style="color:#E8392E;cursor:pointer;font-size:18px;margin-left:6px">&times;</span>'
         +'</div>';
     }).join('')
@@ -13205,7 +13342,7 @@ function renderEventCateringPicker(){
     +'</div>'
     +'</div>'
     +'<div style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="color:#9A9390;font-size:13px">Total</span><span style="font-weight:900;font-size:18px;color:#9B59B6">&#x20a6;'+Number(total/100).toLocaleString()+'</span></div>'
+    +'<div style="text-align:center;margin-bottom:12px;color:#9A9390;font-size:11px;">Total is calculated from your guest count next</div>'
     +'<button onclick="confirmEventCatering()" '+(ec.selections.length===0?'disabled style="width:100%;padding:14px;border-radius:12px;border:none;background:#555;color:#999;font-weight:800;font-size:14px;cursor:not-allowed"':'style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer"')+'>Continue</button>'
     +'</div>';
   ov.innerHTML=h;ov.style.display='block';
@@ -13230,8 +13367,13 @@ function removeEventCateringCustom(cid){
 }
 function confirmEventCatering(){
   if(!_eventCatering.selections.length){showToast&&showToast('Select at least one food item','warning');return;}
-  var total=_eventCatering.selections.reduce(function(s,x){return s+x.priceKobo;},0);
-  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:_eventCatering.tpl.nm+' — '+_eventCatering.eventType,em:_eventCatering.tpl.em,pr:Math.round(total/100),includes:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType};
+  // pr here is the sum of PER-HEAD prices, not a real total -- the real
+  // total only exists once a guest count is known (cookBkRender('details')),
+  // computed as pr * guests. needsGuestCount tells every downstream render
+  // (packages list, sticky total bar, details form) to treat pr as a
+  // per-head figure instead of a flat amount.
+  var perHeadSum=_eventCatering.selections.reduce(function(s,x){return s+x.priceKobo;},0);
+  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:_eventCatering.tpl.nm+' — '+_eventCatering.eventType,em:_eventCatering.tpl.em,pr:Math.round(perHeadSum/100),needsGuestCount:true,includes:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType};
   _cb.selected={};
   cookBkRender('packages');
 }
@@ -13239,6 +13381,17 @@ function confirmEventCatering(){
 function cookBkProceedToPayment(){
   if(!_cb.selectedPkg){showToast&&showToast('Please select a package','warning');return;}
   cookBkRender('details');
+}
+
+// Live total for the catering guest-count field -- pr is the per-head sum
+// in Naira (see confirmEventCatering), so total = guests * pr.
+function _updateCateringGuestTotal(){
+  var el=document.getElementById('cb-guest-total');
+  if(!el)return;
+  var guests=parseInt((document.getElementById('cb-guests')||{}).value);
+  if(!guests||guests<1){el.textContent='Enter guests to see the total';return;}
+  var total=guests*(_cb.selectedPkg?_cb.selectedPkg.pr:0);
+  el.textContent='Total for '+guests+' guests: ₦'+Number(total).toLocaleString();
 }
 
 var PAY_METHOD_MAP={card:'CARD',wallet:'WALLET',transfer:'BANK_TRANSFER',ussd:'USSD',escrow:'CARD',cod:'CASH_ON_DELIVERY'};
@@ -13261,6 +13414,9 @@ async function cookBkConfirmBooking(){
   if(!addr.trim()){showToast&&showToast('Please enter the cooking address','warning');return;}
   if(!date){showToast&&showToast('Please select a date','warning');return;}
   if(!time){showToast&&showToast('Please select a time','warning');return;}
+  var catering=_cb.selectedPkg&&_cb.selectedPkg.needsGuestCount;
+  var guests=catering?parseInt((document.getElementById('cb-guests')||{}).value):null;
+  if(catering&&(!guests||guests<1)){showToast&&showToast('Please enter the number of guests','warning');return;}
   _cb._submitting=true;
   var cbBtn=document.getElementById('cb-confirm-btn');
   if(cbBtn){cbBtn.disabled=true;cbBtn.style.opacity='.6';cbBtn.style.cursor='default';cbBtn.textContent='Sending…';}
@@ -13277,8 +13433,15 @@ async function cookBkConfirmBooking(){
   // happens to have a real ServicePackage row with a matching key.
   if(_cb.selectedPkg&&_cb.selectedPkg.mealPickerItems){
     pkgReal=null;
+    // Catering: each item's own price is PER HEAD (see
+    // renderEventCateringPicker/confirmEventCatering) -- sending qty as the
+    // guest count instead of the picker's default 1 is what turns "price
+    // per head" into "price per head x guests" for every dish, summed by
+    // the backend's existing resolveBookingItems with zero backend
+    // changes needed (it already just does priceKobo * qty per item).
     items=items.concat(_cb.selectedPkg.mealPickerItems.map(function(x){
-      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:x.qty}:{menuItemId:x.menuItemId,qty:x.qty};
+      var qty=catering?guests:x.qty;
+      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:qty}:{menuItemId:x.menuItemId,qty:qty};
     }));
     if(_cb.selectedPkg.eventType)notes=(notes?notes+' — ':'')+'Event type: '+_cb.selectedPkg.eventType;
   }
@@ -13289,6 +13452,7 @@ async function cookBkConfirmBooking(){
       packageKey:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.id:undefined,
       packageLabel:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.nm:undefined,
       eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes,
+      guestCount:catering?guests:undefined,
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
     _cb._submitting=false;
@@ -13799,14 +13963,20 @@ async function epBkConfirmBooking(){
     _epb._submitting=false;
     _epb.bookingNumber=res.booking.bookingNumber;
     _epb.booking=res.booking;
-    epBkRender('confirmed');
-    // See the matching comment in cookBkConfirmBooking -- lets the vendor's
-    // accept/decline/cancel clear this screen live instead of it sitting
-    // frozen until the customer navigates away themselves.
-    window._openBookingConfirmedOverlayId=res.booking.id;
-    bindBookingLiveUpdateListener();
-    if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
-    showToast&&showToast('Booking sent to '+(_epb.ep?_epb.ep.nm:'planner')+'! Ref '+res.booking.bookingNumber,'success');
+    // Event Planner bookings now pay into escrow just like Home Cook --
+    // the booking comes back REQUESTED, not CONFIRMED, so payment happens
+    // right here before the confirmed screen shows, same pattern as
+    // cookBkConfirmBooking. If the customer backs out of the escrow modal,
+    // the booking sits unpaid and can be resumed later via History.
+    payForBooking(res.booking.id, res.booking.totalKobo, function(){
+      epBkRender('confirmed');
+      // See the matching comment in cookBkConfirmBooking -- lets the vendor's
+      // accept/decline/cancel clear this screen live instead of it sitting
+      // frozen until the customer navigates away themselves.
+      window._openBookingConfirmedOverlayId=res.booking.id;
+      bindBookingLiveUpdateListener();
+      if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
+    });
   }catch(err){
     _epb._submitting=false;
     if(epbBtn){epbBtn.disabled=false;epbBtn.style.opacity='1';epbBtn.style.cursor='pointer';epbBtn.textContent='✅ Confirm Booking';}

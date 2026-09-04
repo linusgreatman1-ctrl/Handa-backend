@@ -67,6 +67,18 @@ function clampGuestCount(guestCount, servicePackage) {
   return n;
 }
 
+// Event Planner bookings (always) and Home Cook's Event Catering Package
+// (packageKey "premium") go through the negotiated-release flow instead of
+// an all-or-nothing escrow payout: full payment still happens upfront (see
+// orderFlow.confirmBookingPayment), but the vendor is paid out in stages
+// the customer controls (endBookingNegotiation/releaseBookingPayment/
+// requestAdditionalPayment/respondAdditionalPayment, below), with whatever
+// remains at completion paying out through the existing completion flow
+// unchanged.
+function isNegotiatedBooking(booking) {
+  return booking.type === "EVENT_PLANNING" || booking.packageKey === "premium";
+}
+
 // Bookings cover catering, home-cook, and event-planning requests — custom
 // quoted engagements (a package + optional add-on items + an event date),
 // unlike Order's fixed-price catalog checkout. Vendor must accept before
@@ -119,25 +131,17 @@ async function createBooking(req, res, next) {
       include: { servicePackage: true },
     });
 
-    // Home Cook bookings are unpaid at this exact moment (payment happens
-    // in a separate step right after creation, see payBooking/
-    // confirmBookingPayment) -- notifying the cook here would tell them
+    // Every booking is unpaid at this exact moment (payment happens in a
+    // separate step right after creation, see payBooking/
+    // confirmBookingPayment) -- notifying the vendor here would tell them
     // about a request before the customer has actually paid for it, which
     // is exactly the "shouldn't be able to see it before payment" gap.
     // confirmBookingPayment (orderFlow.service.js) sends the real
-    // "New paid booking request" notify once payment actually clears.
-    // Event Planner never has a payment step at all, so it keeps notifying
-    // immediately here, unchanged.
-    if (type === "EVENT_PLANNING") {
-      await notify(
-        req.app.get("io"),
-        vendor.userId,
-        "ORDER_UPDATE",
-        "New booking request",
-        `${req.user.name || "A customer"} sent you an event planning booking request for ₦${Math.round(totalKobo / 100).toLocaleString()}.`,
-        { bookingId: booking.id }
-      );
-    }
+    // "New paid booking request" notify once payment actually clears. This
+    // used to notify immediately for EVENT_PLANNING (back when EP never
+    // paid through the app at all) -- now that EP pays upfront too, same
+    // as Home Cook, it follows the identical "don't notify until paid"
+    // pattern with no special case here.
     res.status(201).json({ booking });
   } catch (err) {
     next(err);
@@ -204,7 +208,13 @@ async function getBooking(req, res, next) {
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ booking, disputeTicket, reportTicket });
+    // The real remaining held balance, for the negotiated-release flow's
+    // "Release Payment" input to cap itself against without a second call
+    // -- 0 once nothing (or nothing more) is held, whether because it was
+    // never a negotiated booking or the hold's already fully drained.
+    const vendorHold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
+
+    res.json({ booking, disputeTicket, reportTicket, escrowHoldRemainingKobo: vendorHold ? vendorHold.amountKobo : 0 });
   } catch (err) {
     next(err);
   }
@@ -356,6 +366,19 @@ async function updateBooking(req, res, next) {
       return res.status(400).json({ error: "This booking's date has already passed — it can no longer be edited." });
     }
     if (booking.pendingEditSnapshot) return res.status(409).json({ error: "You already have an edit awaiting the vendor's approval." });
+    // Once any part-payment has been released, hold.amountKobo on the
+    // booking's escrow hold no longer equals "the total" -- it's whatever
+    // is left after one or more partial releases (see
+    // releaseBookingPayment). Letting an edit change totalKobo past this
+    // point would corrupt that math (see reconcileBookingEditFinancials,
+    // which assumes hold.amountKobo IS the current total). Releases and
+    // additional-payment requests are the only way to change what the
+    // vendor gets from here on. Before any release, hold.amountKobo still
+    // exactly equals totalKobo (negotiation may have already ended with
+    // nothing released yet), so editing is still safe up to that point.
+    if (isNegotiatedBooking(booking) && booking.amountReleasedKobo > 0) {
+      return res.status(400).json({ error: "This booking's price is locked in once payment has been released to the vendor." });
+    }
 
     const data = await buildBookingEditData(booking, req.body);
 
@@ -471,14 +494,17 @@ function assertVendorOwnsBooking(req, booking) {
   }
 }
 
-// Event Planner bookings still go REQUESTED -> accept -> CONFIRMED directly
-// (no payment ever happens through the app). Home Cook bookings now pay
-// FIRST (REQUESTED -> payBooking -> PAID), so by the time a vendor can act
-// on one it's already funded -- accept requires PAID, not REQUESTED, and
-// moves straight to CONFIRMED (the old separate "wait for payment" step is
-// gone, since payment already happened before the vendor ever saw it).
+// Every booking type now pays FIRST (REQUESTED -> payBooking -> PAID), so
+// by the time a vendor can act on one it's already funded -- accept
+// requires PAID, not REQUESTED, and moves straight to CONFIRMED. Event
+// Planner used to skip payment entirely and go REQUESTED -> accept ->
+// CONFIRMED directly; it now pays upfront exactly like Home Cook for a
+// direct (non-proposal) booking. A proposal-created EP booking never
+// reaches this function at all -- it auto-CONFIRMs the moment payment
+// clears (orderFlow.confirmBookingPayment), since the vendor already
+// committed to the price by submitting the proposal.
 function requiredStatusForVendorDecision(type) {
-  return type === "EVENT_PLANNING" ? "REQUESTED" : "PAID";
+  return "PAID";
 }
 
 async function acceptBooking(req, res, next) {
@@ -493,9 +519,7 @@ async function acceptBooking(req, res, next) {
 
     const isEventPlanning = booking.type === "EVENT_PLANNING";
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CONFIRMED" } });
-    const message = isEventPlanning
-      ? "Your event planning booking was accepted! Payment is arranged directly with your planner, outside the app."
-      : "Your home cook booking was accepted and confirmed.";
+    const message = isEventPlanning ? "Your event planning booking was accepted and confirmed." : "Your home cook booking was accepted and confirmed.";
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", message, { bookingId: booking.id });
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
@@ -504,10 +528,9 @@ async function acceptBooking(req, res, next) {
   }
 }
 
-// Home Cook: the customer already paid into escrow before the vendor ever
-// saw this (see payBooking/confirmBookingPayment), so declining now has to
-// refund it -- there was nothing to refund back when decline only ever
-// happened pre-payment. Event Planner: unchanged, nothing was ever held.
+// The customer already paid into escrow before the vendor ever saw this
+// (see payBooking/confirmBookingPayment), for every booking type now --
+// declining always has to refund it.
 async function declineBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
@@ -518,13 +541,11 @@ async function declineBooking(req, res, next) {
       return res.status(409).json({ error: required === "PAID" && booking.status === "REQUESTED" ? "This booking hasn't been paid for yet." : `Booking is already ${booking.status.toLowerCase()}.` });
     }
 
-    if (booking.type !== "EVENT_PLANNING") {
-      await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking declined by vendor" });
-    }
+    await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking declined by vendor" });
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "DECLINED" } });
     const message =
       booking.type === "EVENT_PLANNING"
-        ? "Your event planning booking request was declined."
+        ? "Your event planning booking request was declined -- your payment has been refunded to your wallet."
         : "Your home cook booking request was declined -- your payment has been refunded to your wallet.";
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking declined", message, { bookingId: booking.id });
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
@@ -543,7 +564,6 @@ async function payBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
-    if (booking.type === "EVENT_PLANNING") return res.status(400).json({ error: "Event planning bookings are paid directly with the planner, not through the app." });
     if (booking.status !== "REQUESTED") return res.status(409).json({ error: "This booking isn't awaiting payment." });
 
     // The customer can choose their payment method here, at actual pay
@@ -586,24 +606,171 @@ async function payBooking(req, res, next) {
   }
 }
 
-// Home Cook only, first of two vendor taps: "Job Started". Before this,
-// the customer sees "Waiting for Job to Start" and can still edit/cancel;
-// after this, the customer sees "Waiting for Job to be Completed" and can
-// no longer edit/cancel. Does not touch completion/escrow at all -- that's
-// still gated on the second tap, completeBooking.
+// First of two vendor taps: "Job Started". Regular (non-catering) Home
+// Cook: unchanged -- available the moment the booking is CONFIRMED. Before
+// this, the customer sees "Waiting for Job to Start" and can still
+// edit/cancel; after this, the customer sees "Waiting for Job to be
+// Completed" and can no longer edit/cancel. Does not touch
+// completion/escrow at all -- that's still gated on the second tap,
+// completeBooking.
+//
+// Negotiated bookings (Event Planner always, Home Cook's Event Catering
+// Package) additionally require negotiation to have ended AND the
+// customer to have released at least the first payment -- "when they
+// release payment to vendor before it will now continue from job started
+// button." Event Planner never had this stage before at all; it now
+// shares it with Home Cook.
 async function startBookingJob(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isVendor) return res.status(403).json({ error: "Only the vendor on this booking can start the job." });
-    if (booking.type !== "HOME_COOK") return res.status(400).json({ error: "Only Home Cook bookings have a separate Job Started stage." });
     if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before the job can start." });
     if (booking.vendorJobStartedAt) return res.status(409).json({ error: "You already started this job." });
     if (booking.pendingEditSnapshot) return res.status(409).json({ error: "Accept or decline the customer's pending edit before starting the job." });
+    if (isNegotiatedBooking(booking)) {
+      if (!booking.negotiationEndedAt) return res.status(409).json({ error: "End negotiation before starting the job." });
+      if (booking.amountReleasedKobo <= 0) return res.status(409).json({ error: "The customer must release the first payment before the job can start." });
+    }
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorJobStartedAt: new Date() } });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Job started", `Your vendor has started the job for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Either party can end negotiation once. Requires no pending edit (same
+// mutual-exclusion reasoning as startBookingJob's own guard, right above)
+// so the two state machines never race. Once ended, the customer's
+// Release Payment action (and, once the first release has happened, the
+// vendor's ability to ask for more) unlock -- see releaseBookingPayment/
+// requestAdditionalPayment below.
+async function endBookingNegotiation(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    const isCustomer = booking.customerId === req.user.id;
+    const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
+    if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
+    if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no negotiation stage." });
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed before negotiation can end." });
+    if (booking.negotiationEndedAt) return res.status(409).json({ error: "Negotiation has already ended for this booking." });
+    if (booking.pendingEditSnapshot) return res.status(409).json({ error: "Resolve the pending edit before ending negotiation." });
+
+    const endedBy = isCustomer ? "CUSTOMER" : "VENDOR";
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { negotiationEndedAt: new Date(), negotiationEndedBy: endedBy } });
+    const notifyUserId = isCustomer ? booking.vendor.userId : booking.customerId;
+    await notify(req.app.get("io"), notifyUserId, "ORDER_UPDATE", "Negotiation ended", `Negotiation ended for booking #${booking.bookingNumber} — the customer can now release payment.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Customer-only. Draws down the real HELD hold by exactly amountKobo --
+// the hold is already funded in full (see orderFlow.confirmBookingPayment),
+// this only ever moves money OUT of an already-existing hold, never
+// charges anything new.
+async function releaseBookingPayment(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no negotiated release flow." });
+    if (!booking.negotiationEndedAt) return res.status(409).json({ error: "End negotiation before releasing payment." });
+
+    const hold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
+    if (!hold) return res.status(409).json({ error: "There's nothing left in escrow for this booking." });
+
+    const amountKobo = Math.round(Number(req.body.amountKobo) || 0);
+    if (amountKobo <= 0) return res.status(400).json({ error: "Enter a valid amount to release." });
+    if (amountKobo > hold.amountKobo) return res.status(400).json({ error: "That's more than what's still held in escrow." });
+
+    await escrow.partialReleaseHold(hold.id, amountKobo, { description: "Booking payment released by customer" });
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { amountReleasedKobo: { increment: amountKobo } } });
+
+    const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
+    if (vendor) await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Payment released", `The customer released ₦${Math.round(amountKobo / 100).toLocaleString()} for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Vendor-only. Only after the first release (i.e. "waiting for the
+// job/event day" has genuinely begun) -- matches "As both are waiting for
+// the day of the job or event, the vendor should have a button to ask for
+// additional payment." One in-flight request at a time.
+async function requestAdditionalPayment(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertVendorOwnsBooking(req, booking);
+    if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no negotiated release flow." });
+    if (!booking.negotiationEndedAt || booking.amountReleasedKobo <= 0) {
+      return res.status(409).json({ error: "The customer must release the first payment before you can request more." });
+    }
+    if (booking.pendingPaymentRequestKobo) return res.status(409).json({ error: "You already have a payment request awaiting the customer's response." });
+
+    const hold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
+    const amountKobo = Math.round(Number(req.body.amountKobo) || 0);
+    if (amountKobo <= 0) return res.status(400).json({ error: "Enter a valid amount to request." });
+    if (!hold || amountKobo > hold.amountKobo) return res.status(400).json({ error: "That's more than what's still held in escrow." });
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingPaymentRequestKobo: amountKobo, pendingPaymentRequestedAt: new Date() } });
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Vendor requesting additional payment", `The vendor is requesting ₦${Math.round(amountKobo / 100).toLocaleString()} for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Customer-only response to a pending vendor request. Approve releases
+// that exact amount (reuses the same partial-release path as
+// releaseBookingPayment); decline just clears the request -- "the session
+// returns to as it was before," per the user's own wording, no other side
+// effect.
+async function respondAdditionalPayment(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (!booking.pendingPaymentRequestKobo) return res.status(409).json({ error: "There is no payment request awaiting your response." });
+
+    const approve = !!req.body.approve;
+    const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
+
+    if (approve) {
+      const hold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
+      if (!hold || booking.pendingPaymentRequestKobo > hold.amountKobo) {
+        return res.status(409).json({ error: "There's not enough left in escrow to release this request." });
+      }
+      await escrow.partialReleaseHold(hold.id, booking.pendingPaymentRequestKobo, { description: "Additional payment released by customer" });
+      const updated = await prisma.booking.update({
+        where: { id: booking.id },
+        data: { amountReleasedKobo: { increment: booking.pendingPaymentRequestKobo }, pendingPaymentRequestKobo: null, pendingPaymentRequestedAt: null },
+      });
+      if (vendor) {
+        await notify(
+          req.app.get("io"),
+          vendor.userId,
+          "ORDER_UPDATE",
+          "Additional payment released",
+          `The customer released your requested ₦${Math.round(booking.pendingPaymentRequestKobo / 100).toLocaleString()} for booking #${booking.bookingNumber}.`,
+          { bookingId: booking.id }
+        );
+      }
+      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+      return res.json({ booking: updated });
+    }
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingPaymentRequestKobo: null, pendingPaymentRequestedAt: null } });
+    if (vendor) await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Additional payment declined", `The customer declined your additional payment request for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -617,13 +784,14 @@ async function startBookingJob(req, res, next) {
 // 2), and requires Job Started to have already happened. Event Planner:
 // simplified, one-sided -- there's no customer Yes/No step and no dispute
 // flow at all for EP bookings; marking complete ends the session right
-// here (escrow release is a no-op for EP since nothing is ever held for
-// it; the real effect is the 10% platform commission landing on the EP's
-// own weekly CommissionPeriod), and the customer just gets a single
-// "your booking was completed" notification with Report Issues / Rate
-// buttons on their end (see the frontend's Thank You screen) -- reporting
-// an issue after this point is a normal, non-blocking support ticket, not
-// a hold-freezing dispute, since the money has already moved.
+// here (escrow release now pays out whatever's left in the real hold EP
+// bookings hold today -- see the negotiated-release flow above -- plus the
+// real effect of the 10% platform commission landing on the EP's own
+// weekly CommissionPeriod), and the customer just gets a single "your
+// booking was completed" notification with Report Issues / Rate buttons on
+// their end (see the frontend's Thank You screen) -- reporting an issue
+// after this point is a normal, non-blocking support ticket, not a
+// hold-freezing dispute, since the money has already moved.
 async function completeBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { customer: { select: { id: true } } } });
@@ -648,7 +816,14 @@ async function completeBooking(req, res, next) {
       return res.json({ booking: updated });
     }
 
-    // Event Planner: one-sided, ends the session immediately.
+    // Event Planner: one-sided, ends the session immediately -- but only
+    // once the job/event has actually started, same requirement Home Cook
+    // already has (EP now goes through the same negotiation -> release ->
+    // Job Started stages, see startBookingJob). Note: any pre-existing EP
+    // booking created before this flow shipped won't have
+    // vendorJobStartedAt and will need manual admin handling -- acceptable,
+    // no production users yet.
+    if (!booking.vendorJobStartedAt) return res.status(409).json({ error: "Start the job before marking it complete." });
     const updated = await completeEventPlanningBooking(booking, req.app.get("io"), "Event planning booking completed by vendor");
     res.json({ booking: updated });
   } catch (err) {
@@ -758,6 +933,17 @@ async function cancelBooking(req, res, next) {
     if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
     if (["COMPLETED", "CANCELLED"].includes(booking.status)) return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
     if (booking.vendorJobStartedAt) return res.status(400).json({ error: "The vendor has already started this job — it can no longer be cancelled." });
+    // Negotiated bookings (Event Planner, Home Cook catering): once any
+    // part-payment has been released to the vendor, cancellation is over --
+    // matches the edit lock right above updateBooking's own guard. This is
+    // a strict superset of the vendorJobStartedAt check above for these
+    // booking types, since startBookingJob itself requires
+    // amountReleasedKobo > 0 before the job can start -- it also catches
+    // the narrower window between the first release and Job Started, which
+    // vendorJobStartedAt alone wouldn't yet block.
+    if (isNegotiatedBooking(booking) && booking.amountReleasedKobo > 0) {
+      return res.status(400).json({ error: "This booking can no longer be cancelled once payment has been released to the vendor." });
+    }
 
     // A reason is always required now -- both so the other side/admin can
     // see WHY, not just that it happened, and so the admin panel's booking
@@ -766,24 +952,36 @@ async function cancelBooking(req, res, next) {
     if (!reason) return res.status(400).json({ error: "A cancellation reason is required." });
 
     // PAID: the customer paid at request time and the vendor hasn't decided
-    // yet. CONFIRMED: vendor already accepted (also already paid, for Home
-    // Cook). Either way there's real money held that needs refunding --
-    // Event Planner bookings never hold anything, so this is always a safe
-    // no-op for them (refundAllHoldsForContext handles zero holds cleanly).
+    // yet. CONFIRMED: vendor already accepted (every booking type pays
+    // upfront now, Event Planner included). Either way there's real money
+    // held that needs refunding -- refundAllHoldsForContext correctly
+    // refunds only what's STILL held, which for a negotiated booking with
+    // one or more partial releases already made is the true remainder, not
+    // the original total (partialReleaseHold decrements the hold in place,
+    // see escrow.service.js) -- already-released amounts are never clawed
+    // back from the vendor.
     if (["PAID", "CONFIRMED"].includes(booking.status)) {
       await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: `Booking cancelled by ${isCustomer ? "customer" : "vendor"}` });
     }
     const cancelledBy = isCustomer ? "CUSTOMER" : "VENDOR";
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      // Clears any unresolved pendingEditSnapshot along with the
-      // cancellation -- without this, a booking cancelled while an edit
-      // was still awaiting the vendor's decision kept showing "Customer
-      // Proposed Changes" (with live Accept/Decline buttons) forever,
-      // since every render of that block only ever checks whether
-      // pendingEditSnapshot is set, not whether the booking is still
-      // actually alive.
-      data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: reason, cancelledBy, pendingEditSnapshot: null, pendingEditRequestedAt: null },
+      // Clears any unresolved pendingEditSnapshot/pendingPaymentRequestKobo
+      // along with the cancellation -- without this, a booking cancelled
+      // while an edit or a vendor payment request was still pending kept
+      // showing live Accept/Decline (or Release/Decline) buttons forever,
+      // since every render of those blocks only ever checks whether the
+      // field is set, not whether the booking is still actually alive.
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelReason: reason,
+        cancelledBy,
+        pendingEditSnapshot: null,
+        pendingEditRequestedAt: null,
+        pendingPaymentRequestKobo: null,
+        pendingPaymentRequestedAt: null,
+      },
     });
     closeSupportThreadForContext(booking.id);
     // Notify whichever side didn't do the cancelling.
@@ -810,6 +1008,10 @@ module.exports = {
   declineBooking,
   payBooking,
   startBookingJob,
+  endBookingNegotiation,
+  releaseBookingPayment,
+  requestAdditionalPayment,
+  respondAdditionalPayment,
   completeBooking,
   completeEventPlanningBooking,
   confirmBookingCompletion,

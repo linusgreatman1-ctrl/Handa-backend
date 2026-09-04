@@ -470,6 +470,28 @@ model Booking {
   vendorConfirmedCompleteAt   DateTime?
   customerConfirmedCompleteAt DateTime?
 
+  // Negotiated-release flow: Event Planner (always) and Home Cook's Event
+  // Catering Package (packageKey "premium") pay the full total into escrow
+  // upfront like any other booking, but the payout to the vendor is staged
+  // instead of all-or-nothing. Once CONFIRMED, either party can end
+  // negotiation (negotiationEndedAt/negotiationEndedBy) -- only then can
+  // the customer release chosen amounts from the held escrow
+  // (amountReleasedKobo tracks the running total released so far; the real
+  // remaining balance lives on the EscrowHold row itself, see
+  // escrow.service.js's partialReleaseHold). vendorJobStartedAt (below)
+  // only becomes settable once the first release has happened. While
+  // waiting for the job/event day, the vendor can ask for more
+  // (pendingPaymentRequestKobo/pendingPaymentRequestedAt -- one in flight
+  // at a time, same shape as pendingEditSnapshot below), which the
+  // customer approves (releases it) or declines (clears it, no other
+  // effect). Whatever's left in the hold pays out automatically through
+  // the existing completion flow, unchanged.
+  negotiationEndedAt        DateTime?
+  negotiationEndedBy        String?
+  amountReleasedKobo        Int       @default(0)
+  pendingPaymentRequestKobo Int?
+  pendingPaymentRequestedAt DateTime?
+
   // Home Cook only: the vendor's "Job Started" tap, between CONFIRMED and
   // vendorConfirmedCompleteAt. Before this is set the customer still sees
   // "Waiting for Job to Start" and can edit/cancel; once set, the customer
@@ -592,6 +614,9 @@ model EventProposal {
 
   @@index([eventRequestId])
   @@index([vendorId])
+  // orderFlow.confirmBookingPayment looks this up by bookingId on every
+  // booking payment to detect the proposal-created-EP-booking path.
+  @@index([bookingId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────

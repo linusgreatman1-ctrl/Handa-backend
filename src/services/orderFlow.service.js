@@ -10,11 +10,34 @@ const escrow = require("./escrow.service");
 const wallet = require("./wallet.service");
 const { notify } = require("./notifications.service");
 
-// Home Cook bookings are paid immediately when the customer sends the
-// request, before the vendor has decided -- not after acceptance like they
-// used to be. PAID marks that "paid, awaiting vendor decision" window;
-// acceptBooking/declineBooking (bookings.controller.js) are what move a
-// PAID booking on to CONFIRMED or (with a refund) DECLINED.
+// Home Cook bookings (and, now, Event Planner ones -- see below) are paid
+// immediately when the customer sends the request, before the vendor has
+// decided -- not after acceptance like they used to be. PAID marks that
+// "paid, awaiting vendor decision" window; acceptBooking/declineBooking
+// (bookings.controller.js) are what move a PAID booking on to CONFIRMED or
+// (with a refund) DECLINED.
+//
+// Event Planner (EVENT_PLANNING) bookings created via an accepted proposal
+// skip that "awaiting vendor decision" window entirely -- the vendor
+// already committed to this exact price by submitting the proposal, so
+// there's no separate accept/decline step for the customer's payment to
+// unblock. Detected by looking up whether an EventProposal references this
+// bookingId (stamped by eventRequests.controller.js's acceptProposal) --
+// no separate Booking field needed, the relation already proves the fact.
+// A direct (non-proposal) EVENT_PLANNING booking still goes through the
+// normal PAID -> vendor accepts/declines -> CONFIRMED path, same as Home
+// Cook, since the vendor never agreed to anything beforehand there.
+//
+// Both Event Planner and Home Cook's Event Catering Package (packageKey
+// "premium") are "negotiated" bookings under the new release flow
+// (bookings.controller.js's isNegotiatedBooking) -- their escrow hold is
+// created with autoRelease:false so it never gets swept by the timed
+// auto-release job while under negotiation/waiting for the job day; only
+// an explicit partial release or the booking's own completion flow ever
+// moves money out of it. Accepted tradeoff for v1: if a vendor never
+// starts the job and the booking never completes, the hold can sit HELD
+// indefinitely -- no long-stop timer exists, matching the EP auto-complete
+// sweep's own new guard (bookingReminders.service.js).
 async function confirmBookingPayment(bookingId, reference, io) {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: true } });
   if (!booking) throw Object.assign(new Error("Booking not found."), { status: 404 });
@@ -25,6 +48,10 @@ async function confirmBookingPayment(bookingId, reference, io) {
   const existingHold = await prisma.escrowHold.findFirst({ where: { bookingId, payeeRole: "VENDOR" } });
   if (existingHold) return booking;
 
+  const isNegotiated = booking.type === "EVENT_PLANNING" || booking.packageKey === "premium";
+  const viaProposal =
+    booking.type === "EVENT_PLANNING" && !!(await prisma.eventProposal.findFirst({ where: { bookingId }, select: { id: true } }));
+
   await escrow.createHold({
     contextType: "BOOKING",
     bookingId,
@@ -32,10 +59,18 @@ async function confirmBookingPayment(bookingId, reference, io) {
     payeeId: booking.vendor.userId,
     payeeRole: "VENDOR",
     amountKobo: booking.totalKobo,
+    autoRelease: !isNegotiated,
   });
 
-  const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: "PAID", confirmedAt: new Date() } });
-  await notify(io, booking.vendor.userId, "ORDER_UPDATE", "New paid booking request", `A customer paid for a ${booking.type === "EVENT_PLANNING" ? "event planning" : "home cook"} booking -- accept or decline it.`, { bookingId }).catch(() => {});
+  const nextStatus = viaProposal ? "CONFIRMED" : "PAID";
+  const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: nextStatus, confirmedAt: new Date() } });
+
+  if (viaProposal) {
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment secured", `The customer's payment for booking #${booking.bookingNumber} is now secured in escrow.`, { bookingId }).catch(() => {});
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Payment secured", `Your payment for booking #${booking.bookingNumber} is secured in escrow.`, { bookingId }).catch(() => {});
+  } else {
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "New paid booking request", `A customer paid for a ${booking.type === "EVENT_PLANNING" ? "event planning" : "home cook"} booking -- accept or decline it.`, { bookingId }).catch(() => {});
+  }
   return updated;
 }
 

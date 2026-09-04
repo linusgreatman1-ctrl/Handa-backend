@@ -204,21 +204,24 @@ async function acceptProposal(req, res, next) {
     const selectedItemsSnapshot = mergedServiceNames.map((name) => ({ name, qty: 1, priceKobo: 0, custom: true }));
 
     const booking = await prisma.$transaction(async (tx) => {
-      // Event Planning bookings no longer go through escrow at all (see
-      // bookings.controller.js's acceptBooking) -- the planner already
-      // committed to this price by proposing, and there's nothing for the
-      // customer to pay through the app, so this goes straight to
-      // CONFIRMED, matching exactly where acceptBooking sends a normal EP
-      // booking. paymentMethod is required by the schema but inapplicable
-      // here -- CASH_ON_DELIVERY is the closest real meaning ("settled
-      // directly, not through the app"); the frontend's booking-detail
-      // view already overrides the displayed text for any EP booking
-      // regardless of this raw value.
+      // Event Planning bookings now pay the full proposal price into
+      // escrow, same as any other booking -- created REQUESTED (not
+      // CONFIRMED), so the frontend can immediately drive the customer
+      // through the same payForBooking() flow Home Cook already uses. The
+      // vendor already committed to this exact price by proposing, so
+      // there's no separate accept/decline step once paid --
+      // orderFlow.confirmBookingPayment detects this booking came from an
+      // accepted proposal (by looking up EventProposal.bookingId) and
+      // auto-CONFIRMs it the moment payment clears, instead of leaving it
+      // at PAID awaiting a vendor decision the vendor already made.
+      // paymentMethod is just a placeholder here -- payBooking lets the
+      // customer choose their real method at actual pay time, same as
+      // createBooking's own default for a direct booking.
       const newBooking = await tx.booking.create({
         data: {
           bookingNumber: generateReference("EVT"),
           type: "EVENT_PLANNING",
-          status: "CONFIRMED",
+          status: "REQUESTED",
           customerId: request.customerId,
           vendorId: proposal.vendorId,
           eventDate: request.eventDate,
@@ -226,7 +229,7 @@ async function acceptProposal(req, res, next) {
           guestCount: request.guestCount,
           selectedItems: selectedItemsSnapshot,
           notes: [request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
-          paymentMethod: "CASH_ON_DELIVERY",
+          paymentMethod: "CARD",
           totalKobo: proposal.priceKobo,
         },
       });
@@ -245,7 +248,7 @@ async function acceptProposal(req, res, next) {
     });
 
     const losers = await prisma.eventProposal.findMany({ where: { eventRequestId: request.id, status: "DECLINED" } });
-    await notify(io, req.user.id, "ORDER_UPDATE", "Proposal accepted", "Your event booking is confirmed! Payment is arranged directly with your planner, outside the app.", { bookingId: booking.id });
+    await notify(io, req.user.id, "ORDER_UPDATE", "Proposal accepted", `Pay ₦${Math.round(proposal.priceKobo / 100).toLocaleString()} into escrow to confirm your event booking.`, { bookingId: booking.id });
     for (const loser of losers) {
       const vendorUser = await prisma.vendorProfile.findUnique({ where: { id: loser.vendorId }, select: { userId: true } });
       if (vendorUser) {
@@ -254,7 +257,7 @@ async function acceptProposal(req, res, next) {
     }
     const winnerVendor = await prisma.vendorProfile.findUnique({ where: { id: proposal.vendorId }, select: { userId: true } });
     if (winnerVendor) {
-      await notify(io, winnerVendor.userId, "ORDER_UPDATE", "Proposal accepted!", "Your event proposal was accepted -- the customer has booked you.", { bookingId: booking.id });
+      await notify(io, winnerVendor.userId, "ORDER_UPDATE", "Proposal accepted!", "Your event proposal was accepted -- the customer is completing payment now.", { bookingId: booking.id });
     }
     // The request is no longer OPEN -- every other planner's dashboard
     // list live-drops it instead of only on their next reload; the
