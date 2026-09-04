@@ -2466,6 +2466,7 @@ function logout(){
   setRefreshToken(null);
   clearProactiveRefresh();
   if(typeof _riderStopAvailPoll==='function')_riderStopAvailPoll();
+  if(typeof _shopperStopAvailPoll==='function')_shopperStopAvailPoll();
   if(_socket){_socket.disconnect();_socket=null;}
   S.user=null;S.myAddr='';S.cart=[];
   S.role='customer';_eRole='customer';
@@ -9250,11 +9251,13 @@ async function toggleShopperOnline() {
     showToast("You're online! Watching for sessions 🛒",'success');
     shopperBindAvailableSessionsListener();
     loadShopperAvailableSessions();
+    _shopperStartAvailPoll();
   } else {
     dot.className='status-dot offline'; label.textContent='Go Online'; label.style.color='#9A9390';
     pill.style.borderColor='#2A2850'; pill.style.background='#242424';
     if(inc) inc.style.display='none';
     showToast('Gone offline','warning');
+    _shopperStopAvailPoll();
   }
 }
 
@@ -9308,12 +9311,47 @@ function shopperBindAvailableSessionsListener(){
     if(list&&!list.children.length)list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';
   });
 }
+// Same polling safety net as the rider's own _riderAvailPollTick -- a real-
+// time shop-session:new push can still be missed for reasons that leave no
+// visible "you're offline" signal (a connection blip, a reconnect landing
+// between binds, etc.), and a shopper who's genuinely online would
+// otherwise see nothing new until they manually toggled offline/online or
+// reloaded. Same real endpoint the socket path already uses, same
+// "refresh the visible list, or pop up if it's not on screen" decision,
+// just on a timer instead of a push.
+async function _shopperAvailPollTick(){
+  if(!isShopperOnline)return;
+  var list=document.getElementById('shopper-sessions-list');
+  if(list&&list.offsetParent){
+    loadShopperAvailableSessions();
+    return;
+  }
+  try{
+    var res=await api('/shop-sessions?as=available');
+    var sessions=(res.sessions||[]).filter(function(s){return !_shopperDeclinedSessionIds.has(s.id);});
+    var fresh=sessions.find(function(s){return !_shopperSeenAvailableIds.has(s.id);});
+    sessions.forEach(function(s){_shopperSeenAvailableIds.add(s.id);});
+    if(fresh)showShopperDispatchPopup(fresh.id);
+  }catch(e){}
+}
+function _shopperStartAvailPoll(){
+  clearInterval(window._shopperOnlineTimer);
+  window._shopperOnlineTimer=setInterval(_shopperAvailPollTick,20000);
+}
+function _shopperStopAvailPoll(){
+  clearInterval(window._shopperOnlineTimer);
+  window._shopperOnlineTimer=null;
+}
 // Client-side dismiss only, same reasoning as _riderDeclinedSessionIds
 // (see declineRiderDelivery) -- a shopper session request is broadcast to
 // every online shopper, not assigned to this one specifically, so
 // declining just hides the card from THIS shopper's own list; every other
 // online shopper still sees it normally.
 var _shopperDeclinedSessionIds=new Set();
+// Same "seen already" tracker as the rider's own _riderSeenAvailableIds --
+// lets the polling safety net below tell "still the same requests" apart
+// from "something genuinely new just appeared."
+var _shopperSeenAvailableIds=new Set();
 async function loadShopperAvailableSessions(){
   var list=document.getElementById('shopper-sessions-list');
   if(!list)return;
@@ -9322,6 +9360,7 @@ async function loadShopperAvailableSessions(){
   try{
     var res=await api('/shop-sessions?as=available');
     var sessions=(res.sessions||[]).filter(function(s){return !_shopperDeclinedSessionIds.has(s.id);});
+    sessions.forEach(function(s){_shopperSeenAvailableIds.add(s.id);});
     if(!sessions.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No requests waiting right now — you\'ll be notified the moment one appears.</div>';return;}
     list.innerHTML=sessions.map(function(s){
       return '<div id="sfm-avail-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #2ECC71;border-radius:18px;padding:18px;margin-bottom:12px;">'
@@ -9464,7 +9503,7 @@ function renderShopperHome() {
     var b=document.getElementById('shopper-balance-display'); if(b)b.textContent='₦'+Number(Math.round(res.balanceKobo/100)).toLocaleString();
     var w=document.getElementById('shopper-week-display'); if(w)w.textContent='₦'+Number(Math.round(res.earnings.weeklyKobo/100)).toLocaleString();
   }).catch(function(){});
-  if(isShopperOnline)loadShopperAvailableSessions();
+  if(isShopperOnline){loadShopperAvailableSessions();_shopperStartAvailPoll();}
   refreshShopperActiveSessionBanner();
 }
 // The active-session banner used to only ever get switched on once, at the
