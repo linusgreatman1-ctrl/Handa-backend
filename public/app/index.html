@@ -1200,8 +1200,20 @@ function connectSocket(){
     // however long they happened to stay put, instead of updating the
     // moment the real notify() for it already arrives (both
     // rider-arrived-customer and markDelivered above carry sessionId).
+    // The customer's and rider's own equivalent banners had the identical
+    // gap -- e.g. markAway's "everyone left, session auto-cancelled" notify
+    // (shopSessions.controller.js) carries sessionId too, but only the
+    // shopper's banner ever reacted to it live; customer/rider stayed
+    // showing "Return to Session" (which then 404s/soft-fails on click)
+    // until the next full page reload re-ran their one-shot initial check.
     if(n.data&&n.data.sessionId&&document.getElementById('active-session-banner')&&typeof refreshShopperActiveSessionBanner==='function'){
       refreshShopperActiveSessionBanner();
+    }
+    if(n.data&&n.data.sessionId&&document.getElementById('customer-active-session-banner')&&typeof refreshCustomerActiveSessionBanner==='function'){
+      refreshCustomerActiveSessionBanner();
+    }
+    if(n.data&&n.data.sessionId&&document.getElementById('rider-active-session-banner')&&typeof refreshRiderActiveSessionBanner==='function'){
+      refreshRiderActiveSessionBanner();
     }
     // A new chat message's own real-time push (chat:message) only ever
     // reaches a socket that's already joined chat:{threadId} -- which
@@ -1320,8 +1332,11 @@ function connectSocket(){
     // gap (tab backgrounded, brief network drop) is never replayed by
     // Socket.IO, so without this the banner could sit stale/stuck showing
     // "waiting for confirmation" (or a session that already delivered)
-    // until the shopper happened to navigate away and back.
+    // until the shopper happened to navigate away and back. Same catch-up
+    // needed for the customer's and rider's own equivalent banners.
     if(document.getElementById('active-session-banner')&&typeof refreshShopperActiveSessionBanner==='function')refreshShopperActiveSessionBanner();
+    if(document.getElementById('customer-active-session-banner')&&typeof refreshCustomerActiveSessionBanner==='function')refreshCustomerActiveSessionBanner();
+    if(document.getElementById('rider-active-session-banner')&&typeof refreshRiderActiveSessionBanner==='function')refreshRiderActiveSessionBanner();
     // Same gap on the customer's own 'packaging'/'customerTracking' screens
     // -- shop-session:join above only rejoins the room for FUTURE pushes;
     // a rider-arrived-shopper (the "get ready for the 3-way call" banner)
