@@ -8349,7 +8349,8 @@ async function showRiderDispatchPopup(sessionId){
 // meaningfully disagree about what's actually available.
 async function _riderAvailPollTick(){
   if(!S.rdrOnline)return;
-  if(document.getElementById('rider-deliveries-list')){
+  var _rdList=document.getElementById('rider-deliveries-list');
+  if(_rdList&&_rdList.offsetParent){
     loadRiderAvailableDeliveries();
     return;
   }
