@@ -12120,14 +12120,15 @@ async function openCustomerHistoryDetail(kind,id){
     // startBookingJob) -- both types check it directly; _jobNotPassed
     // stays as an EP-only extra safety net so a forgotten Job Started tap
     // doesn't leave an already-past-date event edit/cancel-able forever.
-    // Negotiated bookings additionally lock BOTH the moment any part
-    // payment has been released, per the same reasoning as the backend's
-    // own guards on updateBooking/cancelBooking -- releasing changes what
-    // the vendor is actually owed in a way an edit or a full refund would
-    // corrupt or unfairly claw back.
-    var negotiatedLocked=isNegotiated&&b.amountReleasedKobo>0;
-    var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && !b.vendorJobStartedAt && (isCookB||_jobNotPassed) && !negotiatedLocked;
-    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && !b.vendorJobStartedAt && (isCookB||_jobNotPassed) && !negotiatedLocked;
+    // Negotiated bookings additionally lock CANCELLATION (not editing) the
+    // moment any part payment has been released -- refunding would claw
+    // back money already paid to the vendor, which the backend's own
+    // cancelBooking guard also rejects outright. Editing stays allowed
+    // throughout; reconcileBookingEditFinancials (bookings.controller.js)
+    // is what keeps that safe against a partially-released hold.
+    var negotiatedCancelLocked=isNegotiated&&b.amountReleasedKobo>0;
+    var editable=!isTerminal&&!hasPendingEdit&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && !b.vendorJobStartedAt && (isCookB||_jobNotPassed);
+    var cancellable=!isTerminal&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1 && !b.vendorJobStartedAt && (isCookB||_jobNotPassed) && !negotiatedCancelLocked;
     var awaitingVendor=!isTerminal&&!hasPendingEdit&&b.status==='CONFIRMED'&&!!b.vendorJobStartedAt&&!b.vendorConfirmedCompleteAt;
     // Two genuinely different waiting states, easy to conflate: the vendor
     // hasn't even accepted yet (Event Planner: still REQUESTED, no payment

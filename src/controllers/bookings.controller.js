@@ -300,11 +300,28 @@ async function buildBookingEditData(booking, body) {
 // merely proposed); decreases refund the difference back. Throws
 // {status:400, shortfallKobo} on insufficient balance -- the caller must
 // not apply/charge anything else in that case.
+//
+// A negotiated booking (isNegotiatedBooking) can have already released
+// part of its escrow to the vendor by the time an edit happens (editing
+// stays allowed throughout -- only cancellation locks once any part
+// payment has released, see cancelBooking) -- hold.amountKobo at that
+// point is only what's STILL held, not the booking's real total, so the
+// diff must be computed against booking.totalKobo (the actual current
+// price) instead. When nothing's ever been released this is the exact
+// same number hold.amountKobo already was, so the math is unchanged for
+// every non-negotiated booking and for a negotiated one before its first
+// release. A price decrease is capped so it never claws back money
+// already paid to the vendor, and a new total that would fall below
+// what's already been released is rejected outright rather than silently
+// under-refunding.
 async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRun = false } = {}) {
   if (newTotalKobo === undefined) return null;
   const hold = await tx.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR" } });
   if (!hold) return null;
-  const diff = newTotalKobo - hold.amountKobo;
+  if (newTotalKobo < booking.amountReleasedKobo) {
+    throw Object.assign(new Error(`The new total can't be less than the ₦${Math.round(booking.amountReleasedKobo / 100).toLocaleString()} already released to the vendor.`), { status: 400 });
+  }
+  const diff = newTotalKobo - booking.totalKobo;
   if (diff === 0) return null;
   if (diff > 0) {
     const w = await walletSvc.getOrCreateWallet(booking.customerId, tx);
@@ -329,11 +346,16 @@ async function reconcileBookingEditFinancials(booking, newTotalKobo, tx, { dryRu
     }
     if (!dryRun) {
       await walletSvc.debitWallet(booking.customerId, diff, "ESCROW_HOLD", { contextType: "BOOKING", contextId: booking.id, description: "Booking edit — added items" }, tx);
-      await tx.escrowHold.update({ where: { id: hold.id }, data: { amountKobo: newTotalKobo } });
+      await tx.escrowHold.update({ where: { id: hold.id }, data: { amountKobo: hold.amountKobo + diff } });
     }
   } else if (!dryRun) {
     await walletSvc.creditWallet(booking.customerId, -diff, "ESCROW_REFUND", { contextType: "BOOKING", contextId: booking.id, description: "Booking edit — removed items" }, tx);
-    await tx.escrowHold.update({ where: { id: hold.id }, data: { amountKobo: newTotalKobo } });
+    // Never decrease the hold by more than what's actually still held --
+    // the newTotalKobo>=amountReleasedKobo guard above already ensures
+    // this can't go negative, but capping explicitly keeps this correct
+    // even if that invariant is ever loosened.
+    const decreaseBy = Math.min(-diff, hold.amountKobo);
+    await tx.escrowHold.update({ where: { id: hold.id }, data: { amountKobo: hold.amountKobo - decreaseBy } });
   }
   return diff;
 }
@@ -366,19 +388,12 @@ async function updateBooking(req, res, next) {
       return res.status(400).json({ error: "This booking's date has already passed — it can no longer be edited." });
     }
     if (booking.pendingEditSnapshot) return res.status(409).json({ error: "You already have an edit awaiting the vendor's approval." });
-    // Once any part-payment has been released, hold.amountKobo on the
-    // booking's escrow hold no longer equals "the total" -- it's whatever
-    // is left after one or more partial releases (see
-    // releaseBookingPayment). Letting an edit change totalKobo past this
-    // point would corrupt that math (see reconcileBookingEditFinancials,
-    // which assumes hold.amountKobo IS the current total). Releases and
-    // additional-payment requests are the only way to change what the
-    // vendor gets from here on. Before any release, hold.amountKobo still
-    // exactly equals totalKobo (negotiation may have already ended with
-    // nothing released yet), so editing is still safe up to that point.
-    if (isNegotiatedBooking(booking) && booking.amountReleasedKobo > 0) {
-      return res.status(400).json({ error: "This booking's price is locked in once payment has been released to the vendor." });
-    }
+    // Editing stays allowed even after part-payment has released -- only
+    // cancellation locks at that point (see cancelBooking). Money safety
+    // for a negotiated booking with releases already made is handled
+    // inside reconcileBookingEditFinancials, which compares against the
+    // booking's real totalKobo (not the hold's own, now-partial,
+    // amountKobo) and rejects a new total below what's already released.
 
     const data = await buildBookingEditData(booking, req.body);
 
