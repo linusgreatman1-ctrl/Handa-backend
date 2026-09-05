@@ -11700,21 +11700,46 @@ function _pendingEditSummaryHtml(pe,isEP){
   return peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')+itemsHtml;
 }
 var _vendorBookingDetailReqSeq=0;
+// Shared "last known good" scroll position for the currently-open booking
+// detail sheet -- see _captureBookingDetailScrollTop's own comment on why
+// a plain "read the DOM right now" capture isn't enough once overlapping
+// calls are possible (an action's own follow-up open racing a live
+// booking:updated push triggering a SECOND open, e.g.).
+var _bookingSheetScrollMemory=0;
+// Reads the real scroll position to restore for a refresh of the SAME
+// already-open booking (an action inside it, or a live booking:updated
+// push) -- 0 for a genuinely new open (a different booking, or this one
+// wasn't already showing). Deliberately does NOT just read
+// document.getElementById('sfm-bottom-sheet')'s CURRENT scrollTop: if
+// another overlapping call's own "Loading…" placeholder (marked with
+// data-sfm-loading, short content, its scrollTop necessarily clamped to
+// 0) happens to be on screen at this exact moment, reading the DOM
+// directly would capture that clamped 0 and hand it forward as "the"
+// position to restore -- silently destroying the real position even
+// though this fix already stopped a single call from corrupting its own
+// restore. Falling back to the shared memory (only ever updated with a
+// value captured this same safe way, in showBottomSheet's own real-
+// content branch) breaks that cascade regardless of how many calls stack.
+function _captureBookingDetailScrollTop(id){
+  if(window._openBookingDetailId!==id)return 0;
+  var sheet=document.getElementById('sfm-bottom-sheet');
+  if(!sheet||!sheet.firstElementChild)return _bookingSheetScrollMemory;
+  // Writes the memory immediately, right here at capture time -- not just
+  // after a render eventually finishes -- so a SECOND overlapping call
+  // (e.g. a live booking:updated push landing while this same action's
+  // own "reopen the detail" follow-up call is still in flight) that
+  // happens to capture while THIS call's own "Loading…" placeholder is
+  // showing still gets the right value: whichever call in the chain runs
+  // FIRST always sees real content (no marker yet) and seeds memory
+  // correctly, so every later overlapping call -- no matter how many
+  // stack up, or in what order their fetches resolve -- has a good value
+  // to fall back to instead of the placeholder's clamped-to-0 scrollTop.
+  var value=sheet.querySelector('[data-sfm-loading]')?_bookingSheetScrollMemory:sheet.firstElementChild.scrollTop;
+  _bookingSheetScrollMemory=value;
+  return value;
+}
 async function openVendorBookingDetail(id){
-  // Refreshing the SAME already-open booking (an action inside it, or a
-  // live booking:updated push) keeps the sheet's current scroll position
-  // instead of snapping back to the top -- only a genuinely new open
-  // (a different booking, or this one wasn't already showing) starts at 0.
-  // Captured as a real NUMBER exactly once, right here, before the
-  // "Loading…" placeholder below ever touches the DOM -- see
-  // showBottomSheet's own comment on why re-deriving this from whatever's
-  // currently on screen at each step would just capture the placeholder's
-  // own clamped-to-0 scroll instead of the real position to restore.
-  var _restoreScrollTop=0;
-  if(window._openBookingDetailId===id){
-    var _existingSheet=document.getElementById('sfm-bottom-sheet');
-    if(_existingSheet&&_existingSheet.firstElementChild)_restoreScrollTop=_existingSheet.firstElementChild.scrollTop;
-  }
+  var _restoreScrollTop=_captureBookingDetailScrollTop(id);
   window._openBookingDetailId=id;window._openBookingDetailViewer='vendor';
   bindBookingLiveUpdateListener();
   if(_socket)_socket.emit('booking:join',{bookingId:id});
@@ -11729,7 +11754,7 @@ async function openVendorBookingDetail(id){
   // Same pattern as refreshCustomerActiveSessionBanner's own
   // _customerBannerReqSeq.
   var _mySeq=++_vendorBookingDetailReqSeq;
-  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_restoreScrollTop);
+  showBottomSheet('Booking Details','<div data-sfm-loading="1" style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_restoreScrollTop);
   try{
     var res=await api('/bookings/'+id);
     if(_mySeq!==_vendorBookingDetailReqSeq)return;
@@ -11927,6 +11952,14 @@ async function openVendorBookingDetail(id){
       +pendingEditBlock
       +vendorStatusBlock;
     showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_restoreScrollTop);
+    // Keep the shared memory in sync with wherever this REAL-content
+    // render actually landed (normally just _restoreScrollTop echoed
+    // back, but also picks up genuine scrolling that happened between
+    // this call starting and finishing) -- this is the only place the
+    // memory is ever written, so it's never contaminated by a transient
+    // "Loading…" placeholder's clamped position.
+    var _sheetNow=document.getElementById('sfm-bottom-sheet');
+    if(_sheetNow&&_sheetNow.firstElementChild)_bookingSheetScrollMemory=_sheetNow.firstElementChild.scrollTop;
   }catch(err){
     if(_mySeq!==_vendorBookingDetailReqSeq)return;
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
@@ -12221,14 +12254,9 @@ function _markRatingSkipped(id){
 // event date hasn't passed yet get a real "Edit Booking" action.
 var _customerBookingDetailReqSeq=0;
 async function openCustomerHistoryDetail(kind,id){
-  // Same "capture the real scroll number exactly once, up front" rule as
-  // openVendorBookingDetail -- see showBottomSheet's own comment on why
-  // this can't be re-derived at each showBottomSheet call.
-  var _restoreScrollTop=0;
-  if(kind==='booking'&&window._openBookingDetailId===id){
-    var _existingSheet=document.getElementById('sfm-bottom-sheet');
-    if(_existingSheet&&_existingSheet.firstElementChild)_restoreScrollTop=_existingSheet.firstElementChild.scrollTop;
-  }
+  // Same shared memory + Loading-marker fallback as openVendorBookingDetail
+  // -- see _captureBookingDetailScrollTop's own comment.
+  var _restoreScrollTop=kind==='booking'?_captureBookingDetailScrollTop(id):0;
   if(kind==='booking'){
     window._openBookingDetailId=id;window._openBookingDetailViewer='customer';
     bindBookingLiveUpdateListener();
@@ -12238,7 +12266,7 @@ async function openCustomerHistoryDetail(kind,id){
   // only applied to the 'booking' kind below (a session has no
   // engage-style action prone to this race).
   var _mySeq=kind==='booking'?++_customerBookingDetailReqSeq:null;
-  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_restoreScrollTop);
+  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div data-sfm-loading="1" style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_restoreScrollTop);
   if(kind==='session'){
     try{
       var sres=await api('/shop-sessions/'+id);
@@ -12624,6 +12652,10 @@ async function openCustomerHistoryDetail(kind,id){
       ):'')
       +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
     showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_restoreScrollTop);
+    // Keep the shared memory in sync -- see openVendorBookingDetail's own
+    // identical line for why.
+    var _sheetNow=document.getElementById('sfm-bottom-sheet');
+    if(_sheetNow&&_sheetNow.firstElementChild)_bookingSheetScrollMemory=_sheetNow.firstElementChild.scrollTop;
     // Cached by id so the Edit button above can pass just the id through
     // the onclick attribute instead of inlining JSON.stringify(b) directly
     // into an HTML attribute -- any apostrophe in b.notes/b.venue used to
