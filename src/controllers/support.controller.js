@@ -248,10 +248,10 @@ async function updateTicketStatus(req, res, next) {
         // releaseAllHoldsForContext/resolveDisputedHoldsForContext calls
         // below already deduct the platform's 10% cut in real time for
         // both booking types -- no separate commission charge needed here.
-        // (In practice no path currently creates a BOOKING-context dispute
-        // ticket for an EVENT_PLANNING booking -- confirmBookingCompletion,
-        // the only creator, is Home-Cook-only -- but this stays
-        // type-agnostic rather than assuming that never changes.)
+        // confirmBookingCompletion (the only creator of a BOOKING-context
+        // dispute) is type-agnostic now -- Event Planner bookings go
+        // through the exact same two-sided completion/dispute flow as
+        // Home Cook -- so this genuinely needs to stay type-agnostic too.
         const booking =
           escrowCtx.contextType === "BOOKING"
             ? await prisma.booking.findUnique({ where: { id: escrowCtx.bookingId }, include: { vendor: { select: { id: true, userId: true } } } })
