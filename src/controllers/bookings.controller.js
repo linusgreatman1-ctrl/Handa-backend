@@ -70,10 +70,10 @@ function clampGuestCount(guestCount, servicePackage) {
 // (packageKey "premium") go through the negotiated-release flow instead of
 // an all-or-nothing escrow payout: full payment still happens upfront (see
 // orderFlow.confirmBookingPayment), but the vendor is paid out in stages
-// the customer controls (endBookingNegotiation/releaseBookingPayment/
-// requestAdditionalPayment/respondAdditionalPayment, below), with whatever
-// remains at completion paying out through the existing completion flow
-// unchanged.
+// the customer controls (engageBooking/endBookingConversation/
+// releaseBookingPayment/requestAdditionalPayment/respondAdditionalPayment,
+// below), with whatever remains at completion paying out through the
+// existing completion flow unchanged.
 function isNegotiatedBooking(booking) {
   return booking.type === "EVENT_PLANNING" || booking.packageKey === "premium";
 }
@@ -629,11 +629,13 @@ async function payBooking(req, res, next) {
 // completeBooking.
 //
 // Negotiated bookings (Event Planner always, Home Cook's Event Catering
-// Package) additionally require negotiation to have ended AND the
-// customer to have released at least the first payment -- "when they
-// release payment to vendor before it will now continue from job started
-// button." Event Planner never had this stage before at all; it now
-// shares it with Home Cook.
+// Package) additionally require the customer to have released at least
+// the first payment -- "when they release payment to vendor before it
+// will now continue from job started button." Engaging/chatting first is
+// entirely optional (see engageBooking/endBookingConversation) -- the
+// customer can release straight away with no conversation at all. Event
+// Planner never had this stage before at all; it now shares it with Home
+// Cook.
 async function startBookingJob(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
@@ -643,9 +645,8 @@ async function startBookingJob(req, res, next) {
     if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before the job can start." });
     if (booking.vendorJobStartedAt) return res.status(409).json({ error: "You already started this job." });
     if (booking.pendingEditSnapshot) return res.status(409).json({ error: "Accept or decline the customer's pending edit before starting the job." });
-    if (isNegotiatedBooking(booking)) {
-      if (!booking.negotiationEndedAt) return res.status(409).json({ error: "End negotiation before starting the job." });
-      if (booking.amountReleasedKobo <= 0) return res.status(409).json({ error: "The customer must release the first payment before the job can start." });
+    if (isNegotiatedBooking(booking) && booking.amountReleasedKobo <= 0) {
+      return res.status(409).json({ error: "The customer must release the first payment before the job can start." });
     }
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorJobStartedAt: new Date() } });
@@ -657,28 +658,78 @@ async function startBookingJob(req, res, next) {
   }
 }
 
-// Either party can end negotiation once. Requires no pending edit (same
-// mutual-exclusion reasoning as startBookingJob's own guard, right above)
-// so the two state machines never race. Once ended, the customer's
-// Release Payment action (and, once the first release has happened, the
-// vendor's ability to ask for more) unlock -- see releaseBookingPayment/
-// requestAdditionalPayment below.
-async function endBookingNegotiation(req, res, next) {
+// Either party's "Engage" tap (customer: "Engage Your Vendor", vendor:
+// "Engage Customer") -- purely a chat/call unlock, never a payment gate.
+// Idempotent (re-tapping your own already-set engage is a harmless no-op)
+// so the frontend doesn't need to carefully track whether it already
+// fired. Once BOTH customerEngagedAt and vendorEngagedAt are set, the
+// frontend shows Chat/Call plus "End Booking Conversation"
+// (endBookingConversation, below) -- until then, whichever side has
+// engaged just waits on the other. Scoped to before the first release
+// (amountReleasedKobo===0) -- once the customer has released payment,
+// the ordinary always-visible contact buttons take over instead.
+async function engageBooking(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    const isCustomer = booking.customerId === req.user.id;
+    const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
+    if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
+    if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no engage/conversation stage." });
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed first." });
+    if (booking.pendingEditSnapshot) return res.status(409).json({ error: "Resolve the pending edit first." });
+    if (booking.amountReleasedKobo > 0) return res.status(409).json({ error: "Payment has already been released for this booking." });
+
+    const field = isCustomer ? "customerEngagedAt" : "vendorEngagedAt";
+    if (booking[field]) return res.json({ booking });
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { [field]: new Date() } });
+    const vendor = isCustomer ? await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } }) : null;
+    const notifyUserId = isCustomer ? vendor?.userId : booking.customerId;
+    const bothEngaged = !!(updated.customerEngagedAt && updated.vendorEngagedAt);
+    if (notifyUserId) {
+      await notify(
+        req.app.get("io"),
+        notifyUserId,
+        "ORDER_UPDATE",
+        bothEngaged ? "Ready to chat" : "Vendor engagement" ,
+        bothEngaged
+          ? `You can now chat and call about booking #${booking.bookingNumber}.`
+          : `${isCustomer ? "The customer" : "The vendor"} wants to engage about booking #${booking.bookingNumber}.`,
+        { bookingId: booking.id }
+      ).catch(() => {});
+    }
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Either party can end an active (or one-sided) conversation. Clears both
+// engaged timestamps back to null -- either side can tap Engage again
+// later, this isn't a one-time transition. negotiationEndedAt/
+// negotiationEndedBy are still stamped as a harmless historical "a
+// conversation happened" marker, but nothing reads them as a gate anymore
+// -- Release Payment (releaseBookingPayment, below) has always been
+// available regardless, engaged or not.
+async function endBookingConversation(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     const isCustomer = booking.customerId === req.user.id;
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
-    if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no negotiation stage." });
-    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed before negotiation can end." });
-    if (booking.negotiationEndedAt) return res.status(409).json({ error: "Negotiation has already ended for this booking." });
-    if (booking.pendingEditSnapshot) return res.status(409).json({ error: "Resolve the pending edit before ending negotiation." });
+    if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no engage/conversation stage." });
+    if (!booking.customerEngagedAt && !booking.vendorEngagedAt) return res.status(409).json({ error: "No conversation is currently active." });
 
     const endedBy = isCustomer ? "CUSTOMER" : "VENDOR";
-    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { negotiationEndedAt: new Date(), negotiationEndedBy: endedBy } });
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: { customerEngagedAt: null, vendorEngagedAt: null, negotiationEndedAt: new Date(), negotiationEndedBy: endedBy },
+    });
     const notifyUserId = isCustomer ? booking.vendor.userId : booking.customerId;
-    await notify(req.app.get("io"), notifyUserId, "ORDER_UPDATE", "Negotiation ended", `Negotiation ended for booking #${booking.bookingNumber} — the customer can now release payment.`, { bookingId: booking.id });
+    await notify(req.app.get("io"), notifyUserId, "ORDER_UPDATE", "Conversation ended", `The ${isCustomer ? "customer" : "vendor"} ended the conversation for booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -689,13 +740,15 @@ async function endBookingNegotiation(req, res, next) {
 // Customer-only. Draws down the real HELD hold by exactly amountKobo --
 // the hold is already funded in full (see orderFlow.confirmBookingPayment),
 // this only ever moves money OUT of an already-existing hold, never
-// charges anything new.
+// charges anything new. Available any time the booking is CONFIRMED with
+// something still held -- engaging/chatting the vendor first is entirely
+// optional, never required (see engageBooking's own comment).
 async function releaseBookingPayment(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
     if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no negotiated release flow." });
-    if (!booking.negotiationEndedAt) return res.status(409).json({ error: "End negotiation before releasing payment." });
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed first." });
 
     const hold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
     if (!hold) return res.status(409).json({ error: "There's nothing left in escrow for this booking." });
@@ -727,7 +780,7 @@ async function requestAdditionalPayment(req, res, next) {
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     assertVendorOwnsBooking(req, booking);
     if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no negotiated release flow." });
-    if (!booking.negotiationEndedAt || booking.amountReleasedKobo <= 0) {
+    if (booking.amountReleasedKobo <= 0) {
       return res.status(409).json({ error: "The customer must release the first payment before you can request more." });
     }
     // Additional-payment requests belong to the "waiting for the job/event
@@ -1039,7 +1092,8 @@ module.exports = {
   declineBooking,
   payBooking,
   startBookingJob,
-  endBookingNegotiation,
+  engageBooking,
+  endBookingConversation,
   releaseBookingPayment,
   requestAdditionalPayment,
   respondAdditionalPayment,

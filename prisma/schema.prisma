@@ -473,12 +473,18 @@ model Booking {
   // Negotiated-release flow: Event Planner (always) and Home Cook's Event
   // Catering Package (packageKey "premium") pay the full total into escrow
   // upfront like any other booking, but the payout to the vendor is staged
-  // instead of all-or-nothing. Once CONFIRMED, either party can end
-  // negotiation (negotiationEndedAt/negotiationEndedBy) -- only then can
-  // the customer release chosen amounts from the held escrow
-  // (amountReleasedKobo tracks the running total released so far; the real
-  // remaining balance lives on the EscrowHold row itself, see
-  // escrow.service.js's partialReleaseHold). vendorJobStartedAt (below)
+  // instead of all-or-nothing. The customer can release chosen amounts from
+  // the held escrow (releaseBookingPayment) at ANY point while CONFIRMED --
+  // engaging/chatting is optional, never a gate. customerEngagedAt/
+  // vendorEngagedAt are set independently by each side's own "Engage" tap
+  // (engageBooking); once BOTH are set, chat/call unlock, ending with
+  // either party's endBookingConversation tap, which clears both engaged
+  // timestamps back to null (repeatable -- either side can re-engage later)
+  // and stamps negotiationEndedAt/negotiationEndedBy purely as a
+  // historical "a conversation happened" marker, no longer a functional
+  // gate on anything. amountReleasedKobo tracks the running total released
+  // so far; the real remaining balance lives on the EscrowHold row itself,
+  // see escrow.service.js's partialReleaseHold. vendorJobStartedAt (below)
   // only becomes settable once the first release has happened. While
   // waiting for the job/event day, the vendor can ask for more
   // (pendingPaymentRequestKobo/pendingPaymentRequestedAt -- one in flight
@@ -488,6 +494,8 @@ model Booking {
   // the existing completion flow, unchanged.
   negotiationEndedAt        DateTime?
   negotiationEndedBy        String?
+  customerEngagedAt         DateTime?
+  vendorEngagedAt           DateTime?
   amountReleasedKobo        Int       @default(0)
   pendingPaymentRequestKobo Int?
   pendingPaymentRequestedAt DateTime?
