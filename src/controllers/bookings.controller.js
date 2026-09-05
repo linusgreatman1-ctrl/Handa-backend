@@ -717,9 +717,10 @@ async function releaseBookingPayment(req, res, next) {
 }
 
 // Vendor-only. Only after the first release (i.e. "waiting for the
-// job/event day" has genuinely begun) -- matches "As both are waiting for
-// the day of the job or event, the vendor should have a button to ask for
-// additional payment." One in-flight request at a time.
+// job/event day" has genuinely begun) and only before Job Started --
+// matches "As both are waiting for the day of the job or event, the
+// vendor should have a button to ask for additional payment," explicitly
+// not once the job itself has started. One in-flight request at a time.
 async function requestAdditionalPayment(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
@@ -729,6 +730,11 @@ async function requestAdditionalPayment(req, res, next) {
     if (!booking.negotiationEndedAt || booking.amountReleasedKobo <= 0) {
       return res.status(409).json({ error: "The customer must release the first payment before you can request more." });
     }
+    // Additional-payment requests belong to the "waiting for the job/event
+    // day" window -- once Job Started is tapped, this is over; the only
+    // thing left is Mark Job Complete, and whatever remains held pays out
+    // there automatically.
+    if (booking.vendorJobStartedAt) return res.status(409).json({ error: "You can no longer request additional payment once the job has started." });
     if (booking.pendingPaymentRequestKobo) return res.status(409).json({ error: "You already have a payment request awaiting the customer's response." });
 
     const hold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });

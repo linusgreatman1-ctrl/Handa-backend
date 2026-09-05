@@ -11414,19 +11414,24 @@ function _isEventDateTodayOrPast(eventDate){
 function _vendorBookingWriteup(b,isCook){
   if(b.status!=='CONFIRMED')return null;
   if(b.pendingEditSnapshot)return {text:'✏️ Customer proposed changes — open to review',color:'#F5A623'};
-  if(isCook){
-    if(b.vendorConfirmedCompleteAt)return {text:'⏳ Waiting for customer to confirm completion',color:'#F5A623'};
-    if(b.vendorJobStartedAt)return {text:'▶️ Job Started',color:'#9B59B6'};
-    return _isEventDateTodayOrPast(b.eventDate)
-      ?{text:'📅 Today is cooking day',color:'#3B9FE8'}
-      :{text:'⏳ Waiting for cooking day',color:'#9A9390'};
+  // Event Planner (always) and Home Cook's Event Catering Package now go
+  // through the negotiated-release flow -- negotiate -> customer releases
+  // -> Job Started -> vendor can request more -> completion. These states
+  // sit BEFORE the plain Job Started/completion ones below, which now
+  // apply to EP too (it sets vendorJobStartedAt/vendorConfirmedCompleteAt
+  // exactly like Home Cook under this flow -- EP no longer skips straight
+  // from CONFIRMED to "waiting for event day").
+  var isNegotiated=!isCook||b.packageKey==='premium';
+  if(isNegotiated){
+    if(!b.negotiationEndedAt)return {text:'🤝 Negotiations Ongoing',color:'#9B59B6'};
+    if(b.pendingPaymentRequestKobo)return {text:'💵 Additional payment requested — awaiting customer',color:'#F5A623'};
+    if(b.amountReleasedKobo===0)return {text:'⏳ Awaiting first payment release',color:'#9A9390'};
   }
-  // Event Planner: no Job Started, no two-sided completion -- the whole
-  // accepted-to-complete window is just "waiting for / it's the event
-  // day" (Mark Job Complete ends it immediately either way).
+  if(b.vendorConfirmedCompleteAt)return {text:'⏳ Waiting for customer to confirm completion',color:'#F5A623'};
+  if(b.vendorJobStartedAt)return {text:'▶️ Job Started',color:'#9B59B6'};
   return _isEventDateTodayOrPast(b.eventDate)
-    ?{text:'📅 Today is event day',color:'#3B9FE8'}
-    :{text:'⏳ Awaiting event day',color:'#9A9390'};
+    ?{text:(isCook?'📅 Today is cooking day':'📅 Today is event day'),color:'#3B9FE8'}
+    :{text:(isCook?'⏳ Waiting for cooking day':'⏳ Awaiting event day'),color:'#9A9390'};
 }
 function renderVendorBookingsList(isCook,limit){
   try{
@@ -11441,12 +11446,15 @@ function renderVendorBookingsList(isCook,limit){
       var sc=statusColors[b.status]||'#9A9390';
       var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
       var sub=isCook?('📍 '+(b.venue||'Address TBD')):('🎊 '+(b.servicePackage?b.servicePackage.label:'Custom')+' • 📍 '+(b.venue||'Venue TBD'));
-      // Event Planner never takes payment through the app -- a request is
-      // actionable as soon as it arrives (REQUESTED). Home Cook now collects
-      // payment BEFORE the vendor ever sees it (see payBooking), so a
-      // REQUESTED cook booking just means "customer hasn't paid yet" --
-      // nothing to accept/decline until it reaches PAID.
-      var actionableStatus=isCook?'PAID':'REQUESTED';
+      // Every booking type now collects payment BEFORE the vendor ever
+      // sees it (see payBooking/orderFlow.confirmBookingPayment) -- a
+      // REQUESTED booking, Home Cook or direct Event Planner alike, just
+      // means "customer hasn't paid yet," nothing to accept/decline until
+      // it reaches PAID. (A proposal-created EP booking skips PAID
+      // entirely and auto-CONFIRMs on payment, since the vendor already
+      // committed to the price by proposing -- it never shows this card
+      // state at all.)
+      var actionableStatus='PAID';
       // Was inline Accept/Decline right on the card -- matching how a new
       // Event Request is already handled (a single "Open Event Request"
       // button, the real Accept/Decline living inside the detail view, not
@@ -11455,7 +11463,7 @@ function renderVendorBookingsList(isCook,limit){
       // the bottom of openVendorBookingDetail itself.
       var actions=b.status===actionableStatus
         ?'<button onclick="event.stopPropagation();openVendorBookingDetail(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">📋 Open Booking</button>'
-        :(isCook&&b.status==='REQUESTED'?'<div style="margin-top:10px;padding:8px;border-radius:9px;background:rgba(154,147,144,.1);color:#9A9390;font-size:11px;font-weight:700;text-align:center;">Awaiting customer payment</div>':'');
+        :(b.status==='REQUESTED'?'<div style="margin-top:10px;padding:8px;border-radius:9px;background:rgba(154,147,144,.1);color:#9A9390;font-size:11px;font-weight:700;text-align:center;">Awaiting customer payment</div>':'');
       var writeup=_vendorBookingWriteup(b,isCook);
       var writeupHtml=writeup?('<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:'+writeup.color+'1A;color:'+writeup.color+';font-size:11px;font-weight:700;text-align:center;">'+writeup.text+'</div>'):'';
       return '<div onclick="openVendorBookingDetail(\''+b.id+'\')" style="background:#1C1C1C;border-radius:14px;padding:14px;margin-bottom:10px;border:1.5px solid #2A2850;cursor:pointer"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="color:#F2EDE8">'+(b.customer?b.customer.name:'Customer')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px">'+b.status+'</span></div><p style="color:#9A9390;font-size:12px;margin:0 0 2px">'+sub+'</p><p style="color:#9A9390;font-size:12px;margin:0">📅 '+when+(b.eventTime?' at '+b.eventTime:'')+' • ₦'+Number(Math.round(b.totalKobo/100)).toLocaleString()+'</p>'+actions+writeupHtml+'</div>';
@@ -11579,6 +11587,15 @@ async function openVendorBookingDetail(id){
     // negotiate -> customer releases chosen amounts -> Job Started ->
     // vendor can request more -> whatever's left pays out at completion.
     var isNegotiated=b.type==='EVENT_PLANNING'||b.packageKey==='premium';
+    // Negotiate is a real two-step reveal, not everything shown at once:
+    // tapping "Negotiate" is what surfaces Chat/Call (and, underneath
+    // them, Negotiation Ended) -- collapsed by default on every fresh
+    // open/re-render, tracked per-booking so switching between two
+    // different bookings' details doesn't leak one's expanded state onto
+    // the other. Read further down to also suppress the generic Chat/Call
+    // block while collapsed, so they don't double up once expanded.
+    var vendorNegoOpen=!!(window._vendorNegoOpen&&window._vendorNegoOpen[b.id]);
+    var vendorNegotiationCollapsed=false;
     var vendorStatusBlock='';
     if(vendorHasOpenDispute){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
@@ -11623,17 +11640,31 @@ async function openVendorBookingDetail(id){
       }else if(b.vendorConfirmedCompleteAt){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>';
       }else if(isNegotiated&&!b.negotiationEndedAt){
-        vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F91D; Negotiations Ongoing</div><div style="color:#9A9390;font-size:11px;margin-top:2px;">Chat with the customer, then end negotiation when you\'ve agreed.</div></div>'
-          +'<button onclick="vendorEndBookingNegotiation(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Negotiation Ended</button>';
+        if(!vendorNegoOpen){
+          vendorNegotiationCollapsed=true;
+          vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F91D; Negotiations Ongoing</div></div>'
+            +'<button onclick="vendorOpenNegotiatePanel(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Negotiate</button>';
+        }else{
+          vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F91D; Negotiations Ongoing</div><div style="color:#9A9390;font-size:11px;margin-top:2px;">Chat with the customer, then end negotiation when you\'ve agreed.</div></div>'
+            +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'
+            +'<button onclick="openVendorBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
+            +'<button onclick="openVendorBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
+            +'</div>'
+            +'<button onclick="vendorEndBookingNegotiation(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Negotiation Ended</button>';
+        }
       }else if(isNegotiated&&b.pendingPaymentRequestKobo){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">&#x23F3; Waiting for the customer to respond to your &#x20a6;'+Number(Math.round(b.pendingPaymentRequestKobo/100)).toLocaleString()+' request</div>';
       }else if(isNegotiated&&b.negotiationEndedAt&&b.amountReleasedKobo===0){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;color:#9A9390;font-size:12px;font-weight:700;text-align:center;">&#x23F3; Waiting for the customer to release payment</div>';
       }else if((isCookB||isNegotiated)&&!b.vendorJobStartedAt){
-        vendorStatusBlock='<button onclick="vendorStartJob(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">&#x25B6;&#xFE0F; Job Started</button>';
+        // Negotiated bookings: request-additional-payment belongs HERE --
+        // while both sides are still just waiting for the job/event day to
+        // arrive -- not after Job Started. Once Job Started is tapped, the
+        // only remaining action is Mark Job Complete.
+        vendorStatusBlock=(isNegotiated?'<button onclick="vendorRequestAdditionalPayment(\''+b.id+'\')" style="width:100%;margin-top:14px;margin-bottom:10px;padding:13px;border-radius:12px;border:1.5px solid rgba(155,89,182,.4);background:transparent;color:#9B59B6;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4B5; Request Additional Payment</button>':'')
+          +'<button onclick="vendorStartJob(\''+b.id+'\')" style="width:100%;margin-top:'+(isNegotiated?'0':'14')+'px;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">&#x25B6;&#xFE0F; Job Started</button>';
       }else{
-        vendorStatusBlock=(isNegotiated?'<button onclick="vendorRequestAdditionalPayment(\''+b.id+'\')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:1.5px solid rgba(155,89,182,.4);background:transparent;color:#9B59B6;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4B5; Request Additional Payment</button>':'')
-          +'<button onclick="vendorMarkBookingComplete(\''+b.id+'\','+(!isCookB)+')" style="width:100%;margin-top:'+(isNegotiated?'10':'14')+'px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>';
+        vendorStatusBlock='<button onclick="vendorMarkBookingComplete(\''+b.id+'\','+(!isCookB)+')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>';
       }
     }
     var pendingEditBlock='';
@@ -11662,7 +11693,11 @@ async function openVendorBookingDetail(id){
     // Decline buttons key off below) -- nothing to chat/call about until
     // the vendor has accepted the booking.
     var vendorNotYetDecided=b.status===(isCookB?'PAID':'REQUESTED');
-    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute;
+    // vendorNegotiationCollapsed: Chat/Call live INSIDE the expanded
+    // negotiation panel above instead (tap Negotiate to reveal them) --
+    // suppressing the generic block here while collapsed avoids showing
+    // them twice once expanded, or before the vendor has even opened it.
+    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute||vendorNegotiationCollapsed;
     var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&!(isNegotiated&&b.amountReleasedKobo>0)&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var contactAndCancelBlock=(vendorHideContactButtons&&!vendorCancellable)?'':(
       '<div style="margin-top:14px;">'
@@ -11733,6 +11768,16 @@ function vendorStartJob(id){
     _refreshVendorBookingsListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not start the job','warning');});
 }
+// Reveals Chat/Call/Negotiation Ended for this one booking's detail sheet
+// -- collapsed by default (see vendorNegoOpen in openVendorBookingDetail),
+// so re-fetching and re-rendering is the simplest way to flip it, same
+// pattern this file already uses for every other "mutate then reopen"
+// action, even though nothing actually changed server-side here.
+function vendorOpenNegotiatePanel(id){
+  window._vendorNegoOpen=window._vendorNegoOpen||{};
+  window._vendorNegoOpen[id]=true;
+  openVendorBookingDetail(id);
+}
 function vendorEndBookingNegotiation(id){
   api('/bookings/'+id+'/negotiation/end',{method:'POST'}).then(function(){
     showToast&&showToast('Negotiation ended — the customer can now release payment.','success');
@@ -11759,6 +11804,13 @@ async function confirmVendorRequestPayment(id){
     openVendorBookingDetail(id);
     _refreshVendorBookingsListIfOpen();
   }catch(err){showToast&&showToast(err.message||'Could not send the request','warning');}
+}
+// Same collapsed-by-default reveal as the vendor's own negotiation panel
+// -- see vendorOpenNegotiatePanel's comment.
+function customerOpenNegotiatePanel(id){
+  window._custNegoOpen=window._custNegoOpen||{};
+  window._custNegoOpen[id]=true;
+  openCustomerHistoryDetail('booking',id);
 }
 function customerEndBookingNegotiation(id){
   api('/bookings/'+id+'/negotiation/end',{method:'POST'}).then(function(){
@@ -12112,6 +12164,13 @@ async function openCustomerHistoryDetail(kind,id){
     // vendor can request more -> whatever's left pays out at completion.
     var isNegotiated=isEP||b.packageKey==='premium';
     var negotiationOngoing=!isTerminal&&!hasPendingEdit&&isNegotiated&&b.status==='CONFIRMED'&&!b.negotiationEndedAt;
+    // Negotiate is a real two-step reveal -- tapping it is what surfaces
+    // Chat/Call (and Negotiation Ended underneath them), collapsed by
+    // default on every fresh open/re-render, tracked per-booking. The
+    // generic Chat/Call block further down is suppressed while collapsed
+    // (see hideContactButtons) so they don't show twice once expanded.
+    var custNegoOpen=!!(window._custNegoOpen&&window._custNegoOpen[b.id]);
+    var negotiationCollapsed=negotiationOngoing&&!custNegoOpen;
     var awaitingRelease=!isTerminal&&!hasPendingEdit&&isNegotiated&&b.negotiationEndedAt&&b.amountReleasedKobo===0;
     var hasPaymentRequest=!isTerminal&&!!b.pendingPaymentRequestKobo;
     // Home Cook only: before the vendor taps "Job Started", the customer
@@ -12141,7 +12200,7 @@ async function openCustomerHistoryDetail(kind,id){
     // show underneath it even though the dispute is what's supposed to be
     // the only thing left to do at that point (an admin resolves it, not
     // a chat message).
-    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute;
+    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute||negotiationCollapsed;
     // Home Cook: visible from the moment the booking is sent (REQUESTED/
     // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
     // the vendor taps Job Started -- the event date/time passing is NOT a
@@ -12261,10 +12320,19 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="payForBooking(\''+b.id+'\','+b.totalKobo+',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="width:100%;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B3; Resume Payment</button>'
         +'</div>'
       ):'')
-      +(negotiationOngoing?(
+      +(negotiationOngoing&&negotiationCollapsed?(
+        '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;">'
+        +'<div style="color:#9B59B6;font-size:14px;font-weight:800;margin-bottom:12px;">&#x1F91D; Negotiations Ongoing</div>'
+        +'<button onclick="customerOpenNegotiatePanel(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">Negotiate</button>'
+        +'</div>'
+      ):negotiationOngoing?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;">'
         +'<div style="color:#9B59B6;font-size:14px;font-weight:800;margin-bottom:2px;">&#x1F91D; Negotiations Ongoing</div>'
         +'<div style="color:#9A9390;font-size:12px;margin-bottom:12px;">Chat with the vendor, then end negotiation when you\'ve agreed.</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
+        +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
+        +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
+        +'</div>'
         +'<button onclick="customerEndBookingNegotiation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">Negotiation Ended</button>'
         +'</div>'
       ):'')
@@ -14033,12 +14101,23 @@ var STATUS_COLORS={REQUESTED:'#F5A623',OPEN:'#F5A623',ACCEPTED:'#3B9FE8',DECLINE
 // Job Started / two-sided-completion stage at all.
 function _customerBookingWriteup(b){
   var isEP=b.type==='EVENT_PLANNING';
-  if(!isEP&&b.status==='PAID'||isEP&&b.status==='REQUESTED'){
-    return {text:'⏳ Waiting for vendor to accept booking',color:'#9A9390'};
-  }
+  var isNegotiated=isEP||b.packageKey==='premium';
+  // Every booking type now pays upfront before the vendor decides -- PAID
+  // means paid and waiting on the vendor's decision, for Home Cook and
+  // Event Planner alike (EP used to skip payment entirely and treat
+  // REQUESTED as this exact "waiting for accept" state -- no longer true
+  // now that EP pays into escrow just like Home Cook).
+  if(b.status==='PAID')return {text:'⏳ Waiting for vendor to accept booking',color:'#9A9390'};
   if(b.status!=='CONFIRMED')return null;
   if(b.pendingEditSnapshot)return {text:'✏️ Waiting for vendor to accept the changes',color:'#F5A623'};
-  if(isEP)return {text:'⏳ Waiting for job to be completed',color:'#9A9390'};
+  // Event Planner (always) and Home Cook's Event Catering Package go
+  // through the negotiated-release flow before reaching the plain Job
+  // Started/completion states below, which now apply to EP too.
+  if(isNegotiated){
+    if(!b.negotiationEndedAt)return {text:'🤝 Negotiations Ongoing',color:'#9B59B6'};
+    if(b.pendingPaymentRequestKobo)return {text:'💵 Vendor requesting additional payment',color:'#F5A623'};
+    if(b.amountReleasedKobo===0)return {text:'💰 Release payment to continue',color:'#2ECC71'};
+  }
   if(b.vendorConfirmedCompleteAt)return {text:'👨‍🍳 Vendor is waiting your confirmation',color:'#F5A623'};
   if(b.vendorJobStartedAt)return {text:'👨‍🍳 Vendor has started the job',color:'#9B59B6'};
   return {text:'⏳ Waiting for job to start',color:'#9A9390'};
