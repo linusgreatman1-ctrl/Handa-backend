@@ -11675,6 +11675,7 @@ function _pendingEditSummaryHtml(pe,isEP){
   var itemsHtml=(pe.selectedItems&&pe.selectedItems.length)?('<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+itemsLabel+'</div>'+pe.selectedItems.map(function(it){return _itemRowHtml(it,isEP);}).join('')+'</div>'):'';
   return peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')+itemsHtml;
 }
+var _vendorBookingDetailReqSeq=0;
 async function openVendorBookingDetail(id){
   // Refreshing the SAME already-open booking (an action inside it, or a
   // live booking:updated push) keeps the sheet's current scroll position
@@ -11684,9 +11685,21 @@ async function openVendorBookingDetail(id){
   window._openBookingDetailId=id;window._openBookingDetailViewer='vendor';
   bindBookingLiveUpdateListener();
   if(_socket)_socket.emit('booking:join',{bookingId:id});
+  // Sequence-guards against overlapping calls -- e.g. a live
+  // booking:updated push (fired the instant an action's own POST commits)
+  // landing while that same action's own "reopen the detail" follow-up
+  // call is still separately in flight. Whichever call's fetch happens to
+  // resolve LAST used to always win, even if it started FIRST and is now
+  // carrying stale data -- this is exactly what could make an action like
+  // Engage appear to silently revert. Only the most recently STARTED call
+  // is ever allowed to render; an earlier one resolving late is discarded.
+  // Same pattern as refreshCustomerActiveSessionBanner's own
+  // _customerBannerReqSeq.
+  var _mySeq=++_vendorBookingDetailReqSeq;
   showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_preserveScroll);
   try{
     var res=await api('/bookings/'+id);
+    if(_mySeq!==_vendorBookingDetailReqSeq)return;
     var b=res.booking;
     var dt=res.disputeTicket;
     var c=b.customer||{};
@@ -11881,6 +11894,7 @@ async function openVendorBookingDetail(id){
       +vendorStatusBlock;
     showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_preserveScroll);
   }catch(err){
+    if(_mySeq!==_vendorBookingDetailReqSeq)return;
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
   }
 }
@@ -12144,6 +12158,7 @@ function _markRatingSkipped(id){
 // planner) and a Shop-For-Me session, since populateHistory() merges both
 // into one list. Bookings still in a live pre-completion status and whose
 // event date hasn't passed yet get a real "Edit Booking" action.
+var _customerBookingDetailReqSeq=0;
 async function openCustomerHistoryDetail(kind,id){
   // Same "refreshing the same open sheet keeps scroll position" rule as
   // openVendorBookingDetail -- see its own comment.
@@ -12153,6 +12168,10 @@ async function openCustomerHistoryDetail(kind,id){
     bindBookingLiveUpdateListener();
     if(_socket)_socket.emit('booking:join',{bookingId:id});
   }
+  // Same overlapping-call sequence guard as openVendorBookingDetail --
+  // only applied to the 'booking' kind below (a session has no
+  // engage-style action prone to this race).
+  var _mySeq=kind==='booking'?++_customerBookingDetailReqSeq:null;
   showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_preserveScroll);
   if(kind==='session'){
     try{
@@ -12239,6 +12258,7 @@ async function openCustomerHistoryDetail(kind,id){
   }
   try{
     var res=await api('/bookings/'+id);
+    if(_mySeq!==_customerBookingDetailReqSeq)return;
     var b=res.booking;
     b.reportTicket=res.reportTicket;
     var v=b.vendor||{};
@@ -12545,6 +12565,7 @@ async function openCustomerHistoryDetail(kind,id){
     window._bookingDetailCache[b.id]=b;
     if(isCompleted)startScreenIdleAutoHome('sfm-bottom-sheet',120000);
   }catch(err){
+    if(_mySeq!==_customerBookingDetailReqSeq)return;
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
   }
 }
