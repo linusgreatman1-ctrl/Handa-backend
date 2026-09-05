@@ -11663,9 +11663,17 @@ async function openVendorBookingDetail(id){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;">Dispute Resolved -- Refunded To The Customer</div>'
         +'</div>';
-    }else if(b.status===(isCookB?'PAID':'REQUESTED')){
-      // The real Accept/Decline action now lives here, at the bottom of
-      // the full detail view -- reached via the dashboard card's single
+    }else if(b.status==='PAID'){
+      // Every booking type now pays upfront before the vendor decides
+      // (Event Planner used to skip straight to REQUESTED->accept with no
+      // payment at all -- it now pays into escrow first, exactly like
+      // Home Cook, via orderFlow.confirmBookingPayment). A
+      // proposal-created EP booking never reaches this branch at all --
+      // it auto-CONFIRMs on payment since the vendor already committed to
+      // the price by proposing.
+      //
+      // The real Accept/Decline action lives here, at the bottom of the
+      // full detail view -- reached via the dashboard card's single
       // "Open Booking" button -- instead of two buttons sitting directly
       // on the list card, matching the same pattern already used for a
       // new Event Request (Open Event Request -> full details -> the real
@@ -11730,11 +11738,11 @@ async function openVendorBookingDetail(id){
     // backend's own real permission model (the vendor side never actually
     // needs to back out of an EP booking the way a Home Cook vendor might
     // need to before a physical job starts).
-    // Also hidden before the vendor has actually decided (REQUESTED for
-    // EP / PAID for Cook, the same "actionable" status the real Accept/
-    // Decline buttons key off below) -- nothing to chat/call about until
+    // Also hidden before the vendor has actually decided (PAID, for
+    // either type now -- the same "actionable" status the real Accept/
+    // Decline buttons key off above) -- nothing to chat/call about until
     // the vendor has accepted the booking.
-    var vendorNotYetDecided=b.status===(isCookB?'PAID':'REQUESTED');
+    var vendorNotYetDecided=b.status==='PAID';
     // vendorNegotiationOngoing (collapsed OR expanded): Chat/Call live
     // INSIDE the negotiation panel above instead (tap Negotiate to reveal
     // them) -- suppressing the generic block for the whole state, not
