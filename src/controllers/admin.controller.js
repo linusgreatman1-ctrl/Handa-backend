@@ -1371,7 +1371,19 @@ async function openDisputeThreadForTicketParty(req, res, next) {
     }
 
     const contextId = `${ticket.id}:${targetUserId}`;
-    let thread = await prisma.chatThread.findFirst({ where: { contextType: "DISPUTE", contextId } });
+    // Same "a closed thread is never reused" rule as the user-facing
+    // openThread/openSupportThread (chat.controller.js) -- without the
+    // closedAt:null filter, clicking "Chat Filer"/"Chat Vendor" again
+    // after either side ended the conversation (idle-close no longer
+    // applies to DISPUTE threads, but an explicit End Chat still can) just
+    // handed back the same dead thread, on which every send attempt then
+    // 409'd "This chat has ended" with no way to actually talk again while
+    // the dispute is still open. orderBy picks up the most recent one if
+    // more than one open-then-close round has happened on this dispute.
+    let thread = await prisma.chatThread.findFirst({
+      where: { contextType: "DISPUTE", contextId, closedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
     if (!thread) {
       thread = await prisma.chatThread.create({
         data: { contextType: "DISPUTE", contextId, participants: { create: [{ userId: targetUserId }] } },

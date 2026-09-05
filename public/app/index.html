@@ -591,7 +591,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       <!-- How escrow works -->
       <div style="background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2);border-radius:12px;padding:11px 13px">
         <div style="font-size:12px;font-weight:700;color:#F5A623;margin-bottom:7px">🔒 How Your Escrow Works</div>
-        <div style="font-size:12px;color:#9A9390;line-height:1.6">Your payment is locked in escrow when you pay. Funds are <strong style="color:#F2EDE8">only released</strong> once the job is confirmed complete, and the vendor is paid instantly minus Handa's 10% platform fee. If something goes wrong, you can report an issue — funds stay locked until Handa resolves it.</div>
+        <div style="font-size:12px;color:#9A9390;line-height:1.6">When you pay, your money doesn't go to the vendor — it moves into a secure Handa escrow account and stays there. <strong style="color:#F2EDE8">The vendor cannot withdraw, access, or touch any of it</strong> at this stage; it isn't in their wallet, it's held by Handa on your behalf. Funds are only released once <strong style="color:#F2EDE8">you</strong> confirm the job is complete and approve the release — Handa then pays the vendor instantly, minus our 10% platform fee. If something's wrong, report it before you approve: your money stays locked and untouched while Handa looks into it, with a full refund if you're right.</div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button onclick="showAddFundsModal()" style="flex:1;background:rgba(245,166,35,.15);border:1.5px solid rgba(245,166,35,.35);border-radius:12px;padding:10px;font-weight:700;font-size:13px;color:#F5A623;cursor:pointer;font-family:'DM Sans',sans-serif">+ Add Funds</button>
@@ -781,10 +781,11 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
       <div style="font-size:11px;font-weight:700;color:#F5A623;margin-bottom:6px;">🔒 How Escrow Protects You</div>
       <div style="font-size:11px;color:#9A9390;line-height:1.7;">
-        1. You pay → funds locked safely in escrow<br>
-        2. The vendor gets to work on your order<br>
-        3. Once the job is confirmed complete, escrow releases to the vendor (minus Handa's 10% platform fee)<br>
-        4. If something goes wrong, you can report an issue — funds stay locked until Handa resolves it, with a refund if you're right
+        1. You pay → funds move into a secure Handa escrow account, not to the vendor<br>
+        2. <strong style="color:#F2EDE8">The vendor cannot access, withdraw, or touch any of it</strong> — it just isn't in their wallet at this stage<br>
+        3. The vendor gets to work on your order<br>
+        4. Funds are only released once <strong style="color:#F2EDE8">you</strong> confirm the job is complete and approve it — Handa then pays the vendor instantly (minus our 10% platform fee)<br>
+        5. If something's wrong, report it before you approve — your money stays locked and untouched while Handa looks into it, with a full refund if you're right
       </div>
     </div>
     <div style="background:#242424;border:1.5px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:14px;" id="escrow-order-summary">
@@ -3202,6 +3203,7 @@ async function openChat(p){
     var myId=(S.user||{}).id;
     msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">Say hello \ud83d\udc4b</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
+    window._activeChatContextType=(mres.thread&&mres.thread.contextType)||(tres.thread&&tres.thread.contextType)||null;
     _setChatComposerClosed(!!((mres.thread&&mres.thread.closedAt)||(tres.thread&&tres.thread.closedAt)));
     bindAppChatSocketListener();
   }catch(err){
@@ -3235,6 +3237,7 @@ async function openSupportChat(contextId){
     var myId=(S.user||{}).id;
     msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">Hi! How can we help you today?</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
+    window._activeChatContextType='SUPPORT';
     _setChatComposerClosed(!!(mres.thread&&mres.thread.closedAt));
     bindAppChatSocketListener();
   }catch(err){
@@ -3259,6 +3262,7 @@ async function openChatByThreadId(threadId,title){
     var myId=(S.user||{}).id;
     msgsEl.innerHTML=mres.messages.length?mres.messages.map(function(m){return chatBubbleHtml(m,myId);}).join(''):'<div class="bub t">No messages yet.</div>';
     msgsEl.scrollTop=msgsEl.scrollHeight;
+    window._activeChatContextType=(mres.thread&&mres.thread.contextType)||null;
     _setChatComposerClosed(!!(mres.thread&&mres.thread.closedAt));
     bindAppChatSocketListener();
   }catch(err){
@@ -3280,6 +3284,14 @@ function chatBumpActivity(){ window._chatLastActivityAt=Date.now(); }
 var CHAT_IDLE_CLOSE_MS=3*60*1000;
 function startChatIdleWatch(){
   stopChatIdleWatch();
+  // Support and dispute chats are never auto-closed on idle -- only an
+  // explicit "End Chat" (either side) or an admin closing it ends them.
+  // A customer/vendor pausing to think, gather evidence, or step away for
+  // a few minutes mid-dispute must never find the conversation silently
+  // cut off. window._activeChatContextType is set by whichever of
+  // openChat/openSupportChat/openChatByThreadId opened the currently
+  // active thread, straight from the real ChatThread.contextType.
+  if(window._activeChatContextType==='SUPPORT'||window._activeChatContextType==='DISPUTE')return;
   chatBumpActivity();
   window._chatIdleIv=setInterval(function(){
     if(!window._activeChatThreadId)return;
@@ -3383,7 +3395,7 @@ function showChatRequestBanner(name,roleWord,threadId){
   document.body.insertAdjacentHTML('beforeend',html);
   setTimeout(function(){var el=document.getElementById('chat-request-banner');if(el)el.remove();},15000);
 }
-function closeChat(){document.getElementById('chat-ov').classList.remove('on');window._activeChatThreadId=null;stopChatIdleWatch();}
+function closeChat(){document.getElementById('chat-ov').classList.remove('on');window._activeChatThreadId=null;window._activeChatContextType=null;stopChatIdleWatch();}
 async function sendMsg(){
   var inp=document.getElementById('chat-inp');var txt=inp.value.trim();if(!txt)return;
   if(inp.disabled){showToast&&showToast('This chat has ended.','warning');return;}
@@ -8864,10 +8876,10 @@ async function _submitAppReview() {
 var _LEGAL_TERMS = [
   ['1. Who We Are', 'Handa ("Handa", "we", "us") operates a marketplace connecting customers with independent home cooks, event planners, shoppers, and riders across Nigeria. Handa is a technology platform -- home cooks and event planners are independent providers, not Handa employees, and Handa is not the seller of their food or event services.'],
   ['2. Your Account', 'You must provide accurate information when registering and keep your login details confidential. You are responsible for all activity on your account. One person may hold more than one role (customer, shopper, rider, home cook, event planner) on a single account. We may suspend or close an account that violates these terms, provides false information, or is used fraudulently.'],
-  ['3. Bookings & Orders', 'A Home Cook or Event Planner booking is only confirmed once the vendor accepts your request. Home Cook bookings are paid through the app and held in escrow until the service is confirmed complete. Event Planner bookings are agreed and paid for directly between you and the planner, outside the app -- Handa facilitates the introduction and booking record, but does not hold or process that payment. Shop-For-Me sessions are paid upfront through the app to cover your items budget, the shopper\'s session fee, and the rider\'s delivery fee, as one combined deposit shown to you in full, itemised, before you confirm payment.'],
-  ['4. Escrow, Completion & Commission', 'For Home Cook bookings and Shop-For-Me sessions, your payment is held in escrow and only released once both sides confirm the job is complete: the vendor/shopper marks their side done, and you then confirm it on your own screen (or the payment auto-releases after a set window if you do not respond). Handa deducts a platform commission from each release before crediting the provider\'s wallet -- currently 20% from a Shop-For-Me shopper\'s fee, 15% from a rider\'s delivery fee, and 10% from a Home Cook or Event Planner\'s booking value. Event Planner bookings settle their commission the same way, based on your confirmation that the event took place.'],
+  ['3. Bookings & Orders', 'A Home Cook or Event Planner booking is only confirmed once the vendor accepts your request (or, for an accepted Event Planner proposal, once you pay). Both Home Cook and Event Planner bookings are paid through the app and held in escrow -- your money is never in the vendor\'s hands from the moment you pay. Shop-For-Me sessions are paid upfront through the app to cover your items budget, the shopper\'s session fee, and the rider\'s delivery fee, as one combined deposit shown to you in full, itemised, before you confirm payment.'],
+  ['4. Escrow, Completion & Commission', 'For Home Cook bookings, Event Planner bookings, and Shop-For-Me sessions, your payment is held in escrow the moment you pay it, in a Handa-controlled account the vendor, shopper, or rider cannot access, withdraw from, or touch. It is only released once both sides confirm the job is complete: the vendor/shopper marks their side done, and you then confirm it on your own screen and approve the release (or the payment auto-releases after a set window if you do not respond). For Event Planner and Home Cook Event Catering Package bookings specifically, you may also choose to release your escrowed funds to the vendor in stages as the job progresses, entirely at your own discretion -- the vendor can never draw down any part of it without your approval. Handa deducts a platform commission from each release before crediting the provider\'s wallet -- currently 20% from a Shop-For-Me shopper\'s fee, 15% from a rider\'s delivery fee, and 10% from a Home Cook or Event Planner\'s booking value.'],
   ['5. How Shop-For-Me Pricing & Fees Work', 'When you deposit and start a Shop-For-Me session, you pay three things together: your items budget, a shopper session fee (billed by how long your live call with the shopper runs, tiered from a base rate up to 30 minutes and increasing in steps beyond that), and a rider delivery fee. The delivery fee is estimated from the real road distance between the market you\'re shopping at and your delivery address, priced per kilometre with a base fare and a floor/ceiling to keep it reasonable. If the call runs longer than what was pre-collected, or the real delivery fee comes in higher than predicted, we tell you exactly what\'s still owed and you top it up before the session can complete -- you are never charged this automatically without being shown the amount first. If the real delivery fee comes in lower than what was predicted and collected, and there is also an outstanding shopper-fee shortfall on the same session, the unused delivery fee is applied to cover that shortfall first; only whatever is left over after that is refunded to your wallet. If there\'s no shortfall to cover, any unused delivery fee is refunded to your wallet in full. Once your shopper has paid your market sellers from the deposited items budget, the goods are considered purchased on your behalf and that portion is not refundable except through the dispute process below.'],
-  ['6. Cancellations & Refunds', 'You may cancel a Home Cook booking or a Shop-For-Me session yourself at any point before it is completed; any amount still held in escrow for that booking or session is refunded to your Handa wallet as store credit. Once a Home Cook vendor has started the job, or a Shop-For-Me shopper has begun paying your market sellers, cancelling may only be possible through the dispute process rather than a plain self-service cancel, since work or spending has already begun on your behalf. Event Planner bookings, since payment happens outside the app, are cancelled by agreement between you and the planner directly. Repeated cancellations may affect your ability to book on the platform. A rejected or unpriced Shop-For-Me item can be removed from your list at no cost at any time before you approve it, without needing to cancel the whole session.'],
+  ['6. Cancellations & Refunds', 'You may cancel a Home Cook or Event Planner booking, or a Shop-For-Me session, yourself at any point before it is completed; any amount still held in escrow for that booking or session is refunded to your Handa wallet as store credit. Once a vendor has started the job, or a Shop-For-Me shopper has begun paying your market sellers, cancelling may only be possible through the dispute process rather than a plain self-service cancel, since work or spending has already begun on your behalf -- and any amount you already chose to release to an Event Planner or Home Cook Event Catering Package vendor is not refundable through cancellation, only the remaining, still-held balance is. Repeated cancellations may affect your ability to book on the platform. A rejected or unpriced Shop-For-Me item can be removed from your list at no cost at any time before you approve it, without needing to cancel the whole session.'],
   ['7. Uncompleted & Abandoned Sessions', 'A Shop-For-Me session that stalls with no real progress for an extended period (for example, stuck waiting on a live call or a rider match that never happens) is automatically treated as an uncompleted session, cancelled, and any escrowed funds refunded to your wallet -- shown in your history simply as "Uncompleted Session," with no charge to you. Separately, if you have an active session in progress and choose "Return to Homepage" instead of continuing it, that alone does not cancel anything -- the session keeps running exactly as before for the other parties still on it. A session is only ever automatically cancelled and refunded on this basis once every party actually involved in it at that time (you, your matched shopper, and your assigned rider, if one has been assigned) has independently stepped away from it; if even one of them is still actively engaged, the session continues untouched. Returning to an active session at any time (for example, via "Continue Session" or your own "Track This Delivery" shortcut) immediately cancels your own "stepped away" status.'],
   ['8. Disputes', 'Every Home Cook booking and Shop-For-Me session ends with a real, two-sided confirmation: once the vendor or shopper marks their side of the job done, you\'re asked to confirm it too. If you agree it was completed properly, confirming releases the payment as described in Section 4. If you disagree, you can file a dispute instead of confirming -- describing what went wrong, optionally attaching photo evidence, and optionally naming a specific refund amount you\'re requesting. Filing a dispute holds the related escrow in place so it cannot be released while the dispute is open. The other party is notified and may respond with their own evidence and side of the story on the same dispute. A Handa admin reviews both sides and makes the final, binding decision -- releasing the payment to the provider, refunding some or all of it to you, or a split between the two -- based on the evidence provided. Filing a knowingly false or exaggerated dispute is a violation of these terms and may result in account suspension.'],
   ['9. Reporting a User (Conduct & Safety)', 'Separately from a payment dispute, you can report a specific person\'s conduct on a booking or session -- for example a customer, shopper, or rider behaving unsafely, rudely, or dishonestly -- with a category and description. Once a report has been submitted for a given person on a given booking or session, our system marks it as received and will not let you submit a duplicate report for that same person and same booking or session again; you\'ll see it listed as already reported instead. Reports are reviewed by our admin team and may lead to warnings, suspension, or removal from the platform, but filing a conduct report by itself does not automatically refund or release any payment -- use the Disputes process in Section 8 for that.'],
@@ -9355,20 +9367,23 @@ async function shopConfirmAllPayments(auto){
       : (err.message||'Could not release escrow'),'warning');
   }
 }
-// preserveScroll:true keeps the sheet's current scroll position across a
-// re-render instead of snapping back to the top -- used when the sheet is
-// just refreshing the SAME open content in place (an action inside it, or
-// a live booking:updated push), never for a genuinely new sheet opening.
-function showBottomSheet(title,content,preserveScroll){
+// restoreScrollTop, when given as a real number, re-applies that exact
+// scroll position on the freshly-built sheet instead of starting at the
+// top -- used when the sheet is just refreshing the SAME open content in
+// place (an action inside it, or a live booking:updated push), never for
+// a genuinely new sheet opening. Deliberately NOT self-capturing "whatever
+// the currently-open sheet's scrollTop happens to be" here: a caller that
+// renders a short interim "Loading…" placeholder before the real content
+// arrives would otherwise have that placeholder's own (necessarily
+// clamped-to-0, since there's nothing to scroll on 2 lines of text) scroll
+// position captured and handed forward as "the" position to restore on
+// the REAL content right after -- silently destroying the original
+// position it was supposed to preserve. The caller must capture the real
+// value once, up front, before ever showing a placeholder, and pass that
+// same captured number through every showBottomSheet call in the chain.
+function showBottomSheet(title,content,restoreScrollTop){
   var existing=document.getElementById('sfm-bottom-sheet');
-  var savedScroll=0;
-  if(existing){
-    if(preserveScroll){
-      var oldInner=existing.firstElementChild;
-      if(oldInner)savedScroll=oldInner.scrollTop;
-    }
-    existing.remove();
-  }
+  if(existing)existing.remove();
   var el=document.createElement('div');
   el.id='sfm-bottom-sheet';
   el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9500;display:flex;align-items:flex-end;justify-content:center;';
@@ -9385,7 +9400,7 @@ function showBottomSheet(title,content,preserveScroll){
   el.appendChild(inner);
   document.body.appendChild(el);
   el.onclick=function(ev){if(ev.target===el)el.remove();};
-  if(preserveScroll&&savedScroll)inner.scrollTop=savedScroll;
+  if(typeof restoreScrollTop==='number'&&restoreScrollTop>0)inner.scrollTop=restoreScrollTop;
 }
 function closeBottomSheet(){
   var el=document.getElementById('sfm-bottom-sheet');
@@ -11536,6 +11551,15 @@ function _isEventDateTodayOrPast(eventDate){
 // since these states are mutually exclusive by the backend's own guards
 // (e.g. an edit can never be pending once vendorJobStartedAt is set).
 function _vendorBookingWriteup(b,isCook){
+  // Dispute state overrides everything else, including terminal statuses
+  // -- a resolved dispute may have moved the booking to COMPLETED or
+  // CANCELLED, but the vendor should still see that outcome explained
+  // rather than falling through to a generic "no write-up" (status!==
+  // CONFIRMED) or a stale "waiting for customer to confirm completion"
+  // (the actual state pre-resolution: the customer already said no).
+  // disputeStatus comes from listBookings' batched dispute lookup.
+  if(b.disputeStatus==='OPEN'||b.disputeStatus==='IN_PROGRESS')return {text:'⚠️ Payment Disputed - Pending Handa Resolution',color:'#E8392E'};
+  if(b.disputeStatus==='RESOLVED'||b.disputeStatus==='CLOSED')return {text:'✅ Dispute has been resolved',color:'#2ECC71'};
   if(b.status!=='CONFIRMED')return null;
   if(b.pendingEditSnapshot)return {text:'✏️ Customer proposed changes — open to review',color:'#F5A623'};
   // Event Planner (always) and Home Cook's Event Catering Package now go
@@ -11681,7 +11705,16 @@ async function openVendorBookingDetail(id){
   // live booking:updated push) keeps the sheet's current scroll position
   // instead of snapping back to the top -- only a genuinely new open
   // (a different booking, or this one wasn't already showing) starts at 0.
-  var _preserveScroll=window._openBookingDetailId===id&&!!document.getElementById('sfm-bottom-sheet');
+  // Captured as a real NUMBER exactly once, right here, before the
+  // "Loading…" placeholder below ever touches the DOM -- see
+  // showBottomSheet's own comment on why re-deriving this from whatever's
+  // currently on screen at each step would just capture the placeholder's
+  // own clamped-to-0 scroll instead of the real position to restore.
+  var _restoreScrollTop=0;
+  if(window._openBookingDetailId===id){
+    var _existingSheet=document.getElementById('sfm-bottom-sheet');
+    if(_existingSheet&&_existingSheet.firstElementChild)_restoreScrollTop=_existingSheet.firstElementChild.scrollTop;
+  }
   window._openBookingDetailId=id;window._openBookingDetailViewer='vendor';
   bindBookingLiveUpdateListener();
   if(_socket)_socket.emit('booking:join',{bookingId:id});
@@ -11696,7 +11729,7 @@ async function openVendorBookingDetail(id){
   // Same pattern as refreshCustomerActiveSessionBanner's own
   // _customerBannerReqSeq.
   var _mySeq=++_vendorBookingDetailReqSeq;
-  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_preserveScroll);
+  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_restoreScrollTop);
   try{
     var res=await api('/bookings/'+id);
     if(_mySeq!==_vendorBookingDetailReqSeq)return;
@@ -11755,6 +11788,7 @@ async function openVendorBookingDetail(id){
         +(dt.secondPartyResponse
           ? '<div style="background:#1C1C1C;border-radius:10px;padding:10px;font-size:12px;color:#9A9390;"><b style="color:#F2EDE8;">Your response:</b> '+dt.secondPartyResponse+'</div>'
           : '<button onclick="openVendorDisputeResponseModal(\''+dt.id+'\',\''+b.id+'\')" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid rgba(245,166,35,.4);background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Add Your Side</button>')
+        +'<button onclick="openDisputeChatForTicket(\''+dt.id+'\')" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1.5px solid rgba(59,159,232,.4);background:transparent;color:#3B9FE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4AC; Chat With Support</button>'
         +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Dispute Is Pending Resolve From Handa.</div>'
         +'</div>';
     }else if(b.status==='COMPLETED'){
@@ -11892,7 +11926,7 @@ async function openVendorBookingDetail(id){
       +contactAndCancelBlock
       +pendingEditBlock
       +vendorStatusBlock;
-    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_preserveScroll);
+    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_restoreScrollTop);
   }catch(err){
     if(_mySeq!==_vendorBookingDetailReqSeq)return;
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
@@ -11969,15 +12003,26 @@ async function confirmVendorRequestPayment(id){
 }
 // Engage Your Vendor -- same chat/call-only unlock as the vendor's own
 // engageBooking, never required before Release Payment (see below).
+// The customer's own action here never triggers a self-notification (only
+// the vendor is notified), so the live notification:new-driven History-
+// list refresh never fires for it -- without this, the row's own write-up
+// stays stuck on the pre-action text even after it succeeds, since
+// #history-list's cached _allOrders was never re-fetched. Same fix as
+// customerConfirmBookingComplete's own success path.
+function _refreshHistoryListIfOpen(){
+  if(document.getElementById('history-list')&&typeof renderEHistory==='function')renderEHistory();
+}
 function customerEngageBooking(id){
   api('/bookings/'+id+'/engage',{method:'POST'}).then(function(){
     openCustomerHistoryDetail('booking',id);
+    _refreshHistoryListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not engage','warning');});
 }
 function customerEndBookingConversation(id){
   api('/bookings/'+id+'/end-conversation',{method:'POST'}).then(function(){
     showToast&&showToast('Conversation ended.','success');
     openCustomerHistoryDetail('booking',id);
+    _refreshHistoryListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not end the conversation','warning');});
 }
 function openCustomerReleasePaymentModal(id,remainingKobo){
@@ -11998,12 +12043,14 @@ async function confirmCustomerReleasePayment(id,remainingKobo){
     closeProcedureModal();
     showToast&&showToast('Payment released to the vendor.','success');
     openCustomerHistoryDetail('booking',id);
+    _refreshHistoryListIfOpen();
   }catch(err){showToast&&showToast(err.message||'Could not release payment','warning');}
 }
 function customerRespondAdditionalPayment(id,approve){
   api('/bookings/'+id+'/respond-additional-payment',{method:'POST',body:JSON.stringify({approve:approve})}).then(function(){
     showToast&&showToast(approve?'Payment released to the vendor.':'Request declined.','success');
     openCustomerHistoryDetail('booking',id);
+    _refreshHistoryListIfOpen();
   }).catch(function(err){showToast&&showToast(err.message||'Could not respond to the request','warning');});
 }
 async function customerConfirmBookingComplete(id,completed,isEP){
@@ -12096,6 +12143,20 @@ function openVendorDisputeResponseModal(ticketId,bookingId){
     +'</div>'
   );
 }
+// Opens (or reopens, if the previous round was ended) the real DISPUTE-
+// context thread for this ticket -- the same conversation an admin reaches
+// via "Chat Filer"/"Chat Vendor" in the admin panel, not the separate
+// booking-scoped "Chat live with support" SUPPORT thread above. Either
+// side (the ticket's filer, or its vendor/second party) can call this at
+// any time the dispute is still open, including right after either side
+// ended the previous round -- support.controller.js's openMyDisputeChat
+// never hands back a closed thread.
+async function openDisputeChatForTicket(ticketId){
+  try{
+    var res=await api('/support/tickets/'+ticketId+'/chat',{method:'POST'});
+    openChatByThreadId(res.thread.id,'Handa Support');
+  }catch(err){showToast&&showToast(err.message||'Could not open chat','warning');}
+}
 async function submitVendorDisputeResponse(ticketId,bookingId){
   var text=(document.getElementById('vdr-text')||{}).value||'';
   if(!text.trim()){showToast&&showToast('Please describe what happened','warning');return;}
@@ -12160,9 +12221,14 @@ function _markRatingSkipped(id){
 // event date hasn't passed yet get a real "Edit Booking" action.
 var _customerBookingDetailReqSeq=0;
 async function openCustomerHistoryDetail(kind,id){
-  // Same "refreshing the same open sheet keeps scroll position" rule as
-  // openVendorBookingDetail -- see its own comment.
-  var _preserveScroll=kind==='booking'&&window._openBookingDetailId===id&&!!document.getElementById('sfm-bottom-sheet');
+  // Same "capture the real scroll number exactly once, up front" rule as
+  // openVendorBookingDetail -- see showBottomSheet's own comment on why
+  // this can't be re-derived at each showBottomSheet call.
+  var _restoreScrollTop=0;
+  if(kind==='booking'&&window._openBookingDetailId===id){
+    var _existingSheet=document.getElementById('sfm-bottom-sheet');
+    if(_existingSheet&&_existingSheet.firstElementChild)_restoreScrollTop=_existingSheet.firstElementChild.scrollTop;
+  }
   if(kind==='booking'){
     window._openBookingDetailId=id;window._openBookingDetailViewer='customer';
     bindBookingLiveUpdateListener();
@@ -12172,7 +12238,7 @@ async function openCustomerHistoryDetail(kind,id){
   // only applied to the 'booking' kind below (a session has no
   // engage-style action prone to this race).
   var _mySeq=kind==='booking'?++_customerBookingDetailReqSeq:null;
-  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_preserveScroll);
+  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_restoreScrollTop);
   if(kind==='session'){
     try{
       var sres=await api('/shop-sessions/'+id);
@@ -12423,6 +12489,7 @@ async function openCustomerHistoryDetail(kind,id){
       terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Dispute Is Pending Resolve From Handa</div>'
         +'<div style="font-size:12px;color:#9A9390;">An admin is reviewing this. You\'ll be notified once it\'s resolved.</div>'
+        +'<button onclick="openDisputeChatForTicket(\''+dt.id+'\')" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid rgba(59,159,232,.4);background:transparent;color:#3B9FE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4AC; Chat With Support</button>'
         +'<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:10px;border-top:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
         +'</div>';
     }else if(isCompleted){
@@ -12556,7 +12623,7 @@ async function openCustomerHistoryDetail(kind,id){
         +'</div>'
       ):'')
       +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
-    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_preserveScroll);
+    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_restoreScrollTop);
     // Cached by id so the Edit button above can pass just the id through
     // the onclick attribute instead of inlining JSON.stringify(b) directly
     // into an HTML attribute -- any apostrophe in b.notes/b.venue used to
@@ -14280,6 +14347,12 @@ var STATUS_COLORS={REQUESTED:'#F5A623',OPEN:'#F5A623',ACCEPTED:'#3B9FE8',DECLINE
 // confirmation"). Cook and EP diverge here since only Cook has a
 // Job Started / two-sided-completion stage at all.
 function _customerBookingWriteup(b){
+  // Dispute state overrides everything else, including terminal statuses
+  // -- see _vendorBookingWriteup's own comment for why. Matches the exact
+  // terminal-banner wording the detail screen already uses
+  // ("⚠️ Dispute Is Pending Resolve From Handa").
+  if(b.disputeStatus==='OPEN'||b.disputeStatus==='IN_PROGRESS')return {text:'⚠️ Dispute Is Pending Resolve From Handa',color:'#E8392E'};
+  if(b.disputeStatus==='RESOLVED'||b.disputeStatus==='CLOSED')return {text:'✅ Dispute has been resolved',color:'#2ECC71'};
   var isEP=b.type==='EVENT_PLANNING';
   var isNegotiated=isEP||b.packageKey==='premium';
   // Every booking type now pays upfront before the vendor decides -- PAID

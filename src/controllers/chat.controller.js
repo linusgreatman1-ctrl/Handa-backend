@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const { notify } = require("../services/notifications.service");
+const { notify, notifyAllAdmins } = require("../services/notifications.service");
 const aiChatSvc = require("../services/aiChat.service");
 
 // SUPPORT threads have no real second User (there's no support-inbox
@@ -193,7 +193,7 @@ async function listMessages(req, res, next) {
 async function sendMessage(req, res, next) {
   try {
     await assertParticipant(req.params.id, req.user.id);
-    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id }, select: { closedAt: true } });
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id }, select: { closedAt: true, contextType: true } });
     if (thread?.closedAt) return res.status(409).json({ error: "This chat has ended." });
     const { body, attachmentUrl } = req.body;
     if ((!body || !body.trim()) && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
@@ -222,6 +222,16 @@ async function sendMessage(req, res, next) {
       // opened yet. That gap is exactly why the banner previously only
       // ever seemed to arrive "through notification" and nothing else.
       await notify(io, p.userId, "CHAT", "New message", notifyText, { threadId: req.params.id, senderName: req.user.name, senderRole: req.user.role });
+    }
+    // A DISPUTE thread the USER just created/reopened themselves (see
+    // support.controller.js's openMyDisputeChat) has no admin participant
+    // yet -- others.length===0 means this message would otherwise go
+    // completely unseen until an admin happens to check the ticket
+    // separately. Fan it out to every admin the same way a fresh dispute
+    // ticket itself already does (notifyAllAdmins), so "the user can start
+    // up a new chat" actually reaches someone.
+    if (others.length === 0 && thread?.contextType === "DISPUTE") {
+      await notifyAllAdmins(io, "Dispute chat message", `${req.user.name || "A user"}: ${notifyText}`, { threadId: req.params.id, senderName: req.user.name, senderRole: req.user.role });
     }
 
     res.status(201).json({ message });

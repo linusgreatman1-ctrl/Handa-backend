@@ -167,6 +167,32 @@ async function listBookings(req, res, next) {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Batched dispute lookup so the dashboard list cards' own write-up
+    // (_vendorBookingWriteup/_customerBookingWriteup) can show "Payment
+    // Disputed"/"Dispute Is Pending Resolve From Handa"/"Dispute has been
+    // resolved" without a per-row detail fetch -- getBooking already does
+    // this single-booking, this is the same lookup batched across the
+    // whole list. Only the latest BOOKING-context dispute ticket per
+    // booking is kept (a booking can only ever have one live dispute at a
+    // time in practice, but findMany + reduce is cheap insurance against
+    // that ever not holding).
+    const bookingIds = bookings.map((b) => b.id);
+    if (bookingIds.length > 0) {
+      const disputeTickets = await prisma.supportTicket.findMany({
+        where: { context: "BOOKING", contextId: { in: bookingIds }, isDispute: true },
+        orderBy: { createdAt: "desc" },
+        select: { contextId: true, status: true },
+      });
+      const disputeStatusByBookingId = {};
+      for (const t of disputeTickets) {
+        if (!disputeStatusByBookingId[t.contextId]) disputeStatusByBookingId[t.contextId] = t.status;
+      }
+      for (const b of bookings) {
+        b.disputeStatus = disputeStatusByBookingId[b.id] || null;
+      }
+    }
+
     res.json({ bookings });
   } catch (err) {
     next(err);

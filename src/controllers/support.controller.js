@@ -121,6 +121,46 @@ async function resolveVendorUserIdForTicket(ticket) {
   return null;
 }
 
+// User-facing counterpart to admin.controller.js's
+// openDisputeThreadForTicketParty -- lets the ticket's own filer, or its
+// resolved second party (e.g. the vendor on a BOOKING dispute), open or
+// reopen the SAME DISPUTE-context thread the admin uses, instead of only
+// ever being able to react to a "Support replied" notification the admin
+// happened to trigger first. contextId is `${ticket.id}:${req.user.id}`,
+// identical to the scheme openDisputeThreadForTicketParty derives from
+// req.user.id's own role in the ticket -- whichever side (admin or user)
+// acts first creates it, the other finds the exact same thread. Same
+// closedAt:null "never hand back a dead thread" rule -- once either side
+// ends the conversation, the next open (by either side) genuinely starts
+// a new one within the same still-open dispute.
+async function openMyDisputeChat(req, res, next) {
+  try {
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: req.params.id } });
+    if (!ticket) return res.status(404).json({ error: "Ticket not found." });
+    if (!ticket.isDispute) return res.status(400).json({ error: "This ticket is not a dispute." });
+
+    const isFiler = ticket.userId === req.user.id;
+    const secondPartyUserId = await resolveVendorUserIdForTicket(ticket);
+    if (!isFiler && secondPartyUserId !== req.user.id) {
+      return res.status(403).json({ error: "You are not a party to this dispute." });
+    }
+
+    const contextId = `${ticket.id}:${req.user.id}`;
+    let thread = await prisma.chatThread.findFirst({
+      where: { contextType: "DISPUTE", contextId, closedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!thread) {
+      thread = await prisma.chatThread.create({
+        data: { contextType: "DISPUTE", contextId, participants: { create: [{ userId: req.user.id }] } },
+      });
+    }
+    res.status(201).json({ thread });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // The real amount currently held/disputed for a ticket's context — lets
 // the admin panel pre-fill a refund amount instead of the admin having to
 // know/type it blind.
@@ -368,4 +408,5 @@ module.exports = {
   updateTicketStatus,
   respondToTicket,
   resolveVendorUserIdForTicket,
+  openMyDisputeChat,
 };
