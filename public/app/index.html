@@ -2197,6 +2197,7 @@ async function openEventRequestForVendor(requestId){
       body.innerHTML=header+details
         +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:8px;">Submit a Proposal</div>'
         + _arField('Your Price (₦)','sp-price','e.g. 1800000','number')
+        + '<div style="font-size:11px;color:#F5A623;margin:4px 0 4px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
         + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Included</label>'
         + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">' + svcOpts.map(function(s){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="sp-svc" value="'+s+'" style="margin:0;">'+s+'</label>';}).join('')
         + '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" id="sp-svc-other-cb" onchange="document.getElementById(\'sp-svc-other-wrap\').style.display=this.checked?\'block\':\'none\'" style="margin:0;">Others</label>'
@@ -2606,7 +2607,9 @@ function openAddMenu(itemId){
     +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Price (&#x20a6;) *</label>'
-    +'<input id="new-item-price" type="number" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="e.g. 2500" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
+    +'<input id="new-item-price" type="number" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="e.g. 2500" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
+    +'<div style="font-size:11px;color:#F5A623;margin-top:6px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep. This is also the per-head price if a customer books it as part of Event Catering.</div>'
+    +'</div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Emoji (optional — or add a photo below)</label>'
     +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="🍛" maxlength="4" oninput="window._emojiManuallySet=true" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
@@ -7998,7 +8001,8 @@ function openAddCustomPackage(){
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Package Name *</label>'
     +'<input id="acp-label" type="text" placeholder="e.g. Small Garden Wedding" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;) *</label>'
-    +'<input id="acp-price" type="number" placeholder="e.g. 250000" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
+    +'<input id="acp-price" type="number" placeholder="e.g. 250000" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">'
+    +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
     +'<input id="acp-guests" type="number" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">What\'s Included (one per line)</label>'
@@ -8037,7 +8041,8 @@ function openEditPackage(pkgId){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+pkg.label+'</div></div>'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;)</label>'
-    +'<input id="pk-price" type="number" value="'+Math.round(pkg.priceKobo/100)+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'
+    +'<input id="pk-price" type="number" value="'+Math.round(pkg.priceKobo/100)+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">'
+    +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
     +'<input id="pk-guests" type="number" value="'+(pkg.guestCount||'')+'" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'
     +'<button onclick="submitEditPackage(\''+pkgId+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px;">Save</button>'
@@ -11321,6 +11326,20 @@ async function renderVendorDashboard(kind){
   h+='<div id="vendor-commission-row" style="display:flex;justify-content:space-between;align-items:center"><div><p style="font-size:22px;font-weight:900;color:#F2EDE8;margin:0" id="vendor-commission-amt">₦…</p><p style="color:#9A9390;font-size:11px;margin:0">Due every Sunday</p></div>';
   h+='<button onclick="payCommission()" style="padding:10px 14px;background:'+accent+';color:'+(isCook?'#fff':'#111')+';border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">Pay Now</button></div>';
   h+='<p style="color:#E74C3C;font-size:10px;margin:8px 0 0;font-weight:600">⚠️ Failure to pay weekly commission leads to account suspension.</p></div>';
+  // Commission on a booking (any type) is now deducted for real, on the
+  // spot, from whatever amount is actually released to the vendor --
+  // every partial release during negotiation, and the final remaining
+  // amount at completion, each get 10% taken off THAT release (see
+  // escrow.service.js's creditPayeeWithCommission). A vendor pricing a
+  // job at exactly what they want to receive keeps only 90% of it, so
+  // this reminder sits right next to where they set prices for every
+  // vendor-priced flow: menu items (openAddMenu), packages
+  // (openEditPackage/openAddPackageModal), and EP proposals
+  // (openEventRequestForVendor's sp-price field) all repeat this same
+  // line for the exact moment it's actionable.
+  h+='<div style="background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);border-radius:14px;padding:14px;margin-bottom:16px">';
+  h+='<p style="color:#F5A623;font-size:13px;font-weight:800;margin:0 0 4px">💡 Pricing Tip</p>';
+  h+='<p style="color:#9A9390;font-size:12px;margin:0;line-height:1.5">Handa takes a 10% commission out of every payment released to you. Add 10% on top of what you actually want to earn when setting your '+(isCook?'menu item and package prices':'proposal prices')+', so what lands in your wallet after commission is your real target amount.</p></div>';
   // Open event requests (RFP layer) — was previously only ever built into
   // the dead renderVendorOrders() function, which event-planner vendors
   // never route to. loadOpenEventRequests() itself is unchanged/already real.
