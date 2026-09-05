@@ -29,8 +29,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:1px soli
    instead of either the old narrow mobile column or a stretched
    edge-to-edge sprawl. This is additive only — no screen's own inline
    markup changes, so mobile/tablet are pixel-identical to before. */
-html{font-family:'DM Sans',Arial,sans-serif;background:#111;min-height:100vh}
-body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-width:430px;width:100%;margin:0 auto;min-height:100vh;overflow-x:hidden;position:relative}
+html{font-family:'DM Sans',Arial,sans-serif;background:#111;min-height:100vh;min-height:100dvh}
+body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-width:430px;width:100%;margin:0 auto;min-height:100vh;min-height:100dvh;overflow-x:hidden;position:relative}
 ::-webkit-scrollbar{display:none}
 @media (min-width:600px) and (max-width:1023px){
   html{background:radial-gradient(circle at 25% 15%,#2d0d2d 0%,#0a0a0f 45%,#0a0a0f 100%);display:flex;justify-content:center}
@@ -118,9 +118,9 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
      box on real desktop heights instead of being reachable by scrolling. */
   .sfm-livecall-content-col{flex:1;min-width:0;max-height:calc(100vh - 170px);overflow-y:auto;padding-right:4px;}
 }
-.screen{display:none;min-height:100vh;padding-bottom:84px;overflow-y:auto;-webkit-overflow-scrolling:touch}.screen.active{display:block;animation:fi .22s ease}.screen.active.flex-screen{display:flex !important;flex-direction:column;}
+.screen{display:none;min-height:100vh;min-height:100dvh;padding-bottom:calc(84px + env(safe-area-inset-bottom));overflow-y:auto;-webkit-overflow-scrolling:touch}.screen.active{display:block;animation:fi .22s ease}.screen.active.flex-screen{display:flex !important;flex-direction:column;}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-#bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#111;border-top:1px solid #2a2a2a;display:none;justify-content:space-around;padding:6px 0 14px;z-index:900}
+#bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#111;border-top:1px solid #2a2a2a;display:none;justify-content:space-around;padding:6px 0 max(14px,env(safe-area-inset-bottom));z-index:900}
 .ni{background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:4px 6px;color:#9A9390;font-family:'DM Sans',sans-serif;transition:color .2s;position:relative;min-width:44px}
 .ni.on,.ni:hover{color:#E8392E}.ni .ic{font-size:20px}.ni .lb{font-size:9px;font-weight:700;letter-spacing:.3px}
 .cdot{position:absolute;top:0;right:2px;background:#E8392E;color:#fff;border-radius:50%;width:16px;height:16px;font-size:9px;display:none;align-items:center;justify-content:center;font-weight:700}
@@ -422,7 +422,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 .btn-green{background:#2ECC71;border:none;color:#111;font-weight:800;cursor:pointer;border-radius:12px;padding:11px 16px;font-size:14px;}
 </style>
 <style>
-.escreen{display:none;min-height:100vh;padding-bottom:84px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.escreen{display:none;min-height:100vh;min-height:100dvh;padding-bottom:calc(84px + env(safe-area-inset-bottom));overflow-y:auto;-webkit-overflow-scrolling:touch}
 .escreen.flex-screen{flex-direction:column}
 .ntab{background:none;border:none;color:#555;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 8px}
 .ntab.active{color:#9B59B6}.ntab-icon{font-size:22px}.ntab-label{font-size:10px}
@@ -506,7 +506,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
       </div>
       <div class="scrollable" style="padding:16px 22px 30px;" id="shop-body"></div>
     </div>
-<div id="screen-shopperdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
+<div id="screen-shopperdash" class="escreen flex-screen" style="height:100vh;height:100dvh;overflow:hidden;padding-bottom:0;">
 <div id="shopper-app" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <!-- Shopper Home -->
     <div id="shopper-home-view" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
@@ -662,7 +662,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <button onclick="logout()" class="btn out full" style="margin-top:4px;margin-bottom:24px;padding:13px">🚪 Sign Out</button>
   </div>
 </div>
-<div id="screen-homecookdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
+<div id="screen-homecookdash" class="escreen flex-screen" style="height:100vh;height:100dvh;overflow:hidden;padding-bottom:0;">
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="vendor-body"></div>
     <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
@@ -675,7 +675,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </nav>
   </div>
 </div>
-<div id="screen-epdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
+<div id="screen-epdash" class="escreen flex-screen" style="height:100vh;height:100dvh;overflow:hidden;padding-bottom:0;">
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="ep-vendor-body"></div>
     <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
@@ -688,7 +688,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </nav>
   </div>
 </div>
-<div id="screen-riderdash" class="escreen flex-screen" style="height:100vh;overflow:hidden;padding-bottom:0;">
+<div id="screen-riderdash" class="escreen flex-screen" style="height:100vh;height:100dvh;overflow:hidden;padding-bottom:0;">
   <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="scrollable" style="flex:1;padding-bottom:10px;" id="rider-body"></div>
     <nav class="dash-bnav" style="display:flex;justify-content:space-around;align-items:center;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;flex-shrink:0;">
@@ -708,7 +708,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
   <div style="padding:16px;" id="history-list"></div>
 </div>
 <div id="screen-etrack" class="escreen"><div style="background:#111;padding:44px 20px 14px;border-bottom:1px solid #2A2850"><button onclick="eGo('home')" style="background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;width:36px;height:36px;color:#F2EDE8;font-size:18px;cursor:pointer;margin-bottom:10px">←</button><h2 style="font-weight:800;font-size:20px;margin:0">📍 Track Order</h2></div><div id="etrack-body" style="padding:16px;overflow-y:auto;flex:1"><div style="padding:40px 16px 80px;text-align:center"><div style="font-size:52px;margin-bottom:16px">📍</div><p style="font-weight:700;font-size:16px;margin:0 0 8px">No active delivery</p><p style="color:#9A9390;font-size:13px">Live tracking appears here when your order is on the way</p></div></div></div>
-<nav id="bnav" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 24px;z-index:1000;justify-content:space-around;align-items:center"><button class="ntab active" id="nav-home" onclick="customerGoHome()"><div class="ntab-icon">🏠</div><div class="ntab-label">Home</div></button><button class="ntab" id="nav-history" onclick="eGo('history')"><div class="ntab-icon">📋</div><div class="ntab-label">History</div></button><button class="ntab" id="nav-track" onclick="eGo('track')"><div class="ntab-icon">📍</div><div class="ntab-label">Track</div></button><button class="ntab" id="nav-profile" onclick="eGo('profile')"><div class="ntab-icon">👤</div><div class="ntab-label">Me</div></button></nav>
+<nav id="bnav" style="display:none;position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#1C1C1C;border-top:1px solid #2A2850;padding:10px 0 max(24px,env(safe-area-inset-bottom));z-index:1000;justify-content:space-around;align-items:center"><button class="ntab active" id="nav-home" onclick="customerGoHome()"><div class="ntab-icon">🏠</div><div class="ntab-label">Home</div></button><button class="ntab" id="nav-history" onclick="eGo('history')"><div class="ntab-icon">📋</div><div class="ntab-label">History</div></button><button class="ntab" id="nav-track" onclick="eGo('track')"><div class="ntab-icon">📍</div><div class="ntab-label">Track</div></button><button class="ntab" id="nav-profile" onclick="eGo('profile')"><div class="ntab-icon">👤</div><div class="ntab-label">Me</div></button></nav>
 <!-- Global notification bell -- one fixed element reused across every
      role's dashboard instead of threading it into each dashboard's own
      header markup. Hidden until login, same visibility pattern as #bnav. -->
@@ -3516,14 +3516,19 @@ async function detectActiveShopSession(role) {
   try {
     if (role === 'shopper') {
       var rs = await api('/shop-sessions?as=shopper');
-      return (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;}) || null;
+      // Excludes a session this shopper already explicitly left via
+      // "Return to Homepage" -- even while it's still technically alive
+      // (waiting on the others to reach majority), it should be invisible
+      // to THIS user going forward: no more prompt, no more persistent
+      // banner, until it's genuinely cancelled or a real new session starts.
+      return (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1&&!s.shopperAwayAt;}) || null;
     }
     if (role === 'rider') {
       var rr = await api('/shop-sessions?as=rider');
-      return (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;}) || null;
+      return (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1&&!s.riderAwayAt;}) || null;
     }
     var rc = await api('/shop-sessions?as=customer');
-    return (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1;}) || null;
+    return (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1&&!s.customerAwayAt;}) || null;
   } catch (err) {
     return null;
   }
@@ -3532,8 +3537,14 @@ async function detectActiveShopSession(role) {
 // Actually navigates into an already-detected active session for the given
 // role -- the real work restoreActiveShopSession used to do unconditionally
 // on every single login/refresh, now only run once the user has explicitly
-// chosen to continue (or via the banner's direct click).
-async function enterActiveShopSession(role, activeS) {
+// chosen to continue (or via the banner's direct click). explicitVote is
+// true ONLY when this came from the ongoing-session prompt's own "Continue
+// Session" button (_ongoingSessionChoice) -- a genuine, counted vote to
+// keep going. The persistent "Return to Session" banner's ordinary
+// re-entry click (restoreActiveShopSession) leaves it false/undefined,
+// since that fires constantly during normal use and must never itself
+// count as a vote (see markAway's own comment on why).
+async function enterActiveShopSession(role, activeS, explicitVote) {
   // Clears this party's own "left the session" flag the moment they
   // genuinely come back in -- covers both the ongoing-session prompt's
   // Continue button and the shopper's own "Track This Delivery" banner
@@ -3541,7 +3552,7 @@ async function enterActiveShopSession(role, activeS) {
   // this, coming back in wouldn't undo an earlier accidental/exploratory
   // "Return to Homepage" tap, leaving the session one away-flag away from
   // auto-cancelling the next time anyone else also steps away.
-  api('/shop-sessions/'+activeS.id+'/away',{method:'POST',body:JSON.stringify({away:false})}).catch(function(){});
+  api('/shop-sessions/'+activeS.id+'/away',{method:'POST',body:JSON.stringify({away:false,explicit:!!explicitVote})}).catch(function(){});
   try {
     if (role === 'shopper') {
       // GET /shop-sessions?as=... (list) uses a deliberately narrow include
@@ -3678,26 +3689,58 @@ async function promptOrEnterActiveShopSession(role){
   );
   return true;
 }
-function _ongoingSessionChoice(choice){
+async function _ongoingSessionChoice(choice){
   var ctx = window._ongoingSessionCtx;
-  closeProcedureModal();
-  window._ongoingSessionCtx = null;
-  if (!ctx) return;
+  if (!ctx) { closeProcedureModal(); window._ongoingSessionCtx = null; return; }
   if (choice==='continue') {
-    enterActiveShopSession(ctx.role, ctx.session);
-  } else {
+    closeProcedureModal();
+    window._ongoingSessionCtx = null;
+    // explicit:true -- this specific button IS the real, counted "continue"
+    // vote (see enterActiveShopSession's own comment on why the persistent
+    // banner's ordinary re-entry click never sets this).
+    enterActiveShopSession(ctx.role, ctx.session, true);
+    return;
+  }
+  // "Return Home" -- majority, not unanimity, decides (see markAway):
+  // this can be rejected outright if enough of the other relevant parties
+  // have already explicitly chosen to continue that this vote could never
+  // override them. Wait for the real answer before closing anything, so a
+  // rejected attempt can show why instead of silently vanishing.
+  try {
+    await api('/shop-sessions/'+ctx.session.id+'/away',{method:'POST',body:JSON.stringify({away:true})});
     _dismissSession(ctx.session.id);
-    // Tells the backend THIS party has left -- only actually cancels the
-    // real session once every party currently relevant to it (customer
-    // always; shopper once matched; rider once assigned) has independently
-    // done the same. One party staying engaged is enough to keep it
-    // running untouched; best-effort, doesn't block returning home either
-    // way if the request fails.
-    api('/shop-sessions/'+ctx.session.id+'/away',{method:'POST',body:JSON.stringify({away:true})}).catch(function(){});
+    closeProcedureModal();
+    window._ongoingSessionCtx = null;
     // The real home screen underneath was already rendered by the caller
     // before this prompt appeared (see tryRestoreSession) -- nothing
-    // further to do here, the modal just closes onto it.
+    // further to do here, the modal just closes onto it. Any active-session
+    // banner on it will clear itself live once the cancellation notify
+    // arrives (or immediately, since detectActiveShopSession now excludes
+    // a session this party has marked themselves away on).
+  } catch (err) {
+    // Blocked -- replace the prompt with the real reason and a way back in,
+    // instead of the request just silently failing underneath a modal that
+    // already looked like it succeeded. Stashed rather than inlined into
+    // the onclick attribute -- ctx.session's own text fields (address,
+    // notes, etc.) could contain quote characters that would otherwise
+    // break out of it.
+    window._blockedSessionCtx = ctx;
+    showProcedureModal(
+      '<div style="padding:24px 20px;text-align:center;">'
+      +'<div style="font-size:40px;margin-bottom:10px;">🙅</div>'
+      +'<div style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:800;color:#F2EDE8;margin-bottom:8px;">Can\'t Return Home Yet</div>'
+      +'<div style="font-size:13px;color:#9A9390;margin-bottom:20px;">'+(err.message||'Other users are waiting for you to return to the ongoing session.')+'</div>'
+      +'<button onclick="_returnToBlockedSession()" style="width:100%;padding:14px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;">▶ Return to Ongoing Session</button>'
+      +'</div>'
+    );
   }
+}
+function _returnToBlockedSession(){
+  var ctx=window._blockedSessionCtx;
+  closeProcedureModal();
+  window._blockedSessionCtx=null;
+  window._ongoingSessionCtx=null;
+  if(ctx)enterActiveShopSession(ctx.role,ctx.session);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

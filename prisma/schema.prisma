@@ -764,14 +764,30 @@ model ShopSession {
 
   // Set/cleared by POST /:id/away, whenever a party explicitly chooses
   // "Return to Homepage" on the ongoing-session prompt (cleared again if
-  // they come back in). Once every party CURRENTLY relevant to the session
-  // (customer always; shopper once matched; rider once assigned) is
-  // simultaneously away, the session auto-cancels and refunds — but if even
-  // one of them is still actively engaged, it keeps running untouched. Not
-  // set by simply closing a tab/browser without using that button.
+  // they come back in). Majority, not unanimity, decides: once at least
+  // half+1 of the roles CURRENTLY relevant to the session (customer
+  // always; shopper once matched; rider once assigned) are simultaneously
+  // away, it auto-cancels and refunds for everyone, even a dissenting
+  // minority who chose to continue. Not set by simply closing a
+  // tab/browser without using that button.
   customerAwayAt DateTime?
   shopperAwayAt  DateTime?
   riderAwayAt    DateTime?
+
+  // Set/cleared by the same POST /:id/away, opposite case: a party
+  // explicitly tapping "Continue Session" on the ongoing-session prompt
+  // specifically (not just any ordinary re-entry via the persistent
+  // "Return to Session" banner, which never touches these). Distinct from
+  // the mere absence of an *AwayAt timestamp above, which just means
+  // "hasn't decided yet" — these represent a genuine, counted vote to
+  // keep going. If enough of the OTHER relevant roles have already voted
+  // to continue that a lone party's own away-vote could never reach
+  // majority, that away request is rejected outright instead of silently
+  // registering, telling them the others are waiting on them instead. See
+  // shopSessions.controller.js's markAway for the exact vote-counting.
+  customerContinuedAt DateTime?
+  shopperContinuedAt  DateTime?
+  riderContinuedAt    DateTime?
 
   escrowHolds   EscrowHold[]
   sellerPayouts SellerPayout[]

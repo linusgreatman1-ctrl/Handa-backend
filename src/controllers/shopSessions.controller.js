@@ -1667,33 +1667,73 @@ async function markAway(req, res, next) {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ error: "Shop session not found." });
 
-    let field = null;
-    if (session.customerId === req.user.id) field = "customerAwayAt";
-    else if (req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id) field = "shopperAwayAt";
-    else if (req.user.riderProfile && session.riderId === req.user.riderProfile.id) field = "riderAwayAt";
-    if (!field) return res.status(403).json({ error: "You are not a party to this session." });
+    let role = null;
+    if (session.customerId === req.user.id) role = "customer";
+    else if (req.user.shopperProfile && session.shopperId === req.user.shopperProfile.id) role = "shopper";
+    else if (req.user.riderProfile && session.riderId === req.user.riderProfile.id) role = "rider";
+    if (!role) return res.status(403).json({ error: "You are not a party to this session." });
 
     if (["DELIVERED", "COMPLETED", "CANCELLED"].includes(session.status)) {
       return res.json({ session });
     }
 
     const away = !!req.body.away;
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { [field]: away ? new Date() : null } });
+    const awayField = `${role}AwayAt`;
+    const continuedField = `${role}ContinuedAt`;
 
-    const allAway = away && !!updated.customerAwayAt && (!updated.shopperId || !!updated.shopperAwayAt) && (!updated.riderId || !!updated.riderAwayAt);
-    if (allAway) {
+    // Every role genuinely part of this session right now -- customer
+    // always, shopper once matched, rider once assigned. Majority scales
+    // with however many are actually relevant: 1 relevant party needs
+    // just itself to leave; 2 relevant parties need both (unchanged from
+    // the old all-must-agree behavior, since a 50/50 split can't have a
+    // majority); 3 relevant parties need only 2 -- so once all three
+    // roles are genuinely in play, two of them choosing to leave
+    // overrides the third wanting to stay, but a lone dissenter can't
+    // hold the other two hostage either.
+    const roles = ["customer", ...(session.shopperId ? ["shopper"] : []), ...(session.riderId ? ["rider"] : [])];
+    const majorityNeeded = Math.floor(roles.length / 2) + 1;
+
+    if (away) {
+      // Reject outright (don't silently record) if enough of the OTHER
+      // relevant roles have already explicitly voted to continue that
+      // this vote could never reach majority anyway -- matches "other
+      // users are waiting for you to return to the ongoing session."
+      // Only ever possible with all 3 roles relevant (majorityNeeded 2,
+      // "others" can be 2) -- with 1 or 2 relevant roles, "others" tops
+      // out at 0 or 1, always short of majorityNeeded, so this never
+      // blocks a solo or two-party session.
+      const othersContinuedCount = roles.filter((r) => r !== role && session[`${r}ContinuedAt`]).length;
+      if (othersContinuedCount >= majorityNeeded) {
+        return res.status(409).json({ error: "Other users are waiting for you to return to the ongoing session.", blocked: true });
+      }
+    }
+
+    // explicit:true is only ever sent by the ongoing-session prompt's own
+    // "Continue Session" button (public/app/index.html's
+    // _ongoingSessionChoice) -- the persistent "Return to Session" banner's
+    // ordinary re-entry clicks call this same away:false path constantly
+    // during normal use and must NOT count as a real vote, or every active
+    // user would have one within moments and the block above would fire
+    // almost immediately for anyone else.
+    const data = away
+      ? { [awayField]: new Date(), [continuedField]: null }
+      : { [awayField]: null, ...(req.body.explicit ? { [continuedField]: new Date() } : {}) };
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+
+    const awayCount = away ? roles.filter((r) => !!updated[`${r}AwayAt`]).length : 0;
+    if (away && awayCount >= majorityNeeded) {
       const io = req.app.get("io");
       // Same atomic compare-and-swap as cancelSession -- re-asserts
       // non-terminal status right in the WHERE clause so this can't race
       // against, say, the rider confirming delivery in the same moment
-      // everyone else happens to be marked away.
+      // enough other parties happen to reach majority away.
       const { count } = await prisma.shopSession.updateMany({
         where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
         data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() },
       });
       if (count === 0) return res.json({ session: updated });
       const cancelled = await prisma.shopSession.findUnique({ where: { id: session.id } });
-      await refundRemainingDeposit(cancelled, io, "Session auto-cancelled -- every party left");
+      await refundRemainingDeposit(cancelled, io, "Session auto-cancelled -- majority of parties left");
       closeSupportThreadForContext(session.id);
       io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
       io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
@@ -1707,7 +1747,7 @@ async function markAway(req, res, next) {
         const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
         if (rider) notifyUserIds.push(rider.userId);
       }
-      await Promise.all(notifyUserIds.map((uid) => notify(io, uid, "ORDER_UPDATE", "Session cancelled", "Everyone left this session, so it was automatically cancelled and any escrow was refunded.", { sessionId: session.id }).catch(() => {})));
+      await Promise.all(notifyUserIds.map((uid) => notify(io, uid, "ORDER_UPDATE", "Session cancelled", "Enough parties left this session, so it was automatically cancelled and any escrow was refunded.", { sessionId: session.id }).catch(() => {})));
       return res.json({ session: cancelled });
     }
 
