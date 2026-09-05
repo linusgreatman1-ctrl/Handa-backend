@@ -4,6 +4,7 @@ const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/admin.controller");
 const adminMgmt = require("../controllers/adminManagement.controller");
 const adminFiles = require("../controllers/adminFiles.controller");
+const shopSessionsCtrl = require("../controllers/shopSessions.controller");
 
 const router = express.Router();
 router.use(requireAuth, requireRole("ADMIN"));
@@ -51,6 +52,9 @@ router.post("/app-reviews/:id/hide", requireContentOrSuperAdmin, ctrl.setAppRevi
 // Rider-session monitoring — content admin or super admin.
 router.get("/shop-sessions", requireContentOrSuperAdmin, ctrl.listShopSessionsForAdmin);
 router.get("/shop-sessions/:id", requireContentOrSuperAdmin, ctrl.getShopSessionTimeline);
+// Bulk-cancel every non-terminal session (test-data cleanup) -- a real
+// write against every ongoing session's money/state, so super-admin only.
+router.post("/shop-sessions/clear-pending", requireSuperAdmin, shopSessionsCtrl.clearAllPendingSessions);
 
 // Handover code lookup (support-desk use) — content admin or super admin.
 router.get("/active-codes", requireContentOrSuperAdmin, ctrl.lookupActiveCodes);

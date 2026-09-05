@@ -1792,6 +1792,49 @@ async function sendSOS(req, res, next) {
   }
 }
 
+// Admin-only bulk maintenance action -- cancels every currently non-terminal
+// Shop-For-Me session in one pass (e.g. clearing out test/stuck sessions
+// before a testing pass), reusing cancelSession's exact same
+// refund-and-notify logic per session rather than a raw status update, so
+// every customer/shopper/rider is refunded and notified correctly.
+async function clearAllPendingSessions(req, res, next) {
+  try {
+    const io = req.app.get("io");
+    const pending = await prisma.shopSession.findMany({
+      where: { status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+    });
+    const results = [];
+    for (const session of pending) {
+      try {
+        const { count } = await prisma.shopSession.updateMany({
+          where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+          data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() },
+        });
+        if (count === 0) continue;
+        const updated = await prisma.shopSession.findUnique({ where: { id: session.id } });
+        const refundedKobo = await refundRemainingDeposit(updated, io, "Session cleared by admin");
+        closeSupportThreadForContext(session.id);
+        io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
+        io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
+        if (session.shopperId) {
+          const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
+          if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session cancelled", "This Shop-For-Me session was cleared by an admin.", { sessionId: session.id }).catch(() => {});
+        }
+        if (session.riderId) {
+          const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
+          if (rider) await notify(io, rider.userId, "ORDER_UPDATE", "Session cancelled", "This Shop-For-Me session was cleared by an admin.", { sessionId: session.id }).catch(() => {});
+        }
+        results.push({ sessionId: session.id, previousStatus: session.status, refundedKobo });
+      } catch (e) {
+        results.push({ sessionId: session.id, previousStatus: session.status, error: e.message });
+      }
+    }
+    res.json({ clearedCount: results.length, results });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function confirmSellerPayouts(req, res, next) {
   try {
     if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
@@ -1926,6 +1969,7 @@ module.exports = {
   confirmSession,
   finalizeAutoReleasedSessions,
   cancelSession,
+  clearAllPendingSessions,
   confirmSellerPayouts,
   expireStaleSearchingSessions,
   expireStaleLiveSessions,
