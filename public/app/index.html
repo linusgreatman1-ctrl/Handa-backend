@@ -11539,8 +11539,7 @@ function _vendorBookingWriteup(b,isCook){
   var isNegotiated=!isCook||b.packageKey==='premium';
   if(isNegotiated){
     if(b.amountReleasedKobo===0){
-      var bothEngaged=!!(b.customerEngagedAt&&b.vendorEngagedAt);
-      return bothEngaged?{text:'💬 Conversation Active',color:'#9B59B6'}:{text:'⏳ Awaiting payment release',color:'#9A9390'};
+      return b.vendorEngagedAt?{text:'💬 Conversation Active',color:'#9B59B6'}:{text:'⏳ Awaiting payment release',color:'#9A9390'};
     }
     if(b.pendingPaymentRequestKobo)return {text:'💵 Additional payment requested — awaiting customer',color:'#F5A623'};
   }
@@ -11712,7 +11711,6 @@ async function openVendorBookingDetail(id){
     // the other. Read further down to also suppress the generic Chat/Call
     // block while collapsed, so they don't double up once expanded.
     var vendorPreReleaseWindow=isNegotiated&&b.status==='CONFIRMED'&&b.amountReleasedKobo===0&&!b.pendingEditSnapshot&&!b.vendorConfirmedCompleteAt;
-    var vendorBothEngaged=!!(b.customerEngagedAt&&b.vendorEngagedAt);
     var vendorStatusBlock='';
     if(vendorHasOpenDispute){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
@@ -11765,18 +11763,22 @@ async function openVendorBookingDetail(id){
       }else if(b.vendorConfirmedCompleteAt){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>';
       }else if(vendorPreReleaseWindow){
-        if(vendorBothEngaged){
+        // Engaging is per-side, not mutual -- tapping Engage Customer
+        // reveals Chat/Call for the VENDOR right away, regardless of
+        // whether the customer has engaged too. The customer only finds
+        // out once the vendor actually taps Chat or Call (the existing
+        // chat/call request flow), not from this tap alone.
+        if(b.vendorEngagedAt){
           vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F4AC; Conversation Active</div></div>'
             +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'
             +'<button onclick="openVendorBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
             +'<button onclick="openVendorBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
             +'</div>'
+            +'<div style="text-align:center;color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Booking Conversation below.</div>'
             +'<button onclick="vendorEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">End Booking Conversation</button>';
         }else{
           vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;color:#9A9390;font-size:12px;font-weight:700;text-align:center;margin-bottom:10px;">&#x23F3; Waiting for the customer to release payment</div>'
-            +(b.vendorEngagedAt
-              ? '<div style="text-align:center;color:#9B59B6;font-size:12px;font-weight:700;padding:6px 0;">Waiting for the customer to engage&#8230;</div>'
-              : '<button onclick="vendorEngageBooking(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Engage Customer</button>');
+            +'<button onclick="vendorEngageBooking(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Engage Customer</button>';
         }
       }else if(isNegotiated&&b.pendingPaymentRequestKobo){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">&#x23F3; Waiting for the customer to respond to your &#x20a6;'+Number(Math.round(b.pendingPaymentRequestKobo/100)).toLocaleString()+' request</div>';
@@ -11818,9 +11820,9 @@ async function openVendorBookingDetail(id){
     // the vendor has accepted the booking.
     var vendorNotYetDecided=b.status==='PAID';
     // vendorPreReleaseWindow: Chat/Call only ever show INSIDE this window
-    // once both sides have engaged (see vendorBothEngaged above) -- the
+    // once the vendor has engaged (see vendorEngagedAt above) -- the
     // generic block below stays suppressed for the whole pre-release
-    // window regardless, so a not-yet-both-engaged state doesn't show a
+    // window regardless, so a not-yet-engaged state doesn't show a
     // second, redundant Chat/Call pair.
     var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute||vendorPreReleaseWindow;
     var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&!(isNegotiated&&b.amountReleasedKobo>0)&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
@@ -12286,13 +12288,15 @@ async function openCustomerHistoryDetail(kind,id){
     // (packageKey "premium") go through the negotiated-release flow --
     // Engage Your Vendor / Release Payment -> Job Started -> vendor can
     // request more -> whatever's left pays out at completion. Engaging is
-    // entirely optional: the customer can tap Release Payment right away
-    // with no conversation at all, or tap Engage Your Vendor first --
-    // once BOTH sides have engaged, Chat/Call plus End Booking
-    // Conversation replace the two buttons until either side ends it.
+    // per-side, not mutual: tapping Engage Your Vendor reveals Chat/Call
+    // for the CUSTOMER right away, regardless of whether the vendor has
+    // engaged too -- the vendor only finds out once the customer actually
+    // taps Chat or Call (the existing chat/call request flow), not from
+    // this tap alone. Release Payment is also entirely optional to gate
+    // behind: the customer can tap it right away with no conversation at
+    // all, and it stays available even while engaged.
     var isNegotiated=isEP||b.packageKey==='premium';
     var preRelease=!isTerminal&&!hasPendingEdit&&isNegotiated&&b.status==='CONFIRMED'&&b.amountReleasedKobo===0;
-    var bothEngaged=!!(b.customerEngagedAt&&b.vendorEngagedAt);
     var hasPaymentRequest=!isTerminal&&!!b.pendingPaymentRequestKobo;
     // Home Cook only: before the vendor taps "Job Started", the customer
     // still sees a "waiting to start" message and can edit/cancel; once
@@ -12321,10 +12325,10 @@ async function openCustomerHistoryDetail(kind,id){
     // show underneath it even though the dispute is what's supposed to be
     // the only thing left to do at that point (an admin resolves it, not
     // a chat message).
-    // preRelease owns its own Chat/Call buttons (only once bothEngaged) --
-    // the generic block below stays suppressed for the whole window
-    // regardless, so a not-yet-both-engaged state doesn't show a second,
-    // redundant Chat/Call pair.
+    // preRelease owns its own Chat/Call buttons (once the customer has
+    // engaged) -- the generic block below stays suppressed for the whole
+    // window regardless, so a not-yet-engaged state doesn't show a
+    // second, redundant Chat/Call pair.
     var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute||preRelease;
     // Home Cook: visible from the moment the booking is sent (REQUESTED/
     // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
@@ -12445,20 +12449,20 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="payForBooking(\''+b.id+'\','+b.totalKobo+',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="width:100%;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B3; Resume Payment</button>'
         +'</div>'
       ):'')
-      +(preRelease&&bothEngaged?(
+      +(preRelease&&b.customerEngagedAt?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;">'
         +'<div style="color:#9B59B6;font-size:14px;font-weight:800;margin-bottom:12px;">&#x1F4AC; Conversation Active</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
         +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
         +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
         +'</div>'
+        +'<div style="color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Booking Conversation below.</div>'
         +'<button onclick="customerEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">End Booking Conversation</button>'
         +'</div>'
       ):preRelease?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
-        +(b.customerEngagedAt?'<div style="color:#9B59B6;font-size:12px;font-weight:700;margin-bottom:12px;">Waiting for the vendor to engage&#8230;</div>':'')
         +'<div style="display:flex;gap:10px;">'
-        +(b.customerEngagedAt?'':'<button onclick="customerEngageBooking(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(155,89,182,.4);background:transparent;color:#9B59B6;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F91D; Engage Your Vendor</button>')
+        +'<button onclick="customerEngageBooking(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(155,89,182,.4);background:transparent;color:#9B59B6;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F91D; Engage Your Vendor</button>'
         +'<button onclick="openCustomerReleasePaymentModal(\''+b.id+'\','+res.escrowHoldRemainingKobo+')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B0; Release Payment</button>'
         +'</div>'
         +'</div>'
@@ -14158,6 +14162,13 @@ async function epBkConfirmBooking(){
   var time=(document.getElementById('epb-time')||{}).value||'';
   var guests=(document.getElementById('epb-guests')||{}).value||'';
   var type=(document.getElementById('epb-type')||{}).value||'';
+  // The customer's own "Additional Requirements" text (epb-notes) was
+  // never being read at all -- notes was being set to just the event type
+  // string, silently discarding whatever they typed. Combine both, same
+  // "Event type: X — <real notes>" pattern cookBkConfirmBooking's Event
+  // Catering Package branch already uses.
+  var reqNotes=(document.getElementById('epb-notes')||{}).value||'';
+  var notes=type?('Event type: '+type+(reqNotes?' — '+reqNotes:'')):reqNotes;
   _epb._submitting=true;
   var epbBtn=document.getElementById('epb-confirm-btn');
   if(epbBtn){epbBtn.disabled=true;epbBtn.style.opacity='.6';epbBtn.style.cursor='default';epbBtn.textContent='Sending…';}
@@ -14181,7 +14192,7 @@ async function epBkConfirmBooking(){
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_epb.epId, type:'EVENT_PLANNING', servicePackageId:vendorPkg?vendorPkg.id:undefined,
-      eventDate:dt, eventTime:time, venue:venue, guestCount:guests?parseInt(guests):undefined, notes:type,
+      eventDate:dt, eventTime:time, venue:venue, guestCount:guests?parseInt(guests):undefined, notes:notes,
       paymentMethod:PAY_METHOD_MAP[_epb.payMethod]||'CARD',
     })});
     _epb._submitting=false;
@@ -14238,8 +14249,7 @@ function _customerBookingWriteup(b){
   // real gate, since the customer can release straight away.
   if(isNegotiated){
     if(b.amountReleasedKobo===0){
-      var bothEngaged=!!(b.customerEngagedAt&&b.vendorEngagedAt);
-      return bothEngaged?{text:'💬 Conversation Active',color:'#9B59B6'}:{text:'💰 Engage your vendor or release payment',color:'#2ECC71'};
+      return b.customerEngagedAt?{text:'💬 Conversation Active',color:'#9B59B6'}:{text:'💰 Engage your vendor or release payment',color:'#2ECC71'};
     }
     if(b.pendingPaymentRequestKobo)return {text:'💵 Vendor requesting additional payment',color:'#F5A623'};
   }

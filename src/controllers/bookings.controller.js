@@ -659,15 +659,16 @@ async function startBookingJob(req, res, next) {
 }
 
 // Either party's "Engage" tap (customer: "Engage Your Vendor", vendor:
-// "Engage Customer") -- purely a chat/call unlock, never a payment gate.
-// Idempotent (re-tapping your own already-set engage is a harmless no-op)
-// so the frontend doesn't need to carefully track whether it already
-// fired. Once BOTH customerEngagedAt and vendorEngagedAt are set, the
-// frontend shows Chat/Call plus "End Booking Conversation"
-// (endBookingConversation, below) -- until then, whichever side has
-// engaged just waits on the other. Scoped to before the first release
-// (amountReleasedKobo===0) -- once the customer has released payment,
-// the ordinary always-visible contact buttons take over instead.
+// "Engage Customer") -- purely a chat/call unlock, never a payment gate,
+// and per-side, not mutual: setting the caller's own engaged timestamp
+// immediately reveals Chat/Call plus "End Booking Conversation" in THEIR
+// OWN UI, regardless of whether the other side has engaged too. The other
+// party never finds out from this tap alone -- only once the engaged
+// party actually taps Chat or Call does a real request go out (the
+// existing chat/call notification flow). Idempotent (re-tapping your own
+// already-set engage is a harmless no-op). Scoped to before the first
+// release (amountReleasedKobo===0) -- once the customer has released
+// payment, the ordinary always-visible contact buttons take over instead.
 async function engageBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
@@ -684,21 +685,11 @@ async function engageBooking(req, res, next) {
     if (booking[field]) return res.json({ booking });
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { [field]: new Date() } });
-    const vendor = isCustomer ? await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } }) : null;
-    const notifyUserId = isCustomer ? vendor?.userId : booking.customerId;
-    const bothEngaged = !!(updated.customerEngagedAt && updated.vendorEngagedAt);
-    if (notifyUserId) {
-      await notify(
-        req.app.get("io"),
-        notifyUserId,
-        "ORDER_UPDATE",
-        bothEngaged ? "Ready to chat" : "Vendor engagement" ,
-        bothEngaged
-          ? `You can now chat and call about booking #${booking.bookingNumber}.`
-          : `${isCustomer ? "The customer" : "The vendor"} wants to engage about booking #${booking.bookingNumber}.`,
-        { bookingId: booking.id }
-      ).catch(() => {});
-    }
+    // No notification to the other party here on purpose -- engaging is
+    // silent and reveals Chat/Call only to whoever just tapped it. The
+    // other side only ever finds out once a real chat message or call
+    // request actually goes out (the existing chat/call notification
+    // flow), not from this tap alone.
     req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -706,9 +697,10 @@ async function engageBooking(req, res, next) {
   }
 }
 
-// Either party can end an active (or one-sided) conversation. Clears both
-// engaged timestamps back to null -- either side can tap Engage again
-// later, this isn't a one-time transition. negotiationEndedAt/
+// Either party can end their OWN active conversation -- clears only the
+// caller's own engaged timestamp, never the other side's (engaging is
+// per-side, not mutual; see engageBooking above). Either side can tap
+// Engage again later, this isn't a one-time transition. negotiationEndedAt/
 // negotiationEndedBy are still stamped as a harmless historical "a
 // conversation happened" marker, but nothing reads them as a gate anymore
 // -- Release Payment (releaseBookingPayment, below) has always been
@@ -721,12 +713,17 @@ async function endBookingConversation(req, res, next) {
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
     if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no engage/conversation stage." });
-    if (!booking.customerEngagedAt && !booking.vendorEngagedAt) return res.status(409).json({ error: "No conversation is currently active." });
+    // Engaging is per-side, not mutual (see engageBooking) -- ending it is
+    // the same: this only ever clears the CALLER's own engaged flag, never
+    // the other side's. The other party's own Chat/Call access (if they
+    // separately engaged too) is untouched.
+    const myField = isCustomer ? "customerEngagedAt" : "vendorEngagedAt";
+    if (!booking[myField]) return res.status(409).json({ error: "You don't have an active conversation to end." });
 
     const endedBy = isCustomer ? "CUSTOMER" : "VENDOR";
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      data: { customerEngagedAt: null, vendorEngagedAt: null, negotiationEndedAt: new Date(), negotiationEndedBy: endedBy },
+      data: { [myField]: null, negotiationEndedAt: new Date(), negotiationEndedBy: endedBy },
     });
     const notifyUserId = isCustomer ? booking.vendor.userId : booking.customerId;
     await notify(req.app.get("io"), notifyUserId, "ORDER_UPDATE", "Conversation ended", `The ${isCustomer ? "customer" : "vendor"} ended the conversation for booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
