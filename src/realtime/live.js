@@ -352,6 +352,14 @@ function attachLiveSocket(httpServer) {
     shopSessionsCtrl.expireStaleLiveSessions(io).catch((err) => console.error("[shop-session] stale-live-session sweep failed:", err));
   }, sweepMs);
 
+  // A session where one of two pre-items-bought parties (customer/shopper)
+  // returned home and the other never followed -- gives the away party a
+  // real 10-minute grace window (checked here, not in the request itself)
+  // before auto-cancelling. See markAway/expireAbandonedPreItemsSessions.
+  setInterval(() => {
+    shopSessionsCtrl.expireAbandonedPreItemsSessions(io).catch((err) => console.error("[shop-session] abandoned-pre-items sweep failed:", err));
+  }, sweepMs);
+
   // Reminds a vendor (home cook / event planner) ~24h and ~2h before an
   // accepted/confirmed booking's event time — same off-request-path
   // pattern as the sweeps above.

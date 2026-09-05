@@ -108,10 +108,21 @@ function sessionFeeForDuration(minutes) {
   return 500000 + Math.ceil((minutes - 60) / 30) * 200000;
 }
 
+// A customer with a session still in flight can't start a second one --
+// mirrors the shopper/rider exclusivity checks below (matchSession,
+// acceptDelivery). "In flight" is deliberately the same terminal set used
+// everywhere else in this file (only COMPLETED/CANCELLED free someone up),
+// not e.g. DELIVERED, since the customer's own confirm-completion step is
+// still outstanding at that point.
+const ACTIVE_SESSION_STATUSES = { notIn: ["COMPLETED", "CANCELLED"] };
+
 async function createSession(req, res, next) {
   try {
     const { storeId, deliveryAddress, deliveryLat, deliveryLng, items, market } = req.body;
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "At least one item is required." });
+
+    const existingActive = await prisma.shopSession.findFirst({ where: { customerId: req.user.id, status: ACTIVE_SESSION_STATUSES } });
+    if (existingActive) return res.status(409).json({ error: "You already have an ongoing Shop-For-Me session. Complete or cancel it before starting a new one.", sessionId: existingActive.id });
 
     // Real road-distance predicted rider fee, computed once here (not
     // DEFAULT_RIDER_FEE_KOBO's old flat guess) -- the market name the
@@ -530,6 +541,9 @@ async function matchSession(req, res, next) {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "SEARCHING" || session.shopperId) return res.status(409).json({ error: "This session has already been matched." });
+
+    const existingActive = await prisma.shopSession.findFirst({ where: { shopperId: req.user.shopperProfile.id, status: ACTIVE_SESSION_STATUSES } });
+    if (existingActive) return res.status(409).json({ error: "You already have an ongoing session. Complete or leave it before accepting another." });
 
     const updated = await prisma.shopSession.update({
       where: { id: session.id },
@@ -1083,6 +1097,9 @@ async function acceptDelivery(req, res, next) {
     if (!session) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "FINDING_RIDER") return res.status(409).json({ error: "This session is not looking for a rider yet." });
     if (session.riderId) return res.status(409).json({ error: "Another rider has already accepted this delivery." });
+
+    const existingActive = await prisma.shopSession.findFirst({ where: { riderId: req.user.riderProfile.id, status: ACTIVE_SESSION_STATUSES } });
+    if (existingActive) return res.status(409).json({ error: "You already have an ongoing delivery. Complete or leave it before accepting another." });
 
     const updated = await prisma.shopSession.update({
       where: { id: session.id },
@@ -1653,15 +1670,64 @@ async function cancelSession(req, res, next) {
   }
 }
 
+// Once the live call has ended (every item necessarily already approved --
+// see startPackaging's own hard requirement -- and the shopper genuinely
+// out in the market with the money), the items are considered already
+// bought. From here on, no away-vote/return-home combination is ever
+// allowed to cancel or block anything -- the session simply persists,
+// exactly as-is, until it actually completes.
+const ITEMS_NOT_YET_BOUGHT_STATUSES = ["SEARCHING", "MATCHED", "BUILDING_LIST", "LIVE_CALL"];
+function itemsAlreadyBought(session) {
+  return !ITEMS_NOT_YET_BOUGHT_STATUSES.includes(session.status);
+}
+
+const AWAY_GRACE_MS = 10 * 60 * 1000; // 10 minutes
+
+// Shared by markAway's own both-away path and expireAbandonedPreItemsSessions
+// below -- a pre-items-bought cancellation still owes the shopper their fee
+// for the time already spent (the call already happened), unlike a genuine
+// no-shopper-ever-matched SEARCHING cancel, which has nothing to pay out.
+// Releasing (not refunding) the shopper's fee hold first, then refunding
+// whatever's left via refundRemainingDeposit, gives exactly "customer
+// refunded after deducting the shopper fee" -- refundRemainingDeposit's own
+// accounting already treats a RELEASED hold's amount as "accounted for," so
+// nothing here gets double-paid or double-refunded.
+async function cancelViaAwayVote(cancelledSession, io, reasonText) {
+  const shopperHold = await prisma.escrowHold.findFirst({ where: { contextType: "SHOP_SESSION", shopSessionId: cancelledSession.id, payeeRole: "SHOPPER", status: "HELD" } });
+  if (shopperHold) {
+    await escrow.releaseHold(shopperHold.id, { description: "Shop-For-Me session ended before items were bought -- shopper fee paid out for time already spent." });
+  }
+  await refundRemainingDeposit(cancelledSession, io, reasonText);
+  closeSupportThreadForContext(cancelledSession.id);
+  io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: cancelledSession.id });
+  io?.to(`shop-session:${cancelledSession.id}`).emit("shop-session:status", { sessionId: cancelledSession.id, status: "CANCELLED" });
+  if (cancelledSession.shopperId) {
+    const shopper = await prisma.shopperProfile.findUnique({ where: { id: cancelledSession.shopperId }, select: { userId: true } });
+    if (shopper) await notify(io, shopper.userId, "ORDER_UPDATE", "Session cancelled", "This Shop-For-Me session was cancelled before items were bought. Your shopper fee was still paid out for the time already spent.", { sessionId: cancelledSession.id }).catch(() => {});
+  }
+}
+
 // Toggle "I've left this session" per party -- driven by the frontend's
-// ongoing-session prompt (Return to Homepage sets it, Continue clears it;
-// see ShopSession.customerAwayAt's schema comment). Only actually cancels
-// once EVERY party currently relevant to the session (customer always;
-// shopper once matched; rider once assigned) is simultaneously away --
-// one party staying engaged keeps it running completely untouched. Not a
-// substitute for the customer's own explicit cancelSession above (a
-// deliberate single-party cancel is unrelated to this) -- this only fires
-// from the specific "everyone genuinely walked away" combination.
+// ongoing-session prompt (Return to Homepage sets it, the prompt's Continue
+// button and the persistent Return-to-Session banner's re-entry both clear
+// it; see ShopSession.customerAwayAt's schema comment).
+//
+// Cancellation rules, by stage:
+//   - Items already bought (itemsAlreadyBought) -- NEVER cancels or blocks
+//     here, no matter who's away or how many times anyone refreshes/
+//     logs back in. The session just persists until it genuinely completes.
+//   - Still SEARCHING (no shopper matched yet) -- the customer is the only
+//     relevant party; returning home cancels immediately (nothing to vote
+//     on, no shopper fee owed since none was ever held).
+//   - Matched but pre-items-bought (MATCHED/BUILDING_LIST/LIVE_CALL) -- the
+//     customer and shopper are both relevant. Both away at once cancels
+//     immediately (shopper fee paid out, rest refunded). Exactly one away
+//     does not cancel or block anything by itself -- it just starts a
+//     10-minute grace period on the away party, checked by
+//     expireAbandonedPreItemsSessions below.
+// A rider is never a relevant party here -- one is only ever assigned once
+// PACKAGING has already begun, by which point itemsAlreadyBought is true
+// and the whole voting mechanic above is already moot.
 async function markAway(req, res, next) {
   try {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -1680,81 +1746,99 @@ async function markAway(req, res, next) {
     const away = !!req.body.away;
     const awayField = `${role}AwayAt`;
     const continuedField = `${role}ContinuedAt`;
-
-    // Every role genuinely part of this session right now -- customer
-    // always, shopper once matched, rider once assigned. Majority scales
-    // with however many are actually relevant: 1 relevant party needs
-    // just itself to leave; 2 relevant parties need both (unchanged from
-    // the old all-must-agree behavior, since a 50/50 split can't have a
-    // majority); 3 relevant parties need only 2 -- so once all three
-    // roles are genuinely in play, two of them choosing to leave
-    // overrides the third wanting to stay, but a lone dissenter can't
-    // hold the other two hostage either.
-    const roles = ["customer", ...(session.shopperId ? ["shopper"] : []), ...(session.riderId ? ["rider"] : [])];
-    const majorityNeeded = Math.floor(roles.length / 2) + 1;
-
-    if (away) {
-      // Reject outright (don't silently record) if enough of the OTHER
-      // relevant roles have already explicitly voted to continue that
-      // this vote could never reach majority anyway -- matches "other
-      // users are waiting for you to return to the ongoing session."
-      // Only ever possible with all 3 roles relevant (majorityNeeded 2,
-      // "others" can be 2) -- with 1 or 2 relevant roles, "others" tops
-      // out at 0 or 1, always short of majorityNeeded, so this never
-      // blocks a solo or two-party session.
-      const othersContinuedCount = roles.filter((r) => r !== role && session[`${r}ContinuedAt`]).length;
-      if (othersContinuedCount >= majorityNeeded) {
-        return res.status(409).json({ error: "Other users are waiting for you to return to the ongoing session.", blocked: true });
-      }
-    }
-
     // explicit:true is only ever sent by the ongoing-session prompt's own
     // "Continue Session" button (public/app/index.html's
     // _ongoingSessionChoice) -- the persistent "Return to Session" banner's
     // ordinary re-entry clicks call this same away:false path constantly
-    // during normal use and must NOT count as a real vote, or every active
-    // user would have one within moments and the block above would fire
-    // almost immediately for anyone else.
+    // during normal use and must NOT count as a real "I'm back" vote.
     const data = away
       ? { [awayField]: new Date(), [continuedField]: null }
       : { [awayField]: null, ...(req.body.explicit ? { [continuedField]: new Date() } : {}) };
-    const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
 
-    const awayCount = away ? roles.filter((r) => !!updated[`${r}AwayAt`]).length : 0;
-    if (away && awayCount >= majorityNeeded) {
-      const io = req.app.get("io");
-      // Same atomic compare-and-swap as cancelSession -- re-asserts
-      // non-terminal status right in the WHERE clause so this can't race
-      // against, say, the rider confirming delivery in the same moment
-      // enough other parties happen to reach majority away.
+    if (itemsAlreadyBought(session) || role === "rider") {
+      const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+      return res.json({ session: updated });
+    }
+
+    if (!session.shopperId) {
+      // Still SEARCHING -- customer alone. Recording away:false or a
+      // continue vote is a harmless no-op here; only a genuine away:true
+      // actually does anything.
+      if (!away) {
+        const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+        return res.json({ session: updated });
+      }
       const { count } = await prisma.shopSession.updateMany({
         where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
         data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() },
       });
-      if (count === 0) return res.json({ session: updated });
+      if (count === 0) {
+        const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+        return res.json({ session: updated });
+      }
       const cancelled = await prisma.shopSession.findUnique({ where: { id: session.id } });
-      await refundRemainingDeposit(cancelled, io, "Session auto-cancelled -- majority of parties left");
+      const io = req.app.get("io");
+      await refundRemainingDeposit(cancelled, io, "Customer returned home before a shopper was found");
       closeSupportThreadForContext(session.id);
       io?.to("dispatch:shoppers").emit("shop-session:taken", { sessionId: session.id });
       io?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "CANCELLED" });
-
-      const notifyUserIds = [session.customerId];
-      if (session.shopperId) {
-        const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
-        if (shopper) notifyUserIds.push(shopper.userId);
-      }
-      if (session.riderId) {
-        const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
-        if (rider) notifyUserIds.push(rider.userId);
-      }
-      await Promise.all(notifyUserIds.map((uid) => notify(io, uid, "ORDER_UPDATE", "Session cancelled", "Enough parties left this session, so it was automatically cancelled and any escrow was refunded.", { sessionId: session.id }).catch(() => {})));
       return res.json({ session: cancelled });
+    }
+
+    // Matched, pre-items-bought -- customer and shopper both relevant.
+    const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+    if (away) {
+      const otherRole = role === "customer" ? "shopper" : "customer";
+      if (updated[`${otherRole}AwayAt`]) {
+        const { count } = await prisma.shopSession.updateMany({
+          where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+          data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() },
+        });
+        if (count > 0) {
+          const cancelled = await prisma.shopSession.findUnique({ where: { id: session.id } });
+          await cancelViaAwayVote(cancelled, req.app.get("io"), "Both customer and shopper returned home before items were bought");
+          return res.json({ session: cancelled });
+        }
+      }
     }
 
     res.json({ session: updated });
   } catch (err) {
     next(err);
   }
+}
+
+// Off-request-path sweep (same pattern as the other stale-session sweeps
+// above) -- a session where exactly one of the two pre-items-bought
+// relevant parties (customer, shopper) returned home and the other never
+// followed isn't something any single request naturally revisits. After a
+// 10-minute grace period on the away party's own timestamp, auto-cancels
+// exactly like markAway's own both-away path (shopper fee paid out for
+// time already spent, the rest refunded).
+async function expireAbandonedPreItemsSessions(io) {
+  const cutoff = new Date(Date.now() - AWAY_GRACE_MS);
+  const candidates = await prisma.shopSession.findMany({
+    where: {
+      status: { in: ["MATCHED", "BUILDING_LIST", "LIVE_CALL"] },
+      shopperId: { not: null },
+      OR: [
+        { customerAwayAt: { lte: cutoff }, shopperAwayAt: null },
+        { shopperAwayAt: { lte: cutoff }, customerAwayAt: null },
+      ],
+    },
+  });
+  let cancelledCount = 0;
+  for (const session of candidates) {
+    const { count } = await prisma.shopSession.updateMany({
+      where: { id: session.id, status: { notIn: ["DELIVERED", "COMPLETED", "CANCELLED"] } },
+      data: { status: "CANCELLED", cancelledAt: new Date(), abandonedAt: new Date() },
+    });
+    if (count === 0) continue;
+    const cancelled = await prisma.shopSession.findUnique({ where: { id: session.id } });
+    await cancelViaAwayVote(cancelled, io, "The other party didn't return within 10 minutes, before items were bought");
+    cancelledCount++;
+  }
+  return cancelledCount;
 }
 
 // Shopper allocates the deposited shopping budget (deposit minus the
@@ -1973,4 +2057,5 @@ module.exports = {
   confirmSellerPayouts,
   expireStaleSearchingSessions,
   expireStaleLiveSessions,
+  expireAbandonedPreItemsSessions,
 };

@@ -3514,21 +3514,26 @@ function _joinShopSessionRoom(sessionId){
 // need a confirmation prompt in front of it).
 async function detectActiveShopSession(role) {
   try {
+    // Deliberately ignores customerAwayAt/shopperAwayAt/riderAwayAt --
+    // returning home never hides a still-active session from the party who
+    // left. They must keep seeing the persistent "Return to Session"
+    // banner/prompt on their own homepage (that's the whole point of the
+    // away vote: it's a request to leave, not a dismissal), and once items
+    // are already bought (see itemsAlreadyBought, backend) the session is
+    // never allowed to disappear from anyone's screen no matter how many
+    // times they log out/refresh. The per-tab prompt-suppression
+    // (_isSessionDismissed) is the only thing that ever silences the
+    // repeat "Continue or Return Home?" modal -- unrelated to this.
     if (role === 'shopper') {
       var rs = await api('/shop-sessions?as=shopper');
-      // Excludes a session this shopper already explicitly left via
-      // "Return to Homepage" -- even while it's still technically alive
-      // (waiting on the others to reach majority), it should be invisible
-      // to THIS user going forward: no more prompt, no more persistent
-      // banner, until it's genuinely cancelled or a real new session starts.
-      return (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1&&!s.shopperAwayAt;}) || null;
+      return (rs.sessions||[]).find(function(s){return ['MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;}) || null;
     }
     if (role === 'rider') {
       var rr = await api('/shop-sessions?as=rider');
-      return (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1&&!s.riderAwayAt;}) || null;
+      return (rr.sessions||[]).find(function(s){return ['RIDER_ASSIGNED','OUT_FOR_DELIVERY'].indexOf(s.status)>-1;}) || null;
     }
     var rc = await api('/shop-sessions?as=customer');
-    return (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1&&!s.customerAwayAt;}) || null;
+    return (rc.sessions||[]).find(function(s){return ['SEARCHING','MATCHED','BUILDING_LIST','LIVE_CALL','PACKAGING','FINDING_RIDER','RIDER_ASSIGNED','OUT_FOR_DELIVERY','DELIVERED'].indexOf(s.status)>-1;}) || null;
   } catch (err) {
     return null;
   }
