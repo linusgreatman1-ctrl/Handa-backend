@@ -6210,6 +6210,27 @@ async function customerGoHome(){
 
 
 
+// Mirrors the backend's own relevantPresenceRoles/assertAllPresent
+// (shopSessions.controller.js) -- every genuinely joint, forward-moving
+// action (starting/ending the live call, requesting a rider, the 3-way
+// handover steps, marking delivery) only makes sense once every CURRENTLY
+// relevant party is actually back on the session, not just still assigned
+// to it. The shopper drops out of the relevant set entirely once they've
+// handed the goods to the rider (handoverConfirmedAt) -- from that point
+// it's just customer + rider. Returns the list of relevant roles who are
+// still away (empty = everyone's present, action buttons stay enabled).
+function _sfmMissingPresence(session){
+  if(!session)return [];
+  var roles=['customer'];
+  if(session.shopperId&&!session.handoverConfirmedAt)roles.push('shopper');
+  if(session.riderId)roles.push('rider');
+  return roles.filter(function(r){return !!session[r+'AwayAt'];});
+}
+function _sfmPresenceNoticeHtml(session){
+  var missing=_sfmMissingPresence(session);
+  if(!missing.length)return '';
+  return '<div style="background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);border-radius:12px;padding:11px 14px;margin-bottom:9px;text-align:center;color:#F5A623;font-size:12px;font-weight:700;">&#x23F3; Waiting for the '+missing.join(' and ')+' to return to the session</div>';
+}
 function renderShopperPhase(phase) {
   window._shopperPhase = phase;
   const body = document.getElementById('shopper-body');
@@ -6244,7 +6265,8 @@ function renderShopperPhase(phase) {
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Timing starts the moment you tap Start Live Call. If <strong>you</strong> step away it pauses until you rejoin; it keeps running if the customer steps away.</div>
         <div style="font-size:12px;color:#9A9390;margin-top:5px;">• Only you can end the call, and only once every item is approved — unless you use Emergency End, available any time. Ending because the customer asked charges them just for time spent; ending on your own charges them nothing. Either way it's recorded as an uncompleted session.</div>
       </div>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#B31010,#8A0000);margin-bottom:9px;" onclick="shopperStartLiveCall()">📹 I'm at the Market — Start Live Call</button>
+      ${_sfmPresenceNoticeHtml(acc)}
+      <button class="btn btn-primary" ${_sfmMissingPresence(acc).length?'disabled style="background:#333;color:#777;margin-bottom:9px;"':'style="background:linear-gradient(135deg,#B31010,#8A0000);margin-bottom:9px;"'} onclick="shopperStartLiveCall()">📹 I'm at the Market — Start Live Call</button>
       <button class="btn btn-outline" style="border-color:rgba(232,57,46,.4);color:#E8392E;" onclick="shopperCancelSession()">✕ Cancel Session</button>
     </div>`;
 
@@ -6387,7 +6409,8 @@ function renderShopperPhase(phase) {
           <button class="btn" style="flex:1;background:rgba(46,204,113,0.10);border:1.5px solid rgba(26,140,80,.4);color:#2ECC71;" onclick="shopperCallCustomer()">📞 Call</button>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="shopperCallFindRider()">🔍 Search for Nearby Riders</button>
+      ${_sfmPresenceNoticeHtml(window._shopperSession)}
+      <button class="btn btn-primary" ${_sfmMissingPresence(window._shopperSession).length?'disabled style="background:#333;color:#777;"':''} onclick="shopperCallFindRider()">🔍 Search for Nearby Riders</button>
       <button class="btn btn-outline" style="margin-top:9px;" onclick="renderShopperPhase('packaging')">← Back</button>
     </div>`;
 
@@ -6495,9 +6518,12 @@ function renderShopperPhase(phase) {
       <div style="background:rgba(232,57,46,0.10);border:1.5px solid rgba(232,71,10,.25);border-radius:13px;padding:13px 15px;margin-bottom:13px;">
         <div style="font-weight:800;font-size:13px;color:#E8392E;margin-bottom:6px;">📞 3-Way Confirm Call — Required</div>
         <div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Start a real call with ${_rNm} and ${_cNm} so the rider can hear the customer confirm the items directly before you hand them over. The confirm button unlocks only after the call.</div>
+        ${_sfmPresenceNoticeHtml(window._shopperSession)}
         <div id="shopper-confirmcall-status">
           ${(window._shopperSession&&window._shopperSession.confirmCallCompletedAt)
             ? '<div style="font-size:12px;color:#2ECC71;font-weight:700;">✅ Confirm call completed — you may now confirm handover</div>'
+            : _sfmMissingPresence(window._shopperSession).length
+            ? '<button disabled style="width:100%;padding:11px;border-radius:10px;border:none;background:#333;color:#777;font-weight:800;font-size:13px;font-family:\'DM Sans\',sans-serif;">📞 Start 3-Way Confirm Call</button>'
             : '<button onclick="shopperStartConfirmCall()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#3B9FE8;color:#111;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">📞 Start 3-Way Confirm Call</button>'}
         </div>
       </div>
@@ -6670,7 +6696,7 @@ function renderShopperItemStatus() {
   const counter = document.getElementById('shopper-item-counter');
   if(counter) counter.textContent = `${approved}/${items.length} approved by customer`;
   const doneBtn = document.getElementById('shopper-done-btn');
-  if(doneBtn && items.length > 0 && items.every(x=>x.approved)) {
+  if(doneBtn && items.length > 0 && items.every(x=>x.approved) && !_sfmMissingPresence(window._shopperSession).length) {
     doneBtn.style.opacity='1'; doneBtn.style.pointerEvents='auto';
   }
 }
@@ -6812,6 +6838,23 @@ function shopperBindStatusListener(){
       window._shopperSession=null;window._shopperPhase=null;
       showToast&&showToast('The customer cancelled this session.','warning');
       renderShopperHome();
+    }
+  });
+  // The customer or rider just returned to (or left) the session --
+  // without this, whichever of the shopper's own gated buttons (Start
+  // Live Call / End Call & Package / Search for Nearby Riders / Start
+  // 3-Way Confirm Call) is currently showing would stay stuck on stale
+  // presence data until the shopper happened to reload.
+  _socket.on('shop-session:presence',function(p){
+    if(!window._shopperSession||p.sessionId!==window._shopperSession.id)return;
+    window._shopperSession.customerAwayAt=p.customerAwayAt;
+    window._shopperSession.shopperAwayAt=p.shopperAwayAt;
+    window._shopperSession.riderAwayAt=p.riderAwayAt;
+    window._shopperSession.handoverConfirmedAt=p.handoverConfirmedAt;
+    if(['accepted','packaging','riderFound'].indexOf(window._shopperPhase)>-1){
+      renderShopperPhase(window._shopperPhase);
+    }else if(window._shopperPhase==='liveCall'){
+      renderShopperItemStatus();
     }
   });
 }
@@ -8463,6 +8506,21 @@ function riderBindDispatchListeners(){
     if(!s||p.sessionId!==s.id)return;
     s.handoverConfirmedAt=new Date().toISOString();
     if(S.curScreen==='rider')riderMapPhase1();
+  });
+  // The customer or (pre-handover) shopper just returned to (or left) the
+  // session -- without this, the rider's own "I've Arrived"/"Items
+  // Collected"/"Confirm Delivery Complete" buttons would stay stuck
+  // disabled (or wrongly enabled) until they happened to reload. Re-renders
+  // whichever map phase is currently showing so the button state reflects
+  // the real, current presence immediately.
+  _socket.on('shop-session:presence',function(p){
+    var s=window._riderActiveSession;
+    if(!s||p.sessionId!==s.id)return;
+    s.customerAwayAt=p.customerAwayAt;s.shopperAwayAt=p.shopperAwayAt;s.riderAwayAt=p.riderAwayAt;s.handoverConfirmedAt=p.handoverConfirmedAt;
+    if(S.curScreen==='rider'){
+      if(s.status==='RIDER_ASSIGNED')riderMapPhase1();
+      else if(s.status==='OUT_FOR_DELIVERY')riderMapPhase2();
+    }
   });
 }
 
@@ -10502,7 +10560,9 @@ function riderMapPhase1(){
       ?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Items confirmed on the 3-way call — waiting for '+shopperName+' to hand them over to you.</div>'
       :arrived
       ?'<div style="background:rgba(59,159,232,.08);border:1.5px solid rgba(59,159,232,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#3B9FE8;font-weight:700;font-size:13px;">✅ You marked arrival — '+shopperName+' will start a 3-way call with you and the customer to confirm the items. Stay ready to join it, then wait for handover.</div>'
-      :'<button onclick="riderMarkArrivedAtShopper()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F5A623;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
+      :(_sfmMissingPresence(s).length
+        ?_sfmPresenceNoticeHtml(s)+'<button disabled style="width:100%;padding:12px;border-radius:11px;border:1.5px solid #2A2850;background:#333;color:#777;font-weight:800;font-size:13px;margin-bottom:12px;">✅ I\'ve Arrived</button>'
+        :'<button onclick="riderMarkArrivedAtShopper()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(245,166,35,.4);background:rgba(245,166,35,.08);color:#F5A623;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>'))
     // Customer's own details/chat/call only make sense once the rider is
     // actually heading to deliver to them (riderMapPhase2) -- showing them
     // here, while still heading to (or waiting at) the shopper with
@@ -10511,7 +10571,8 @@ function riderMapPhase1(){
     // gates on the shopper's real handover confirmation, not just the
     // rider's own arrival -- pressing it before the shopper has actually
     // handed anything over never made sense.
-    +'<button onclick="riderConfirmPickup()" '+(handoverDone?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;'+(handoverDone?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Items Collected — Head to Customer</button>'
+    +(handoverDone?_sfmPresenceNoticeHtml(s):'')
+    +'<button onclick="riderConfirmPickup()" '+((handoverDone&&!_sfmMissingPresence(s).length)?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;'+((handoverDone&&!_sfmMissingPresence(s).length)?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Items Collected — Head to Customer</button>'
     +(handoverDone?'':'<div style="text-align:center;color:#9A9390;font-size:11px;margin-top:6px;">'+(arrived?shopperName+' still needs to confirm handover':'Mark "I\'ve Arrived" above once you\'re at '+shopperName+'\'s location')+'</div>')
     +'</div>';
 }
@@ -10574,8 +10635,11 @@ function riderMapPhase2(){
     +'</div>'
     +'</div>'
     +(arrivedAtCustomer?'<div style="background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);border-radius:12px;padding:10px 12px;margin-bottom:12px;text-align:center;color:#2ECC71;font-weight:700;font-size:13px;">✅ Arrival marked — enter the code below to confirm</div>'
-      :'<button onclick="riderMarkArrivedAtCustomer()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(46,204,113,.4);background:rgba(46,204,113,.08);color:#2ECC71;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>')
-    +'<button onclick="finishDelivery()" '+(arrivedAtCustomer?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;'+(arrivedAtCustomer?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Confirm Delivery Complete</button>'
+      :(_sfmMissingPresence(s).length
+        ?_sfmPresenceNoticeHtml(s)+'<button disabled style="width:100%;padding:12px;border-radius:11px;border:1.5px solid #2A2850;background:#333;color:#777;font-weight:800;font-size:13px;margin-bottom:12px;">✅ I\'ve Arrived</button>'
+        :'<button onclick="riderMarkArrivedAtCustomer()" style="width:100%;padding:12px;border-radius:11px;border:1.5px solid rgba(46,204,113,.4);background:rgba(46,204,113,.08);color:#2ECC71;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:12px;">✅ I\'ve Arrived</button>'))
+    +(arrivedAtCustomer?_sfmPresenceNoticeHtml(s):'')
+    +'<button onclick="finishDelivery()" '+((arrivedAtCustomer&&!_sfmMissingPresence(s).length)?'':'disabled')+' style="width:100%;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;'+((arrivedAtCustomer&&!_sfmMissingPresence(s).length)?'cursor:pointer;':'opacity:.4;cursor:not-allowed;')+'">&#x2713; Confirm Delivery Complete</button>'
     +(arrivedAtCustomer?'':'<div style="text-align:center;color:#9A9390;font-size:11px;margin-top:6px;">Mark "I\'ve Arrived" above once you\'re at '+customerName+'\'s location</div>')
     +'</div>';
 }

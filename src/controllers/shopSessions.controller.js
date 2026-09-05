@@ -250,6 +250,49 @@ function assertSessionAccess(req, session) {
   }
 }
 
+// Presence gate for the genuinely joint, forward-moving actions (starting
+// the live call, ending it, requesting a rider, the 3-way handover steps,
+// marking delivery) -- these only make sense when every CURRENTLY relevant
+// party is actually back on the session (customerAwayAt/shopperAwayAt/
+// riderAwayAt all null), not just still assigned to it. Without this, the
+// one party who already returned from a refresh/re-login could keep
+// driving the session forward alone while the other is mid away-vote or
+// simply hasn't come back yet.
+//
+// "Relevant" narrows as the session progresses: the shopper drops out
+// entirely once they've handed the goods to the rider (handoverConfirmedAt,
+// set by confirmHandover, well before the rider actually enters the pickup
+// code in markOutForDelivery) -- nothing downstream needs the shopper
+// anymore, so from that point on it's just customer + rider who must both
+// be present. A rider that was never assigned, or a shopper the customer
+// hasn't been matched with yet, is never "relevant" in the first place.
+function relevantPresenceRoles(session) {
+  const roles = ["customer"];
+  if (session.shopperId && !session.handoverConfirmedAt) roles.push("shopper");
+  if (session.riderId) roles.push("rider");
+  return roles;
+}
+function assertAllPresent(session) {
+  const missing = relevantPresenceRoles(session).filter((r) => !!session[`${r}AwayAt`]);
+  if (missing.length > 0) {
+    throw Object.assign(new Error(`Waiting for the ${missing.join(" and ")} to return to the session before you can continue.`), { status: 409 });
+  }
+}
+// Live push whenever a party's away/back state actually changes -- without
+// this, the OTHER active party (still on the session, blocked waiting on
+// this one) has no way to find out the moment their partner returns short
+// of manually reloading; their disabled "next action" button would stay
+// stuck disabled until they happened to re-fetch.
+function emitPresence(io, session) {
+  io?.to(`shop-session:${session.id}`).emit("shop-session:presence", {
+    sessionId: session.id,
+    customerAwayAt: session.customerAwayAt,
+    shopperAwayAt: session.shopperAwayAt,
+    riderAwayAt: session.riderAwayAt,
+    handoverConfirmedAt: session.handoverConfirmedAt,
+  });
+}
+
 // The rider must be told the handover codes verbally/in-app by the
 // shopper (pickup) and customer (delivery) — never read them off their
 // own screen.
@@ -586,7 +629,7 @@ async function declineSession(req, res, next) {
   }
 }
 
-function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall, requireArrivedCustomer, onSuccess } = {}) {
+function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRider, codeField, codeErrorMessage, requireConfirmCall, requireArrivedCustomer, requirePresence, onSuccess } = {}) {
   return async (req, res, next) => {
     try {
       const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
@@ -609,6 +652,7 @@ function transitionHandler(fromStatuses, toStatus, { requireShopper, requireRide
       if (requireArrivedCustomer && !session.riderArrivedCustomerAt) {
         return res.status(409).json({ error: "Mark that you've arrived at the customer's location first." });
       }
+      if (requirePresence) assertAllPresent(session);
 
       // Atomic compare-and-swap -- the plain read-then-write this used to
       // be had a real race: two requests (e.g. a customer cancelling and a
@@ -653,6 +697,7 @@ async function startCall(req, res, next) {
       return res.status(403).json({ error: "You are not the shopper on this session." });
     }
     if (session.status !== "MATCHED") return res.status(409).json({ error: `Session must be MATCHED (currently ${session.status}).` });
+    assertAllPresent(session);
 
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { status: "LIVE_CALL", callStartedAt: new Date() } });
     req.app.get("io")?.to(`shop-session:${session.id}`).emit("shop-session:status", { sessionId: session.id, status: "LIVE_CALL" });
@@ -711,6 +756,7 @@ async function startPackaging(req, res, next) {
       return res.status(403).json({ error: "You are not the shopper on this session." });
     }
     if (session.status !== "LIVE_CALL") return res.status(409).json({ error: `Session must be LIVE_CALL (currently ${session.status}).` });
+    assertAllPresent(session);
 
     // The frontend already disables the shopper's "end call" button until
     // every item is approved -- this is the server-side twin of that rule
@@ -924,6 +970,7 @@ async function findRider(req, res, next) {
     if (session.status !== "PACKAGING") {
       return res.status(409).json({ error: `Session must be in one of [PACKAGING] (currently ${session.status}).` });
     }
+    assertAllPresent(session);
 
     // riderFeeKobo is no longer recomputed here from the matched shopper's
     // own registered address -- createSession already set it to the real,
@@ -1137,6 +1184,10 @@ const markOutForDelivery = transitionHandler(["RIDER_ASSIGNED"], "OUT_FOR_DELIVE
   codeField: "pickupCode",
   codeErrorMessage: "Incorrect pickup code. Ask the shopper for the code on their screen.",
   requireConfirmCall: true,
+  // By this point handoverConfirmedAt is already set (confirmHandover runs
+  // before the rider enters the pickup code), so relevantPresenceRoles has
+  // already dropped the shopper -- this only ever waits on customer+rider.
+  requirePresence: true,
 });
 // Distinct from the pickup-code/confirm-call gated handover itself
 // (markOutForDelivery below) -- this is just a real "I'm here" signal so
@@ -1148,6 +1199,7 @@ async function riderArrivedShopper(req, res, next) {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session || session.riderId !== req.user.riderProfile.id) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: `Session must be RIDER_ASSIGNED (currently ${session.status}).` });
+    assertAllPresent(session);
 
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { riderArrivedShopperAt: new Date() } });
     const io = req.app.get("io");
@@ -1183,6 +1235,9 @@ const markDelivered = transitionHandler(["OUT_FOR_DELIVERY"], "DELIVERED", {
   // rider must genuinely mark arrival at the customer first, not just
   // enter the code from wherever they happen to be.
   requireArrivedCustomer: true,
+  // Shopper is already out of the relevant-parties set by now (handed
+  // over long ago) -- only customer+rider need to both be present.
+  requirePresence: true,
   // RiderProfile.deliveries was previously a display-only field nothing
   // ever incremented (always whatever the seed set it to) -- this is the
   // real completion event, so it's the real place to count one.
@@ -1211,6 +1266,7 @@ async function riderArrivedCustomer(req, res, next) {
     const session = await prisma.shopSession.findUnique({ where: { id: req.params.id } });
     if (!session || session.riderId !== req.user.riderProfile.id) return res.status(404).json({ error: "Shop session not found." });
     if (session.status !== "OUT_FOR_DELIVERY") return res.status(409).json({ error: `Session must be OUT_FOR_DELIVERY (currently ${session.status}).` });
+    assertAllPresent(session);
 
     const updated = await prisma.shopSession.update({ where: { id: session.id }, data: { riderArrivedCustomerAt: new Date() } });
     const io = req.app.get("io");
@@ -1237,6 +1293,7 @@ async function startConfirmCall(req, res, next) {
     if (!session) return res.status(404).json({ error: "Shop session not found." });
     if (session.shopperId !== req.user.shopperProfile.id) return res.status(403).json({ error: "You are not the shopper on this session." });
     if (session.status !== "RIDER_ASSIGNED") return res.status(409).json({ error: `Session must be RIDER_ASSIGNED (currently ${session.status}).` });
+    assertAllPresent(session);
 
     // Fresh round -- a stale join from an earlier abandoned attempt at this
     // same call must never count toward this new one.
@@ -1757,6 +1814,7 @@ async function markAway(req, res, next) {
 
     if (itemsAlreadyBought(session) || role === "rider") {
       const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+      emitPresence(req.app.get("io"), updated);
       return res.json({ session: updated });
     }
 
@@ -1766,6 +1824,7 @@ async function markAway(req, res, next) {
       // actually does anything.
       if (!away) {
         const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+        emitPresence(req.app.get("io"), updated);
         return res.json({ session: updated });
       }
       const { count } = await prisma.shopSession.updateMany({
@@ -1774,6 +1833,7 @@ async function markAway(req, res, next) {
       });
       if (count === 0) {
         const updated = await prisma.shopSession.update({ where: { id: session.id }, data });
+        emitPresence(req.app.get("io"), updated);
         return res.json({ session: updated });
       }
       const cancelled = await prisma.shopSession.findUnique({ where: { id: session.id } });
@@ -1802,6 +1862,7 @@ async function markAway(req, res, next) {
       }
     }
 
+    emitPresence(req.app.get("io"), updated);
     res.json({ session: updated });
   } catch (err) {
     next(err);
