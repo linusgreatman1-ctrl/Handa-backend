@@ -11595,7 +11595,7 @@ async function openVendorBookingDetail(id){
     // the other. Read further down to also suppress the generic Chat/Call
     // block while collapsed, so they don't double up once expanded.
     var vendorNegoOpen=!!(window._vendorNegoOpen&&window._vendorNegoOpen[b.id]);
-    var vendorNegotiationCollapsed=false;
+    var vendorNegotiationOngoing=isNegotiated&&b.status==='CONFIRMED'&&!b.negotiationEndedAt&&!b.pendingEditSnapshot&&!b.vendorConfirmedCompleteAt;
     var vendorStatusBlock='';
     if(vendorHasOpenDispute){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
@@ -11641,7 +11641,6 @@ async function openVendorBookingDetail(id){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>';
       }else if(isNegotiated&&!b.negotiationEndedAt){
         if(!vendorNegoOpen){
-          vendorNegotiationCollapsed=true;
           vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F91D; Negotiations Ongoing</div></div>'
             +'<button onclick="vendorOpenNegotiatePanel(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Negotiate</button>';
         }else{
@@ -11693,11 +11692,11 @@ async function openVendorBookingDetail(id){
     // Decline buttons key off below) -- nothing to chat/call about until
     // the vendor has accepted the booking.
     var vendorNotYetDecided=b.status===(isCookB?'PAID':'REQUESTED');
-    // vendorNegotiationCollapsed: Chat/Call live INSIDE the expanded
-    // negotiation panel above instead (tap Negotiate to reveal them) --
-    // suppressing the generic block here while collapsed avoids showing
-    // them twice once expanded, or before the vendor has even opened it.
-    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute||vendorNegotiationCollapsed;
+    // vendorNegotiationOngoing (collapsed OR expanded): Chat/Call live
+    // INSIDE the negotiation panel above instead (tap Negotiate to reveal
+    // them) -- suppressing the generic block for the whole state, not
+    // just while collapsed, avoids showing them twice once expanded.
+    var vendorHideContactButtons=b.status==='COMPLETED'||b.status==='CANCELLED'||b.status==='DECLINED'||vendorNotYetDecided||vendorHasOpenDispute||vendorNegotiationOngoing;
     var vendorCancellable=!vendorHideContactButtons&&!b.vendorJobStartedAt&&!(isNegotiated&&b.amountReleasedKobo>0)&&b.type==='HOME_COOK'&&['REQUESTED','PAID','ACCEPTED','CONFIRMED'].indexOf(b.status)>-1;
     var contactAndCancelBlock=(vendorHideContactButtons&&!vendorCancellable)?'':(
       '<div style="margin-top:14px;">'
@@ -12200,7 +12199,11 @@ async function openCustomerHistoryDetail(kind,id){
     // show underneath it even though the dispute is what's supposed to be
     // the only thing left to do at that point (an admin resolves it, not
     // a chat message).
-    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute||negotiationCollapsed;
+    // negotiationOngoing (collapsed OR expanded) owns its own Chat/Call
+    // buttons inside the panel itself -- the generic block below stays
+    // suppressed for the whole state, not just while collapsed, or an
+    // expanded panel would show Chat/Call twice.
+    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute||negotiationOngoing;
     // Home Cook: visible from the moment the booking is sent (REQUESTED/
     // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
     // the vendor taps Job Started -- the event date/time passing is NOT a
