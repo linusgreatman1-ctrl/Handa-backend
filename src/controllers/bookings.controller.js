@@ -85,7 +85,7 @@ function isNegotiatedBooking(booking) {
 // cook/event-planner dashboards show.
 async function createBooking(req, res, next) {
   try {
-    const { vendorId, type, servicePackageId, items, eventDate, eventTime, venue, guestCount, phone, notes, paymentMethod, packageKey, packageLabel } = req.body;
+    const { vendorId, type, servicePackageId, items, eventDate, eventTime, venue, guestCount, phone, notes, paymentMethod, packageKey, packageLabel, eventType } = req.body;
     if (!vendorId || !type) return res.status(400).json({ error: "vendorId and type are required." });
     if (!["HOME_COOK", "EVENT_PLANNING"].includes(type)) return res.status(400).json({ error: "Invalid booking type." });
 
@@ -123,6 +123,7 @@ async function createBooking(req, res, next) {
         venue,
         guestCount: clampGuestCount(guestCount, servicePackage),
         phone,
+        eventType: eventType ? String(eventType).slice(0, 60) : null,
         notes,
         paymentMethod: paymentMethod || "CARD",
         totalKobo,
@@ -697,14 +698,17 @@ async function engageBooking(req, res, next) {
   }
 }
 
-// Either party can end their OWN active conversation -- clears only the
-// caller's own engaged timestamp, never the other side's (engaging is
-// per-side, not mutual; see engageBooking above). Either side can tap
-// Engage again later, this isn't a one-time transition. negotiationEndedAt/
-// negotiationEndedBy are still stamped as a harmless historical "a
-// conversation happened" marker, but nothing reads them as a gate anymore
-// -- Release Payment (releaseBookingPayment, below) has always been
-// available regardless, engaged or not.
+// Either party can end the conversation -- unlike engageBooking (per-side,
+// unilateral), this ends it for BOTH sides at once: clears both engaged
+// timestamps, returning both the customer's and vendor's screens to their
+// own Engage button (customer: Engage Your Vendor + Release Payment;
+// vendor: Engage Customer) live via the booking:updated push below, no
+// refresh needed. Either side can tap Engage again later, this isn't a
+// one-time transition. negotiationEndedAt/negotiationEndedBy are still
+// stamped as a harmless historical "a conversation happened" marker, but
+// nothing reads them as a gate anymore -- Release Payment
+// (releaseBookingPayment, below) has always been available regardless,
+// engaged or not.
 async function endBookingConversation(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
@@ -713,17 +717,12 @@ async function endBookingConversation(req, res, next) {
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
     if (!isNegotiatedBooking(booking)) return res.status(400).json({ error: "This booking type has no engage/conversation stage." });
-    // Engaging is per-side, not mutual (see engageBooking) -- ending it is
-    // the same: this only ever clears the CALLER's own engaged flag, never
-    // the other side's. The other party's own Chat/Call access (if they
-    // separately engaged too) is untouched.
-    const myField = isCustomer ? "customerEngagedAt" : "vendorEngagedAt";
-    if (!booking[myField]) return res.status(409).json({ error: "You don't have an active conversation to end." });
+    if (!booking.customerEngagedAt && !booking.vendorEngagedAt) return res.status(409).json({ error: "No conversation is currently active." });
 
     const endedBy = isCustomer ? "CUSTOMER" : "VENDOR";
     const updated = await prisma.booking.update({
       where: { id: booking.id },
-      data: { [myField]: null, negotiationEndedAt: new Date(), negotiationEndedBy: endedBy },
+      data: { customerEngagedAt: null, vendorEngagedAt: null, negotiationEndedAt: new Date(), negotiationEndedBy: endedBy },
     });
     const notifyUserId = isCustomer ? booking.vendor.userId : booking.customerId;
     await notify(req.app.get("io"), notifyUserId, "ORDER_UPDATE", "Conversation ended", `The ${isCustomer ? "customer" : "vendor"} ended the conversation for booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
@@ -848,20 +847,20 @@ async function respondAdditionalPayment(req, res, next) {
   }
 }
 
-// Vendor's "Mark Job Complete" tap. Home Cook: two-sided completion, step
-// 1 -- does NOT complete the booking or release any escrow by itself, it
-// just asks the customer to confirm (see confirmBookingCompletion for step
-// 2), and requires Job Started to have already happened. Event Planner:
-// simplified, one-sided -- there's no customer Yes/No step and no dispute
-// flow at all for EP bookings; marking complete ends the session right
-// here (escrow release now pays out whatever's left in the real hold EP
-// bookings hold today -- see the negotiated-release flow above -- plus the
-// real effect of the 10% platform commission landing on the EP's own
-// weekly CommissionPeriod), and the customer just gets a single "your
-// booking was completed" notification with Report Issues / Rate buttons on
-// their end (see the frontend's Thank You screen) -- reporting an issue
-// after this point is a normal, non-blocking support ticket, not a
-// hold-freezing dispute, since the money has already moved.
+// Vendor's "Mark Job Complete" tap -- two-sided completion, step 1, the
+// same for every booking type now (Home Cook, Home Cook catering, and
+// Event Planner). Does NOT complete the booking or release any escrow by
+// itself, it just asks the customer to confirm (see confirmBookingCompletion
+// for step 2), and requires Job Started to have already happened. Event
+// Planner used to complete one-sided, immediately, right here -- it now
+// goes through the exact same customer Yes/No + real dispute flow Home
+// Cook always had (see confirmBookingCompletion's own comment on why "Yes"
+// already correctly releases just the remaining balance for a
+// partially-released negotiated booking with zero extra code).
+// completeEventPlanningBooking below is kept for the one place that still
+// needs a genuine one-sided completion: the 24h-past-event auto-complete
+// sweep (bookingReminders.service.js), for a vendor who never taps this at
+// all.
 async function completeBooking(req, res, next) {
   try {
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { customer: { select: { id: true } } } });
@@ -870,31 +869,18 @@ async function completeBooking(req, res, next) {
     if (!isVendor) return res.status(403).json({ error: "Only the vendor on this booking can mark it complete." });
     if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before it can be marked complete." });
     if (booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "You already marked this booking complete." });
-
-    if (booking.type === "HOME_COOK") {
-      if (!booking.vendorJobStartedAt) return res.status(409).json({ error: "Start the job before marking it complete." });
-      const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: new Date() } });
-      await notify(
-        req.app.get("io"),
-        booking.customerId,
-        "ORDER_UPDATE",
-        "Confirm your booking is complete",
-        `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
-        { bookingId: booking.id }
-      );
-      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
-      return res.json({ booking: updated });
-    }
-
-    // Event Planner: one-sided, ends the session immediately -- but only
-    // once the job/event has actually started, same requirement Home Cook
-    // already has (EP now goes through the same negotiation -> release ->
-    // Job Started stages, see startBookingJob). Note: any pre-existing EP
-    // booking created before this flow shipped won't have
-    // vendorJobStartedAt and will need manual admin handling -- acceptable,
-    // no production users yet.
     if (!booking.vendorJobStartedAt) return res.status(409).json({ error: "Start the job before marking it complete." });
-    const updated = await completeEventPlanningBooking(booking, req.app.get("io"), "Event planning booking completed by vendor");
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: new Date() } });
+    await notify(
+      req.app.get("io"),
+      booking.customerId,
+      "ORDER_UPDATE",
+      "Confirm your booking is complete",
+      `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
+      { bookingId: booking.id }
+    );
+    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -929,9 +915,9 @@ async function completeEventPlanningBooking(booking, io, escrowDescription) {
   return updated;
 }
 
-// Two-sided completion, step 2: the customer's Yes/No response. Home Cook
-// only -- Event Planner bookings never reach this step any more, since
-// completeBooking() ends the whole session in one call for EP (see above).
+// Two-sided completion, step 2: the customer's Yes/No response -- every
+// booking type now (Home Cook, Home Cook catering, and Event Planner all
+// go through completeBooking's same step 1 above).
 // Yes -> booking COMPLETED, escrow releases (10% platform cut, same
 // mechanism as Shop-For-Me's shopper/rider releases — see
 // escrow.service.js's PLATFORM_COMMISSION_RATES).
@@ -946,14 +932,21 @@ async function confirmBookingCompletion(req, res, next) {
     const { completed, disputeCategory, disputeDescription } = req.body;
     const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
     if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
-    if (booking.type !== "HOME_COOK") return res.status(400).json({ error: "Event planning bookings don't have a separate completion confirmation step." });
     if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "This booking isn't awaiting completion confirmation." });
     if (!booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "The vendor hasn't marked this booking complete yet." });
     if (booking.customerConfirmedCompleteAt) return res.status(409).json({ error: "You already responded to this booking's completion." });
 
     if (completed) {
       await prisma.booking.update({ where: { id: booking.id }, data: { customerConfirmedCompleteAt: new Date() } });
-      await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking completion confirmed by customer" });
+      // Whatever's actually still HELD -- the full total for a plain
+      // booking, or just the remaining balance for a negotiated one whose
+      // hold amountKobo was already shrunk by earlier partial releases
+      // (see escrow.service.js's partialReleaseHold comment). Reporting
+      // the real released amount here, not booking.totalKobo, so a
+      // partially-released EP/Cook-catering booking's notification says
+      // what actually just moved, not the full original total.
+      const released = await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking completion confirmed by customer" });
+      const releasedKobo = released.reduce((sum, h) => sum + h.amountKobo, 0);
       const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: new Date() } });
       const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
       if (vendor) {
@@ -962,7 +955,7 @@ async function confirmBookingCompletion(req, res, next) {
           vendor.userId,
           "ORDER_UPDATE",
           "This Booking is completed",
-          `Booking #${booking.bookingNumber} is complete: Escrow has released your payment.<br>₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`,
+          `Booking #${booking.bookingNumber} is complete: Escrow has released your payment.<br>₦${Math.round(releasedKobo / 100).toLocaleString()}.`,
           { bookingId: booking.id }
         );
       }

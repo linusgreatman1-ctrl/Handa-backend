@@ -430,6 +430,12 @@ model Booking {
   venue      String?
   guestCount Int?
   phone      String?
+  // Free-text event type (Wedding, Birthday, Corporate Event, etc.) --
+  // shown as its own "Event type" row in booking details, alongside
+  // date/venue/guests, never folded into notes. Only ever set for a
+  // direct Event Planner booking (epb-type) or a Home Cook Event Catering
+  // Package booking (ec-type) -- null for every other booking.
+  eventType  String?
   notes      String?
 
   paymentMethod PaymentMethod

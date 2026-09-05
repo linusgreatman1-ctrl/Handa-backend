@@ -227,6 +227,7 @@ async function acceptProposal(req, res, next) {
           eventDate: request.eventDate,
           venue: request.venue,
           guestCount: request.guestCount,
+          eventType: request.eventType,
           selectedItems: selectedItemsSnapshot,
           notes: [request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
           paymentMethod: "CARD",

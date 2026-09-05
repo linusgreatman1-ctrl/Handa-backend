@@ -9355,9 +9355,20 @@ async function shopConfirmAllPayments(auto){
       : (err.message||'Could not release escrow'),'warning');
   }
 }
-function showBottomSheet(title,content){
+// preserveScroll:true keeps the sheet's current scroll position across a
+// re-render instead of snapping back to the top -- used when the sheet is
+// just refreshing the SAME open content in place (an action inside it, or
+// a live booking:updated push), never for a genuinely new sheet opening.
+function showBottomSheet(title,content,preserveScroll){
   var existing=document.getElementById('sfm-bottom-sheet');
-  if(existing)existing.remove();
+  var savedScroll=0;
+  if(existing){
+    if(preserveScroll){
+      var oldInner=existing.firstElementChild;
+      if(oldInner)savedScroll=oldInner.scrollTop;
+    }
+    existing.remove();
+  }
   var el=document.createElement('div');
   el.id='sfm-bottom-sheet';
   el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9500;display:flex;align-items:flex-end;justify-content:center;';
@@ -9374,6 +9385,7 @@ function showBottomSheet(title,content){
   el.appendChild(inner);
   document.body.appendChild(el);
   el.onclick=function(ev){if(ev.target===el)el.remove();};
+  if(preserveScroll&&savedScroll)inner.scrollTop=savedScroll;
 }
 function closeBottomSheet(){
   var el=document.getElementById('sfm-bottom-sheet');
@@ -11664,10 +11676,15 @@ function _pendingEditSummaryHtml(pe,isEP){
   return peRows.map(function(r){return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+r[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+r[1]+'</span></div>';}).join('')+itemsHtml;
 }
 async function openVendorBookingDetail(id){
+  // Refreshing the SAME already-open booking (an action inside it, or a
+  // live booking:updated push) keeps the sheet's current scroll position
+  // instead of snapping back to the top -- only a genuinely new open
+  // (a different booking, or this one wasn't already showing) starts at 0.
+  var _preserveScroll=window._openBookingDetailId===id&&!!document.getElementById('sfm-bottom-sheet');
   window._openBookingDetailId=id;window._openBookingDetailViewer='vendor';
   bindBookingLiveUpdateListener();
   if(_socket)_socket.emit('booking:join',{bookingId:id});
-  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
+  showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_preserveScroll);
   try{
     var res=await api('/bookings/'+id);
     var b=res.booking;
@@ -11680,17 +11697,22 @@ async function openVendorBookingDetail(id){
     var rows=[
       ['Booking #',b.bookingNumber||'—'],
       ['Status',b.status],
-      ['Type',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
+      ['Service',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
       ['Date',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
       ['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')],
       ['Total',N(Math.round(b.totalKobo/100))],
       ['Payment Method',b.paymentMethod||'—'],
     ];
+    // Event type (Wedding, Birthday, etc.) sits with the rest of the real
+    // booking info, right after Service -- never under Notes (see the
+    // Booking.eventType schema comment). Only ever set for a direct EP
+    // booking or a Home Cook Event Catering Package booking.
+    if(b.eventType)rows.splice(3,0,['Event type',b.eventType]);
     // Guest count is only meaningful for Event Planning bookings -- Home
     // Cook bookings never collect it, so showing "Guests: Not set" there
     // was pure noise.
-    if(b.type==='EVENT_PLANNING')rows.splice(4,0,['Guests',b.guestCount||'Not set']);
+    if(b.type==='EVENT_PLANNING')rows.splice(b.eventType?5:4,0,['Guests',b.guestCount||'Not set']);
     var itemsHtml=(b.selectedItems&&b.selectedItems.length)?('<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Items</div>'+b.selectedItems.map(function(it){return _itemRowHtml(it,b.type==='EVENT_PLANNING');}).join('')+'</div>'):'';
     // b.wasEdited is no longer shown as an inline banner here -- the
     // sheet's own title becomes "Booking Details (Edited)" below instead,
@@ -11774,8 +11796,8 @@ async function openVendorBookingDetail(id){
             +'<button onclick="openVendorBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
             +'<button onclick="openVendorBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
             +'</div>'
-            +'<div style="text-align:center;color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Booking Conversation below.</div>'
-            +'<button onclick="vendorEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">End Booking Conversation</button>';
+            +'<div style="text-align:center;color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Conversation below.</div>'
+            +'<button onclick="vendorEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">End Conversation</button>';
         }else{
           vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;color:#9A9390;font-size:12px;font-weight:700;text-align:center;margin-bottom:10px;">&#x23F3; Waiting for the customer to release payment</div>'
             +'<button onclick="vendorEngageBooking(\''+b.id+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">Engage Customer</button>';
@@ -11790,7 +11812,7 @@ async function openVendorBookingDetail(id){
         vendorStatusBlock=(isNegotiated?'<button onclick="vendorRequestAdditionalPayment(\''+b.id+'\')" style="width:100%;margin-top:14px;margin-bottom:10px;padding:13px;border-radius:12px;border:1.5px solid rgba(155,89,182,.4);background:transparent;color:#9B59B6;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4B5; Request Additional Payment</button>':'')
           +'<button onclick="vendorStartJob(\''+b.id+'\')" style="width:100%;margin-top:'+(isNegotiated?'0':'14')+'px;padding:13px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">&#x25B6;&#xFE0F; Job Started</button>';
       }else{
-        vendorStatusBlock='<button onclick="vendorMarkBookingComplete(\''+b.id+'\','+(!isCookB)+')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; Mark Job Complete</button>';
+        vendorStatusBlock='<button onclick="vendorMarkBookingComplete(\''+b.id+'\','+(!isCookB)+')" style="width:100%;margin-top:14px;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">&#x2705; '+(isNegotiated?'Mark this job is completed &amp; Request balance payment':'Mark Job Complete')+'</button>';
       }
     }
     var pendingEditBlock='';
@@ -11857,7 +11879,7 @@ async function openVendorBookingDetail(id){
       +contactAndCancelBlock
       +pendingEditBlock
       +vendorStatusBlock;
-    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content);
+    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_preserveScroll);
   }catch(err){
     showBottomSheet('Booking Details','<div style="text-align:center;padding:20px;color:#E8392E;">'+(err.message||'Could not load booking')+'</div>');
   }
@@ -11974,7 +11996,7 @@ async function customerConfirmBookingComplete(id,completed,isEP){
   if(completed){
     try{
       await api('/bookings/'+id+'/confirm-complete',{method:'POST',body:JSON.stringify({completed:true})});
-      showToast&&showToast(isEP?'Booking completed — recorded for commission.':'Booking completed — payment released to the vendor.','success');
+      showToast&&showToast('Booking completed — payment released to the vendor.','success');
       closeBottomSheet&&closeBottomSheet();
       // Straight into this exact booking's own detail screen -- now that
       // it's really COMPLETED, that's the real Thank You / Rate & Review /
@@ -12000,7 +12022,7 @@ async function customerConfirmBookingComplete(id,completed,isEP){
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">What happened?</div></div>'
-    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">'+(isEP?'This is looked into by an admin.':'Your payment stays safely in escrow while this is looked into.')+' The vendor will be notified and can add their own side.</p>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Your payment stays safely in escrow while this is looked into. The vendor will be notified and can add their own side.</p>'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Category</label>'
     +'<select id="disp-category" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
     +['Never showed up / delivered','Not as described','Poor quality','Other'].map(function(c){return '<option>'+c+'</option>';}).join('')
@@ -12087,13 +12109,9 @@ async function submitVendorDisputeResponse(ticketId,bookingId){
   }
 }
 async function vendorMarkBookingComplete(id,isEP){
-  // EP completion is one-sided and immediate -- no confirm() popup and no
-  // toast on success; the real result (10% commission recorded) shows as
-  // plain text on the booking detail screen itself (see openVendorBookingDetail's
-  // vendorStatusBlock), reached by just re-opening the detail below.
   try{
     await api('/bookings/'+id+'/complete',{method:'POST'});
-    if(!isEP)showToast&&showToast('Marked complete — waiting on the customer to confirm.','success');
+    showToast&&showToast('Marked complete — waiting on the customer to confirm.','success');
     // Harmless no-op when this wasn't reached from inside a procedure
     // modal (the normal Orders-list entry point) -- but when it WAS (e.g.
     // the "Your Proposal" event-request view), the booking-detail bottom
@@ -12127,12 +12145,15 @@ function _markRatingSkipped(id){
 // into one list. Bookings still in a live pre-completion status and whose
 // event date hasn't passed yet get a real "Edit Booking" action.
 async function openCustomerHistoryDetail(kind,id){
+  // Same "refreshing the same open sheet keeps scroll position" rule as
+  // openVendorBookingDetail -- see its own comment.
+  var _preserveScroll=kind==='booking'&&window._openBookingDetailId===id&&!!document.getElementById('sfm-bottom-sheet');
   if(kind==='booking'){
     window._openBookingDetailId=id;window._openBookingDetailViewer='customer';
     bindBookingLiveUpdateListener();
     if(_socket)_socket.emit('booking:join',{bookingId:id});
   }
-  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>');
+  showBottomSheet(kind==='booking'?'Booking Details':'Session Details','<div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div>',_preserveScroll);
   if(kind==='session'){
     try{
       var sres=await api('/shop-sessions/'+id);
@@ -12231,7 +12252,7 @@ async function openCustomerHistoryDetail(kind,id){
       ['Booking #',b.bookingNumber||'—'],
       ['Vendor',v.bizName||'—'],
       ['Status',b.status],
-      ['Type',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
+      ['Service',b.type==='EVENT_PLANNING'?'Event Planning':'Home Cook'],
       ['Booked On',b.createdAt?new Date(b.createdAt).toLocaleString():'—'],
       ['Scheduled For',when+(b.eventTime?' at '+b.eventTime:'')],
       ['Venue',b.venue||'Not set'],
@@ -12239,6 +12260,10 @@ async function openCustomerHistoryDetail(kind,id){
       ['Total',N(Math.round(b.totalKobo/100))],
       ['Payment Method',b.paymentMethod||'—'],
     ];
+    // Event type (Wedding, Birthday, etc.) sits with the rest of the real
+    // booking info, right after Service -- never under Notes (see the
+    // Booking.eventType schema comment).
+    if(b.eventType)rows.splice(4,0,['Event type',b.eventType]);
     // The current items -- reflects whatever the booking's real state is
     // right now, so once an edit is accepted this naturally shows the NEW
     // items automatically (selectedItems is what the accept endpoint
@@ -12248,7 +12273,7 @@ async function openCustomerHistoryDetail(kind,id){
     // Guest count is only meaningful for Event Planning bookings -- Home
     // Cook bookings never collect it, so showing "Guests: Not set" there
     // was pure noise.
-    if(b.type==='EVENT_PLANNING')rows.splice(6,0,['Guests',b.guestCount||'Not set']);
+    if(b.type==='EVENT_PLANNING')rows.splice(b.eventType?7:6,0,['Guests',b.guestCount||'Not set']);
     // Combines eventDate + eventTime (a separate "HH:MM" string) into a real
     // instant -- comparing eventDate alone treats the whole day as "not yet
     // passed" until midnight, hours after the actual scheduled time.
@@ -12456,8 +12481,8 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
         +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
         +'</div>'
-        +'<div style="color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Booking Conversation below.</div>'
-        +'<button onclick="customerEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">End Booking Conversation</button>'
+        +'<div style="color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Conversation below.</div>'
+        +'<button onclick="customerEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">End Conversation</button>'
         +'</div>'
       ):preRelease?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
@@ -12511,7 +12536,7 @@ async function openCustomerHistoryDetail(kind,id){
         +'</div>'
       ):'')
       +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
-    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content);
+    showBottomSheet(b.wasEdited?'Booking Details (Edited)':'Booking Details',content,_preserveScroll);
     // Cached by id so the Edit button above can pass just the id through
     // the onclick attribute instead of inlining JSON.stringify(b) directly
     // into an HTML attribute -- any apostrophe in b.notes/b.venue used to
@@ -13671,15 +13696,18 @@ async function cookBkConfirmBooking(){
       var qty=catering?guests:x.qty;
       return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:qty}:{menuItemId:x.menuItemId,qty:qty};
     }));
-    if(_cb.selectedPkg.eventType)notes=(notes?notes+' — ':'')+'Event type: '+_cb.selectedPkg.eventType;
   }
+  // Event type is its own real field now, shown alongside date/venue/
+  // guests in booking details -- never folded into notes (see
+  // eventType on the Booking model).
+  var eventType=(_cb.selectedPkg&&_cb.selectedPkg.eventType)?_cb.selectedPkg.eventType:undefined;
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_cb.cookId, type:'HOME_COOK', items:items,
       servicePackageId:pkgReal?pkgReal.id:undefined,
       packageKey:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.id:undefined,
       packageLabel:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.nm:undefined,
-      eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes,
+      eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes, eventType:eventType,
       guestCount:catering?guests:undefined,
       paymentMethod:PAY_METHOD_MAP[_cb.payMethod]||'CARD',
     })});
@@ -14162,13 +14190,12 @@ async function epBkConfirmBooking(){
   var time=(document.getElementById('epb-time')||{}).value||'';
   var guests=(document.getElementById('epb-guests')||{}).value||'';
   var type=(document.getElementById('epb-type')||{}).value||'';
-  // The customer's own "Additional Requirements" text (epb-notes) was
-  // never being read at all -- notes was being set to just the event type
-  // string, silently discarding whatever they typed. Combine both, same
-  // "Event type: X — <real notes>" pattern cookBkConfirmBooking's Event
-  // Catering Package branch already uses.
-  var reqNotes=(document.getElementById('epb-notes')||{}).value||'';
-  var notes=type?('Event type: '+type+(reqNotes?' — '+reqNotes:'')):reqNotes;
+  // Event type is its own real field (shown alongside date/venue/guests in
+  // booking details), never folded into notes -- notes is purely whatever
+  // the customer typed in "Additional Requirements" (epb-notes), which was
+  // previously never even read at all (notes was wrongly set to just the
+  // event type string, silently discarding this).
+  var notes=(document.getElementById('epb-notes')||{}).value||'';
   _epb._submitting=true;
   var epbBtn=document.getElementById('epb-confirm-btn');
   if(epbBtn){epbBtn.disabled=true;epbBtn.style.opacity='.6';epbBtn.style.cursor='default';epbBtn.textContent='Sending…';}
@@ -14192,7 +14219,7 @@ async function epBkConfirmBooking(){
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_epb.epId, type:'EVENT_PLANNING', servicePackageId:vendorPkg?vendorPkg.id:undefined,
-      eventDate:dt, eventTime:time, venue:venue, guestCount:guests?parseInt(guests):undefined, notes:notes,
+      eventDate:dt, eventTime:time, venue:venue, guestCount:guests?parseInt(guests):undefined, notes:notes, eventType:type||undefined,
       paymentMethod:PAY_METHOD_MAP[_epb.payMethod]||'CARD',
     })});
     _epb._submitting=false;
