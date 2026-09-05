@@ -1,7 +1,6 @@
 const prisma = require("../config/db");
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
-const commissionSvc = require("../services/commission.service");
 const { logAdminAction } = require("../services/auditLog.service");
 const { notify, notifyAllAdmins } = require("../services/notifications.service");
 const { closeSupportThreadForContext } = require("./chat.controller");
@@ -243,13 +242,16 @@ async function updateTicketStatus(req, res, next) {
       const escrowCtx = escrowContextForTicket(existing);
       if (escrowCtx) {
         // Booking-context disputes need the real booking (vendor/type/total/
-        // customer) to notify both sides and, for Event Planner specifically,
-        // to charge the 10% commission that would otherwise never happen --
-        // EP has no escrow hold to release, so the generic
+        // customer) to notify both sides. Event Planner bookings now pay
+        // into a real EscrowHold exactly like Home Cook (see the
+        // negotiated-release flow, bookings.controller.js), so the
         // releaseAllHoldsForContext/resolveDisputedHoldsForContext calls
-        // below are a safe no-op for it and nothing else here used to charge
-        // its commission on the dispute path (only the non-disputed
-        // confirmBookingCompletion happy path did).
+        // below already deduct the platform's 10% cut in real time for
+        // both booking types -- no separate commission charge needed here.
+        // (In practice no path currently creates a BOOKING-context dispute
+        // ticket for an EVENT_PLANNING booking -- confirmBookingCompletion,
+        // the only creator, is Home-Cook-only -- but this stays
+        // type-agnostic rather than assuming that never changes.)
         const booking =
           escrowCtx.contextType === "BOOKING"
             ? await prisma.booking.findUnique({ where: { id: escrowCtx.bookingId }, include: { vendor: { select: { id: true, userId: true } } } })
@@ -264,17 +266,11 @@ async function updateTicketStatus(req, res, next) {
           await escrow.resolveDisputedHoldsForContext(escrowCtx, "RELEASE", opts);
           if (escrowCtx.contextType === "BOOKING") {
             await prisma.booking.update({ where: { id: escrowCtx.bookingId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => {});
-            if (booking && booking.type === "EVENT_PLANNING") {
-              await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
-            }
           } else {
             await prisma.shopSession.update({ where: { id: escrowCtx.shopSessionId }, data: { status: "COMPLETED", completedAt: new Date() } }).catch(() => {});
           }
           if (booking) {
-            const vendorMsg =
-              booking.type === "EVENT_PLANNING"
-                ? `The dispute on the booking #${booking.bookingNumber} was resolved in your favor; Escrow has released your payment.<br>Your 10% platform commission for it is now due on your dashboard. — ₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`
-                : `The dispute on the booking #${booking.bookingNumber} was resolved in your favor; Escrow has released your payment.<br>₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`;
+            const vendorMsg = `The dispute on the booking #${booking.bookingNumber} was resolved in your favor; Escrow has released your payment.<br>₦${Math.round(booking.totalKobo / 100).toLocaleString()}.`;
             await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Dispute resolved", vendorMsg, { bookingId: booking.id }).catch(() => {});
             await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Dispute resolved", `The dispute on the booking #${booking.bookingNumber} was resolved in the vendor's favor.`, { bookingId: booking.id }).catch(() => {});
           }

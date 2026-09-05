@@ -2,7 +2,6 @@ const prisma = require("../config/db");
 const paystack = require("../services/paystack.service");
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
-const commissionSvc = require("../services/commission.service");
 const orderFlow = require("../services/orderFlow.service");
 const manualPayments = require("../services/manualPayments.service");
 const { closeSupportThreadForContext } = require("./chat.controller");
@@ -848,14 +847,25 @@ async function completeBooking(req, res, next) {
 
 // Shared by the real vendor-triggered completeBooking above AND the
 // 24h-past-event auto-complete sweep (bookingReminders.service.js) -- same
-// escrow release, same 10% commission, same customer notification either
-// way, so an EP vendor who simply never taps Mark Job Complete doesn't
-// leave the booking (and their own commission) stuck open forever.
+// escrow release, same customer notification either way, so an EP vendor
+// who simply never taps Mark Job Complete doesn't leave the booking stuck
+// open forever.
+//
+// Does NOT call commission.service.js's addBookingCommission -- that was correct
+// back when EP had no escrow at all (the weekly CommissionPeriod debt was
+// EP's only commission-collection path), but EP bookings now pay into a
+// real EscrowHold exactly like Home Cook (see orderFlow.confirmBookingPayment/
+// the negotiated-release flow), and releaseAllHoldsForContext right above
+// already deducts the platform's 10% cut in real time on every release --
+// including this final one -- via creditPayeeWithCommission's
+// PLATFORM_COMMISSION_RATES.VENDOR (escrow.service.js). Also calling
+// addBookingCommission here would double-charge the vendor for the same
+// booking, the exact bug commission.service.js's own comment already
+// warns about for Home Cook.
 async function completeEventPlanningBooking(booking, io, escrowDescription) {
   const now = new Date();
   await prisma.booking.update({ where: { id: booking.id }, data: { vendorConfirmedCompleteAt: now, customerConfirmedCompleteAt: now } });
   await escrow.releaseAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: escrowDescription });
-  await commissionSvc.addBookingCommission(booking.vendorId, booking.totalKobo);
   const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: now } });
   await notify(io, booking.customerId, "ORDER_UPDATE", "This Booking is completed", `Booking #${booking.bookingNumber} is complete. Thank you for using Handa!`, { bookingId: booking.id });
   closeSupportThreadForContext(booking.id);
