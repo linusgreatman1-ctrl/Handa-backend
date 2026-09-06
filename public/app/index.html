@@ -11559,7 +11559,7 @@ function _vendorBookingWriteup(b,isCook){
   // (the actual state pre-resolution: the customer already said no).
   // disputeStatus comes from listBookings' batched dispute lookup.
   if(b.disputeStatus==='OPEN'||b.disputeStatus==='IN_PROGRESS')return {text:'⚠️ Payment Disputed - Pending Handa Resolution',color:'#E8392E'};
-  if(b.disputeStatus==='RESOLVED'||b.disputeStatus==='CLOSED')return {text:'✅ Dispute has been resolved',color:'#2ECC71'};
+  if((b.disputeStatus==='RESOLVED'||b.disputeStatus==='CLOSED')&&!_isDisputeResolutionSeen(b.id))return {text:'✅ Dispute has been resolved',color:'#2ECC71'};
   if(b.status!=='CONFIRMED')return null;
   if(b.pendingEditSnapshot)return {text:'✏️ Customer proposed changes — open to review',color:'#F5A623'};
   // Event Planner (always) and Home Cook's Event Catering Package now go
@@ -11575,9 +11575,15 @@ function _vendorBookingWriteup(b,isCook){
   var isNegotiated=!isCook||b.packageKey==='premium';
   if(isNegotiated){
     if(b.amountReleasedKobo===0){
-      return b.vendorEngagedAt?{text:'💬 Conversation Active',color:'#9B59B6'}:{text:'⏳ Awaiting payment release',color:'#9A9390'};
+      // Either side engaging reveals the shared conversation to both --
+      // the vendor sees "Active" only when THEY personally engaged,
+      // "Ongoing" when the customer engaged first (so they know there's
+      // already a live conversation to join, not just a quiet wait).
+      if(b.vendorEngagedAt)return {text:'💬 Conversation Active',color:'#9B59B6'};
+      if(b.customerEngagedAt)return {text:'💬 Conversation Ongoing',color:'#9B59B6'};
+      return {text:'⏳ Awaiting payment release',color:'#9A9390'};
     }
-    if(b.pendingPaymentRequestKobo)return {text:'💵 Additional payment requested — awaiting customer',color:'#F5A623'};
+    if(b.pendingPaymentRequestKobo)return {text:'💵 Requesting ₦'+Number(Math.round(b.pendingPaymentRequestKobo/100)).toLocaleString()+' — awaiting customer',color:'#F5A623'};
   }
   if(b.vendorConfirmedCompleteAt)return {text:'⏳ Waiting for customer to confirm completion',color:'#F5A623'};
   if(b.vendorJobStartedAt)return {text:'▶️ Job Started',color:'#9B59B6'};
@@ -11790,6 +11796,10 @@ async function openVendorBookingDetail(id){
     // same as the customer's own detail screen.
     var vendorHasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var vendorDisputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
+    // See openCustomerHistoryDetail's identical line -- opening this
+    // detail screen (where the real outcome/resolution note shows) is
+    // what acknowledges it for the vendor's own dashboard card too.
+    if(vendorDisputeResolved)_markDisputeResolutionSeen(b.id);
     var isCookB=b.type==='HOME_COOK';
     // Event Planner (always) and Home Cook's Event Catering Package
     // (packageKey "premium") go through the negotiated-release flow --
@@ -11816,6 +11826,14 @@ async function openVendorBookingDetail(id){
         +'<button onclick="openDisputeChatForTicket(\''+dt.id+'\')" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1.5px solid rgba(59,159,232,.4);background:transparent;color:#3B9FE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4AC; Chat With Support</button>'
         +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Dispute Is Pending Resolve From Handa.</div>'
         +'</div>';
+    }else if(b.status==='COMPLETED'&&vendorDisputeResolved){
+      // Resolved in the vendor's own favor -- escrow released to them, not
+      // the generic "This Booking Is Completed" line (which gave no hint
+      // a dispute was ever filed against them at all).
+      vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
+        +'<div style="font-weight:800;font-size:14px;color:#2ECC71;">Dispute Resolved — You Have Been Paid</div>'
+        +(dt.resolution?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">'+dt.resolution+'</div>':'')
+        +'</div>';
     }else if(b.status==='COMPLETED'){
       // EP's completion is one-sided/immediate (no confirm() popup, no
       // toast -- see vendorMarkBookingComplete) so this plain-text line is
@@ -11828,6 +11846,7 @@ async function openVendorBookingDetail(id){
     }else if(b.status==='CANCELLED'&&vendorDisputeResolved){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);text-align:center;">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;">Dispute Resolved -- Refunded To The Customer</div>'
+        +(dt.resolution?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">'+dt.resolution+'</div>':'')
         +'</div>';
     }else if(b.status==='PAID'){
       // Every booking type now pays upfront before the vendor decides
@@ -11857,13 +11876,17 @@ async function openVendorBookingDetail(id){
       }else if(b.vendorConfirmedCompleteAt){
         vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);color:#F5A623;font-size:12px;font-weight:700;text-align:center;">Waiting on the customer to confirm completion…</div>';
       }else if(vendorPreReleaseWindow){
-        // Engaging is per-side, not mutual -- tapping Engage Customer
-        // reveals Chat/Call for the VENDOR right away, regardless of
-        // whether the customer has engaged too. The customer only finds
-        // out once the vendor actually taps Chat or Call (the existing
-        // chat/call request flow), not from this tap alone.
-        if(b.vendorEngagedAt){
-          vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">&#x1F4AC; Conversation Active</div></div>'
+        // Engaging is per-side to TRIGGER (tapping Engage Customer doesn't
+        // require the customer to have engaged too), but once EITHER side
+        // has engaged, BOTH sides get full Chat/Call/End Conversation
+        // access -- the vendor engaging is how they reach out to chat or
+        // call the customer, and the customer seeing this same live state
+        // (as "Conversation Ongoing" rather than "Active", since they
+        // didn't personally engage) is exactly what lets them join in
+        // without needing to tap Engage themselves first.
+        if(b.vendorEngagedAt||b.customerEngagedAt){
+          var vendorConvoHeading=b.vendorEngagedAt?'&#x1F4AC; Conversation Active':'&#x1F4AC; Conversation Ongoing';
+          vendorStatusBlock='<div style="margin-top:14px;padding:12px;border-radius:12px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;margin-bottom:10px;"><div style="color:#9B59B6;font-size:13px;font-weight:800;">'+vendorConvoHeading+'</div></div>'
             +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'
             +'<button onclick="openVendorBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
             +'<button onclick="openVendorBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
@@ -12052,10 +12075,20 @@ function customerEngageBooking(id){
   }).catch(function(err){showToast&&showToast(err.message||'Could not engage','warning');});
 }
 function customerEndBookingConversation(id){
-  api('/bookings/'+id+'/end-conversation',{method:'POST'}).then(function(){
+  api('/bookings/'+id+'/end-conversation',{method:'POST'}).then(async function(){
     showToast&&showToast('Conversation ended.','success');
+    // Refresh the detail sheet underneath first (so it's already showing
+    // the post-end Engage/Release state by the time the payment modal
+    // opened right below is closed), then proceed straight into Release
+    // Payment -- "End Conversation & Proceed With Payment" on the
+    // customer's own button already says this is where ending the
+    // conversation leads, not just back to a bare two-button screen.
     openCustomerHistoryDetail('booking',id);
     _refreshHistoryListIfOpen();
+    try{
+      var res=await api('/bookings/'+id);
+      openCustomerReleasePaymentModal(id,res.escrowHoldRemainingKobo);
+    }catch(e){}
   }).catch(function(err){showToast&&showToast(err.message||'Could not end the conversation','warning');});
 }
 function openCustomerReleasePaymentModal(id,remainingKobo){
@@ -12248,6 +12281,24 @@ function _markRatingSkipped(id){
     if(list.indexOf(id)===-1){list.push(id);localStorage.setItem('handa_skipped_ratings',JSON.stringify(list));}
   }catch(e){}
 }
+// Once a customer/vendor has actually opened a booking's detail and seen
+// its resolved-dispute outcome (the real "Dispute Resolved -- Refunded/
+// Vendor Has Been Paid" banner, with the admin's own resolution note),
+// the dashboard list card's "Dispute has been resolved" annotation has
+// done its job and should step aside for the plain COMPLETED/CANCELLED
+// status that's already shown right next to it -- otherwise it sits there
+// forever, same id-list pattern as _isRatingSkipped above (per-device,
+// not synced -- reopening on a different device shows it once there too,
+// which is fine, it's just a "have I personally seen this" marker).
+function _isDisputeResolutionSeen(id){
+  try{ return (JSON.parse(localStorage.getItem('handa_seen_dispute_resolutions')||'[]')).indexOf(id)>-1; }catch(e){ return false; }
+}
+function _markDisputeResolutionSeen(id){
+  try{
+    var list=JSON.parse(localStorage.getItem('handa_seen_dispute_resolutions')||'[]');
+    if(list.indexOf(id)===-1){list.push(id);localStorage.setItem('handa_seen_dispute_resolutions',JSON.stringify(list));}
+  }catch(e){}
+}
 // Customer's own History detail — covers both a Booking (home cook/event
 // planner) and a Shop-For-Me session, since populateHistory() merges both
 // into one list. Bookings still in a live pre-completion status and whose
@@ -12415,7 +12466,19 @@ async function openCustomerHistoryDetail(kind,id){
     var dt=res.disputeTicket;
     var hasOpenDispute=!!dt&&['OPEN','IN_PROGRESS'].indexOf(dt.status)>-1;
     var disputeResolved=!!dt&&['RESOLVED','CLOSED'].indexOf(dt.status)>-1;
+    // Genuinely opening this detail screen -- where the real resolution
+    // outcome/note is shown below -- is what "acknowledges" it; the
+    // dashboard list card's "Dispute has been resolved" annotation stops
+    // showing for this booking from here on (see _isDisputeResolutionSeen).
+    if(disputeResolved)_markDisputeResolutionSeen(b.id);
     var isCompleted=b.status==='COMPLETED';
+    // A dispute resolved in the VENDOR's favor (admin released the escrow)
+    // lands the booking on the exact same status (COMPLETED) a normal,
+    // undisputed two-sided confirmation does -- isCompletedFromDispute
+    // distinguishes the two so the terminal banner below can show the
+    // real dispute outcome instead of the generic "Thank You" Rate/Review
+    // screen (which made it look like nothing was ever disputed at all).
+    var isCompletedFromDispute=isCompleted&&disputeResolved;
     var isCancelledFromDispute=b.status==='CANCELLED'&&disputeResolved;
     var isPlainCancelled=b.status==='CANCELLED'&&!isCancelledFromDispute;
     var isDeclined=b.status==='DECLINED';
@@ -12468,7 +12531,12 @@ async function openCustomerHistoryDetail(kind,id){
     // engaged) -- the generic block below stays suppressed for the whole
     // window regardless, so a not-yet-engaged state doesn't show a
     // second, redundant Chat/Call pair.
-    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute||preRelease;
+    // isCancelledFromDispute was missing here -- a dispute resolved as a
+    // refund (booking CANCELLED) still showed Chat/Call and the vendor's
+    // phone number even though the case is closed and there's nothing
+    // left to discuss. isCompleted already covers isCompletedFromDispute
+    // (same underlying status).
+    var hideContactButtons=isCompleted||needsCompletionResponse||isPlainCancelled||isDeclined||hasOpenDispute||isCancelledFromDispute||preRelease;
     // Home Cook: visible from the moment the booking is sent (REQUESTED/
     // PAID), stays through acceptance (CONFIRMED), and disappears ONLY once
     // the vendor taps Job Started -- the event date/time passing is NOT a
@@ -12520,6 +12588,16 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="openDisputeChatForTicket(\''+dt.id+'\')" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid rgba(59,159,232,.4);background:transparent;color:#3B9FE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F4AC; Chat With Support</button>'
         +'<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:10px;border-top:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
         +'</div>';
+    }else if(isCompletedFromDispute){
+      // Resolved in the vendor's favor -- escrow released to them, not the
+      // generic Thank You/Rate/Review screen (there's nothing to rate when
+      // the customer's own dispute was the reason this booking is over).
+      // No Chat/Call/phone number -- the case is closed, nothing left to
+      // discuss through those.
+      terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);">'
+        +'<div style="font-weight:800;font-size:14px;color:#2ECC71;margin-bottom:6px;">Dispute Resolved — Vendor Has Been Paid</div>'
+        +(dt.resolution?'<div style="font-size:12px;color:#9A9390;">'+dt.resolution+'</div>':'')
+        +'</div>';
     }else if(isCompleted){
       // getBooking already includes ratings:true -- b.ratings is real, just
       // never read here before. Check for an existing VENDOR-role rating on
@@ -12549,9 +12627,13 @@ async function openCustomerHistoryDetail(kind,id){
         +reportRow
         +'</div>';
     }else if(isCancelledFromDispute){
+      // Resolved in the customer's favor -- refunded. No phone number here
+      // either (was previously shown even though the case is closed) --
+      // the case is closed, nothing left to discuss through Chat/Call/
+      // phone.
       terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.08);border:1.5px solid rgba(245,166,35,.3);">'
         +'<div style="font-weight:800;font-size:14px;color:#F5A623;margin-bottom:6px;">Dispute Resolved -- Refunded To Your Wallet</div>'
-        +'<div style="display:flex;justify-content:space-between;padding-top:4px;"><span style="font-size:12px;color:#9A9390;">Vendor Phone</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;">'+(vu.phone||'—')+'</span></div>'
+        +(dt.resolution?'<div style="font-size:12px;color:#9A9390;">'+dt.resolution+'</div>':'')
         +'</div>';
     }else if(isPlainCancelled){
       terminalBanner='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
@@ -12589,15 +12671,15 @@ async function openCustomerHistoryDetail(kind,id){
         +'<button onclick="payForBooking(\''+b.id+'\','+b.totalKobo+',function(){openCustomerHistoryDetail(\'booking\',\''+b.id+'\');})" style="width:100%;padding:12px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">&#x1F4B3; Resume Payment</button>'
         +'</div>'
       ):'')
-      +(preRelease&&b.customerEngagedAt?(
+      +(preRelease&&(b.customerEngagedAt||b.vendorEngagedAt)?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(155,89,182,.1);border:1.5px solid rgba(155,89,182,.3);text-align:center;">'
-        +'<div style="color:#9B59B6;font-size:14px;font-weight:800;margin-bottom:12px;">&#x1F4AC; Conversation Active</div>'
+        +'<div style="color:#9B59B6;font-size:14px;font-weight:800;margin-bottom:12px;">'+(b.customerEngagedAt?'&#x1F4AC; Conversation Active':'&#x1F4AC; Conversation Ongoing')+'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
         +'<button onclick="openBookingChat()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #3B9FE8;background:rgba(59,159,232,.08);color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4AC;</span>Chat</button>'
         +'<button onclick="openBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
         +'</div>'
         +'<div style="color:#9A9390;font-size:11px;margin-bottom:8px;">Done with the conversation? Tap End Conversation below.</div>'
-        +'<button onclick="customerEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">End Conversation</button>'
+        +'<button onclick="customerEndBookingConversation(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">End Conversation &amp; Proceed With Payment</button>'
         +'</div>'
       ):preRelease?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
@@ -14384,7 +14466,7 @@ function _customerBookingWriteup(b){
   // terminal-banner wording the detail screen already uses
   // ("⚠️ Dispute Is Pending Resolve From Handa").
   if(b.disputeStatus==='OPEN'||b.disputeStatus==='IN_PROGRESS')return {text:'⚠️ Dispute Is Pending Resolve From Handa',color:'#E8392E'};
-  if(b.disputeStatus==='RESOLVED'||b.disputeStatus==='CLOSED')return {text:'✅ Dispute has been resolved',color:'#2ECC71'};
+  if((b.disputeStatus==='RESOLVED'||b.disputeStatus==='CLOSED')&&!_isDisputeResolutionSeen(b.id))return {text:'✅ Dispute has been resolved',color:'#2ECC71'};
   var isEP=b.type==='EVENT_PLANNING';
   var isNegotiated=isEP||b.packageKey==='premium';
   // Every booking type now pays upfront before the vendor decides -- PAID
@@ -14402,9 +14484,13 @@ function _customerBookingWriteup(b){
   // real gate, since the customer can release straight away.
   if(isNegotiated){
     if(b.amountReleasedKobo===0){
-      return b.customerEngagedAt?{text:'💬 Conversation Active',color:'#9B59B6'}:{text:'💰 Engage your vendor or release payment',color:'#2ECC71'};
+      // Either side engaging reveals the shared conversation to both --
+      // see _vendorBookingWriteup's identical logic/comment.
+      if(b.customerEngagedAt)return {text:'💬 Conversation Active',color:'#9B59B6'};
+      if(b.vendorEngagedAt)return {text:'💬 Conversation Ongoing',color:'#9B59B6'};
+      return {text:'💰 Engage your vendor or release payment',color:'#2ECC71'};
     }
-    if(b.pendingPaymentRequestKobo)return {text:'💵 Vendor requesting additional payment',color:'#F5A623'};
+    if(b.pendingPaymentRequestKobo)return {text:'💵 Vendor is requesting ₦'+Number(Math.round(b.pendingPaymentRequestKobo/100)).toLocaleString(),color:'#F5A623'};
   }
   if(b.vendorConfirmedCompleteAt)return {text:'👨‍🍳 Vendor is waiting your confirmation',color:'#F5A623'};
   if(b.vendorJobStartedAt)return {text:'👨‍🍳 Vendor has started the job',color:'#9B59B6'};
