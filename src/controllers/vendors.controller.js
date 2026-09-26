@@ -294,6 +294,9 @@ async function updateServicePackage(req, res, next) {
         }
         data = { ...data, minPriceKobo: min, maxPriceKobo: max, priceKobo: min };
       }
+      // Catering packages are priced per head -- they never carry a guest
+      // count (older packages created before that may still have one).
+      data.guestCount = null;
     } else {
       data = {
         ...data,

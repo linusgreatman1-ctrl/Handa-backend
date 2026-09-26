@@ -2410,8 +2410,14 @@ function openPostCateringRequestModal(){
     + '<div style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;margin-top:14px;">'
     + '<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:2px;">🍽️ Meals &amp; Drinks</div>'
     + '<div style="font-size:11px;color:#9A9390;margin-bottom:8px;">Tell caterers what each guest should get.</div>'
+    // Tap-to-add common meals (the customer can also just type) -- each
+    // adds a starter line to describe what that meal should contain.
+    + '<div style="font-size:12px;color:#9A9390;margin:6px 0 6px;">Select meals you want</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'
+    + ['Jollof Rice','Fried Rice','White Rice & Stew','Ofada Rice & Ayamase','Pounded Yam & Egusi','Amala & Ewedu','Eba & Okro','Small Chops','Asun','Peppered Chicken','Pasta','Moi-moi','Salad','Dessert'].map(function(m){return '<button type="button" onclick="_crAddMeal(this,\''+m.replace(/'/g,"\\'")+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:16px;padding:5px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;font-family:\'DM Sans\',sans-serif;">+ '+m+'</button>';}).join('')
+    + '</div>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:6px 0 4px;">Meal preferences (what each meal should contain per head)</label>'
-    + '<textarea id="cr-meals" rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;" placeholder="e.g. Jollof rice with 2 pieces of chicken and moi-moi; Fried rice with plantain and salad"></textarea>'
+    + '<textarea id="cr-meals" rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;" placeholder="Tap meals above or type, e.g. Jollof Rice — 2 pieces of chicken, moi-moi, plantain"></textarea>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">Drinks per head?</label>'
     + '<select id="cr-drinks" onchange="document.getElementById(\'cr-drinks-kind-wrap\').style.display=this.value===\'Yes\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;"><option>No</option><option>Yes</option></select>'
     + '<div id="cr-drinks-kind-wrap" style="display:none;"><label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">What kind of drinks?</label><input id="cr-drinks-kind" placeholder="e.g. Chapman, Zobo, soft drinks, bottled water" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"></div>'
@@ -2430,6 +2436,18 @@ function openPostCateringRequestModal(){
     + '</div></div></div>';
   var existing=document.getElementById('catering-request-modal'); if(existing) existing.remove();
   document.body.insertAdjacentHTML('beforeend', html);
+}
+// Adds a picked meal to the "Meal preferences" box as its own line, ready
+// for the customer to say what it should contain (e.g. "Jollof Rice — 2
+// pieces of chicken, moi-moi"). Tapping again doesn't duplicate it.
+function _crAddMeal(btn,meal){
+  var ta=document.getElementById('cr-meals');if(!ta)return;
+  var lines=ta.value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  if(lines.some(function(l){return l.toLowerCase().indexOf(meal.toLowerCase())===0;}))return;
+  lines.push(meal+' — ');
+  ta.value=lines.join('\n');
+  if(btn){btn.style.borderColor='#F5A623';btn.style.color='#F5A623';btn.textContent='✓ '+meal;}
+  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
 }
 function closeCateringRequestModal(){
   var el=document.getElementById('catering-request-modal'); if(el) el.remove();
@@ -13471,7 +13489,7 @@ function renderCatering(list){
   var el=document.getElementById('e-catering-list')||document.getElementById('catering-list');if(!el)return;
   if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:40px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">👨‍🍳</p><p>No caterers available</p></div>';return;}
   var sorted=list.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
-  var tierStyle={basic:{label:'BASIC',border:'#2A2850'},standard:{label:'STANDARD',border:'#E8392E'},premium:{label:'PREMIUM',border:'#F5A623'}};
+  var tierStyle={basic:{label:'BASIC',border:'#3B9FE8'},standard:{label:'STANDARD',border:'#E8392E'},premium:{label:'PREMIUM',border:'#F5A623'}};
   el.innerHTML=sorted.map(function(c){
     var tags=(c.tags||[]).slice(0,4);
     var extra=(c.tags||[]).length>4?(c.tags.length-4):0;
