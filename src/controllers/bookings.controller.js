@@ -101,6 +101,15 @@ function isNegotiatedBooking(booking) {
 }
 
 const BOOKING_TYPE_LABEL = { EVENT_PLANNING: "event planning", CATERING: "catering", CAKE: "cake", HOME_COOK: "home cook" };
+// A cake is an "order" in everything its customer/baker/rider reads;
+// every other type stays a "booking".
+function noun(booking) {
+  return booking && booking.type === "CAKE" ? "order" : "booking";
+}
+function Noun(booking) {
+  return booking && booking.type === "CAKE" ? "Order" : "Booking";
+}
+
 function bookingTypeLabel(type) {
   return BOOKING_TYPE_LABEL[type] || "home cook";
 }
@@ -535,7 +544,7 @@ async function updateBooking(req, res, next) {
         return tx.booking.update({ where: { id: booking.id }, data });
       });
       if (booking.vendor?.userId) {
-        await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking details updated", `The customer updated booking #${booking.bookingNumber} — check the new details.`, { bookingId: booking.id });
+        await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", `${Noun(booking)} details updated`, `The customer updated ${noun(booking)} #${booking.bookingNumber} — check the new details.`, { bookingId: booking.id });
       }
       // A removed item refunds the difference straight to the customer's
       // wallet inside reconcileBookingEditFinancials above -- never silent.
@@ -598,7 +607,7 @@ async function acceptEditedBooking(req, res, next) {
         data: { ...booking.pendingEditSnapshot, pendingEditSnapshot: null, pendingEditRequestedAt: null, wasEdited: true },
       });
     });
-    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit accepted", `The vendor accepted your changes to booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", `${Noun(booking)} edit accepted`, `The vendor accepted your changes to ${noun(booking)} #${booking.bookingNumber}.`, { bookingId: booking.id });
     // The real charge/refund only happens HERE, at the vendor's acceptance
     // -- not at proposal time -- so this is the one real moment a refund
     // for removed items actually lands, and it needs its own notification.
@@ -620,7 +629,7 @@ async function declineEditedBooking(req, res, next) {
     if (!booking.pendingEditSnapshot) return res.status(409).json({ error: "There is no edit awaiting your approval on this booking." });
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingEditSnapshot: null, pendingEditRequestedAt: null } });
-    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit declined", `The vendor declined your proposed changes to booking #${booking.bookingNumber} — the booking is unchanged.`, { bookingId: booking.id });
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", `${Noun(booking)} edit declined`, `The vendor declined your proposed changes to ${noun(booking)} #${booking.bookingNumber} — the booking is unchanged.`, { bookingId: booking.id });
     req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -660,8 +669,8 @@ async function acceptBooking(req, res, next) {
     }
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CONFIRMED" } });
-    const message = `Your ${bookingTypeLabel(booking.type)} booking was accepted and confirmed.`;
-    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", message, { bookingId: booking.id });
+    const message = booking.type === "CAKE" ? "Your baker accepted your cake order." : `Your ${bookingTypeLabel(booking.type)} booking was accepted and confirmed.`;
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", `${Noun(booking)} accepted`, message, { bookingId: booking.id });
     req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -684,8 +693,8 @@ async function declineBooking(req, res, next) {
 
     await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking declined by vendor" });
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "DECLINED" } });
-    const message = `Your ${bookingTypeLabel(booking.type)} booking request was declined -- your payment has been refunded to your wallet.`;
-    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking declined", message, { bookingId: booking.id });
+    const message = booking.type === "CAKE" ? "Your baker declined your cake order -- your payment has been refunded to your wallet." : `Your ${bookingTypeLabel(booking.type)} booking request was declined -- your payment has been refunded to your wallet.`;
+    await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", `${Noun(booking)} declined`, message, { bookingId: booking.id });
     req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
@@ -1204,9 +1213,9 @@ async function cancelBooking(req, res, next) {
     // An unpaid (REQUESTED) order was never shown to the vendor, so there's
     // nothing to tell them when the customer abandons it.
     if (isCustomer && booking.vendor && booking.status !== "REQUESTED") {
-      await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking cancelled", `The customer cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
+      await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", `${Noun(booking)} cancelled`, `The customer cancelled ${noun(booking)} #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
     } else if (isVendor) {
-      await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking cancelled", `The vendor cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
+      await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", `${Noun(booking)} cancelled`, `The ${booking.type === "CAKE" ? "baker" : "vendor"} cancelled ${noun(booking)} #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
     }
     // The refund is credited instantly above -- always tell the customer
     // exactly how much came back, whoever cancelled.
@@ -1367,8 +1376,8 @@ async function acceptCakeDelivery(req, res, next) {
     });
     const updated = await prisma.booking.findUnique({ where: { id: booking.id } });
     const io = req.app.get("io");
-    await notify(io, booking.customerId, "ORDER_UPDATE", "A rider is on the way", `A rider accepted your cake delivery for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
-    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Rider assigned", `A rider is coming to pick up booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    await notify(io, booking.customerId, "ORDER_UPDATE", "A rider is on the way", `A rider accepted your cake delivery for order #${booking.bookingNumber}.`, { bookingId: booking.id });
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Rider assigned", `A rider is coming to pick up order #${booking.bookingNumber}.`, { bookingId: booking.id });
     io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {

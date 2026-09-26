@@ -1226,7 +1226,7 @@ function connectSocket(){
     // not just a toast + a quietly-updated dashboard list a cake vendor
     // might not be looking at -- shows regardless of which screen they're
     // currently on, same idea as a rider's dispatch popup.
-    if(S.role==='vendor'&&S.vtype==='cake'&&n.title==='New paid booking request'&&n.data&&n.data.bookingId){
+    if(S.role==='vendor'&&S.vtype==='cake'&&(n.title==='New paid booking request'||n.title==='New paid cake order')&&n.data&&n.data.bookingId){
       showCakeBookingRequestPopup(n.data.bookingId);
     }
     // A new/updated booking notification landing while the vendor is
@@ -3033,7 +3033,7 @@ async function openCakeRequestForVendor(requestId){
 function _loadCakeRequestJobAction(bookingId){
   var el=document.getElementById('krv-job-action');
   if(!el)return;
-  el.innerHTML='<button onclick="closeProcedureModal();openVendorBookingDetail(\''+bookingId+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">📋 View Booking</button>';
+  el.innerHTML='<button onclick="closeProcedureModal();openVendorBookingDetail(\''+bookingId+'\')" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">📋 View Order</button>';
 }
 function declineCakeRequestForVendor(id){
   if(!confirm('Not interested in this request? It will stop showing on your dashboard.'))return;
@@ -6017,7 +6017,7 @@ async function cakeCustomerConfirmReceipt(id,auto){
     // Already auto-completed by the server -- that's success, not an error.
     if(!auto&&!/already|isn't awaiting/i.test(err.message||'')){
       showToast&&showToast(err.message||'Could not complete the order','warning');
-      if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent='✅ All Confirmed — Complete Order';}
+      if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent='✅ Confirm Order & Release Payments';}
       return;
     }
   }
@@ -6139,7 +6139,7 @@ function _renderEtrackBooking(b,dt){
       +'<div style="background:#1C1C1C;border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">'
       +'<div style="font-size:12px;color:#9A9390;">Auto-release all payments in</div>'
       +'<div style="font-weight:800;font-size:16px;color:#E8392E;" id="cake-auto-countdown">1:30</div></div>'
-      +'<button id="cake-confirm-receipt-btn" onclick="cakeCustomerConfirmReceipt(\''+b.id+'\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#0F6035);color:#111;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:14px;">✅ All Confirmed — Complete Order</button>'
+      +'<button id="cake-confirm-receipt-btn" onclick="cakeCustomerConfirmReceipt(\''+b.id+'\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#0F6035);color:#111;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:14px;">✅ Confirm Order &amp; Release Payments</button>'
       +bakerCard+riderCard
       +'</div>';
     _startCakeAutoCountdown(b);
@@ -6683,10 +6683,11 @@ function bcallStart(){
   var name=window._callName||'Contact',avatar=window._callAvatar||'👤',role=window._callRole||'';
   if(!otherUserId){showToast&&showToast('In-app call is not available here yet.','warning');return;}
   if(window._bcall||window._bcallIncoming){showToast&&showToast('You are already on a call.','warning');return;}
-  window._bcall={role:'caller',bookingId:bookingId,otherUserId:otherUserId,otherName:name,otherAvatar:avatar,otherRole:role,pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false,_ts:Date.now()};
+  var callId='c'+Date.now()+Math.random().toString(36).slice(2,8);
+  window._bcall={role:'caller',callId:callId,bookingId:bookingId,otherUserId:otherUserId,otherName:name,otherAvatar:avatar,otherRole:role,pc:null,localStream:null,remoteSocketId:null,status:'ringing',startedAt:null,micMuted:false,_ts:Date.now()};
   renderBcallOverlay();
   if(bookingId&&_socket)_socket.emit('booking:join',{bookingId:bookingId});
-  var _bcallInvitePayload={toUserId:otherUserId,bookingId:bookingId,callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤',callerRole:S.role||''};
+  var _bcallInvitePayload={toUserId:otherUserId,callId:callId,bookingId:bookingId,callerName:(S.user&&S.user.name)||'Someone',callerAvatar:'👤',callerRole:S.role||''};
   if(_socket)_socket.emit('bookingcall:invite',_bcallInvitePayload);
   // A single invite emit can occasionally never reach the callee -- a
   // brief socket reconnect on their end right as it's sent, a dropped
@@ -6823,6 +6824,10 @@ function bcallBindListeners(){
   _socket._bcallBound=true;
   _socket.on('bookingcall:incoming',function(p){
     if(!p)return;
+    // A ring for a call the caller already cancelled (delivered late) must
+    // never reopen the ringing screen -- that left a stuck "incoming call"
+    // that made this person look busy to every later caller.
+    if(p.callId&&window._bcallCancelledIds&&window._bcallCancelledIds[p.callId])return;
     // A leaked local call state (a missed cancel/end event across a
     // reconnect, a crashed/backgrounded tab, two people calling this same
     // user near-simultaneously, etc.) used to permanently auto-decline
@@ -6859,6 +6864,14 @@ function bcallBindListeners(){
     p._ts=Date.now();
     window._bcallIncoming=p;
     renderBcallOverlay();
+    // Safety net: a caller that's really still ringing re-sends every 3s
+    // (refreshing p._ts via the heartbeat branch above). Once that goes
+    // quiet for 10s -- cancelled, gave up, lost connection -- clear the
+    // ringing screen, whatever happened to the cancel signal.
+    var _incWatch=setInterval(function(){
+      if(window._bcallIncoming!==p){clearInterval(_incWatch);return;}
+      if(Date.now()-(p._ts||0)>10000){clearInterval(_incWatch);window._bcallIncoming=null;renderBcallOverlay();showToast&&showToast('Missed call','info');}
+    },2000);
   });
   _socket.on('bookingcall:accepted',function(p){
     var c=window._bcall;
@@ -6946,6 +6959,7 @@ function bcallBindListeners(){
     }
   });
   _socket.on('bookingcall:cancelled',function(p){
+    if(p&&p.callId){window._bcallCancelledIds=window._bcallCancelledIds||{};window._bcallCancelledIds[p.callId]=Date.now();}
     var inc=window._bcallIncoming;
     if(inc&&inc.fromUserId===p.fromUserId){
       window._bcallIncoming=null;
@@ -7000,7 +7014,7 @@ function bcallEnd(){
   if(c){
     if(_socket&&c.remoteSocketId)_socket.emit('bookingcall:end',{toSocketId:c.remoteSocketId,bookingId:c.bookingId});
     else if(c.isSupportCall&&_socket&&c.role==='caller')_socket.emit('supportcall:cancel',{});
-    else if(_socket&&c.role==='caller')_socket.emit('bookingcall:cancel',{toUserId:c.otherUserId,bookingId:c.bookingId});
+    else if(_socket&&c.role==='caller')_socket.emit('bookingcall:cancel',{toUserId:c.otherUserId,bookingId:c.bookingId,callId:c.callId});
   }
   bcallTeardown();
 }
@@ -7058,14 +7072,14 @@ function _playCallTone(kind){
       if(kind==='incoming'){_callBeep(ctx,880,t,0.35,0.25);_callBeep(ctx,660,t+0.4,0.35,0.25);_callBeep(ctx,880,t+0.8,0.35,0.25);}
       else{_callBeep(ctx,440,t,1.0,0.08);}
     }
-    if(kind==='incoming'&&navigator.vibrate){try{navigator.vibrate([400,200,400]);}catch(e){}}
+    if(kind==='incoming'&&navigator.vibrate&&(!navigator.userActivation||navigator.userActivation.hasBeenActive)){try{navigator.vibrate([400,200,400]);}catch(e){}}
   };
   ring();
   _callToneIv=setInterval(ring,kind==='incoming'?2200:3000);
 }
 function _stopCallTone(){
   clearInterval(_callToneIv);_callToneIv=null;_callToneKind=null;
-  if(navigator.vibrate){try{navigator.vibrate(0);}catch(e){}}
+  if(navigator.vibrate&&(!navigator.userActivation||navigator.userActivation.hasBeenActive)){try{navigator.vibrate(0);}catch(e){}}
 }
 function renderBcallOverlay(){
   var ov=document.getElementById('bcall-ov');var body=document.getElementById('bcall-body');
@@ -10174,7 +10188,7 @@ function riderBindDispatchListeners(){
           body.innerHTML='<div style="padding:70px 22px 22px;text-align:center;">'
             +'<div style="font-size:52px;margin-bottom:14px;">&#x274C;</div>'
             +'<div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:#E8392E;margin-bottom:8px;">Delivery Cancelled</div>'
-            +'<div style="font-size:13px;color:#9A9390;margin-bottom:28px;">This booking was cancelled -- nothing further to do here.</div>'
+            +'<div style="font-size:13px;color:#9A9390;margin-bottom:28px;">This order was cancelled -- nothing further to do here.</div>'
             +'<button onclick="riderNav(\'deliveries\')" style="width:100%;padding:14px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:15px;cursor:pointer;">&#x1F3E0; Back Home</button>'
             +'</div>';
         }
@@ -13731,6 +13745,7 @@ var _vendorBookingsFull=[];
 function loadVendorBookingsList(isCook){
   return api('/bookings?as=vendor').then(function(res){
     _vendorBookingsFull=res.bookings||[];
+    _rememberBkTypes(_vendorBookingsFull);
     renderVendorBookingsList(isCook,10);
   }).catch(function(err){
     var listEl2=document.getElementById('vendor-bookings-list');
@@ -13838,7 +13853,7 @@ function renderVendorBookingsList(isCook,limit){
       // here too; the real Accept Booking/Decline Booking buttons live at
       // the bottom of openVendorBookingDetail itself.
       var actions=b.status===actionableStatus
-        ?'<button onclick="event.stopPropagation();openVendorBookingDetail(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">📋 Open Booking</button>'
+        ?'<button onclick="event.stopPropagation();openVendorBookingDetail(\''+b.id+'\')" style="width:100%;margin-top:10px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer">📋 Open '+_bkN(b)+'</button>'
         :(b.status==='REQUESTED'?'<div style="margin-top:10px;padding:8px;border-radius:9px;background:rgba(154,147,144,.1);color:#9A9390;font-size:11px;font-weight:700;text-align:center;">Awaiting customer payment</div>':'');
       var writeup=_vendorBookingWriteup(b,isCook);
       var writeupHtml=writeup?('<div style="margin-top:8px;padding:6px 8px;border-radius:8px;background:'+writeup.color+'1A;color:'+writeup.color+';font-size:11px;font-weight:700;text-align:center;">'+writeup.text+'</div>'):'';
@@ -13985,7 +14000,7 @@ async function openVendorBookingDetail(id){
   try{
     var res=await api('/bookings/'+id);
     if(_mySeq!==_vendorBookingDetailReqSeq)return;
-    var b=res.booking;
+    var b=res.booking;_rememberBkTypes([b]);
     var dt=res.disputeTicket;
     var c=b.customer||{};
     // Stashed for the zero-arg Chat/Call buttons below -- same pattern as
@@ -13996,7 +14011,7 @@ async function openVendorBookingDetail(id){
     window._vendorBookingDetailRider=b.rider?{id:b.rider.user.id,name:b.rider.user.name||'Rider',phone:b.rider.user.phone||'',bookingId:b.id}:null;
     var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
     var rows=[
-      ['Booking #',b.bookingNumber||'—'],
+      [_bkN(b)+' #',b.bookingNumber||'—'],
       ['Status',b.status],
       ['Service',b.type==='EVENT_PLANNING'?'Event Planning':(b.type==='CATERING'?'Catering':(b.type==='CAKE'?'Cake':'Home Cook'))],
       ['Date',when+(b.eventTime?' at '+b.eventTime:'')],
@@ -14054,7 +14069,7 @@ async function openVendorBookingDetail(id){
     var vendorStatusBlock='';
     if(vendorHasOpenDispute){
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(232,57,46,.08);border:1.5px solid rgba(232,57,46,.3);">'
-        +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Customer Disputed This Booking</div>'
+        +'<div style="font-weight:800;font-size:14px;color:#E8392E;margin-bottom:6px;">&#x26A0;&#xFE0F; Customer Disputed This '+_bkN(b)+'</div>'
         +'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">'+dt.category+'</div>'
         +'<div style="font-size:13px;color:#F2EDE8;margin-bottom:10px;">'+(dt.description||'')+'</div>'
         +(dt.secondPartyResponse
@@ -14108,8 +14123,8 @@ async function openVendorBookingDetail(id){
       // new Event Request (Open Event Request -> full details -> the real
       // decision made inside).
       vendorStatusBlock='<div style="display:flex;gap:10px;margin-top:14px;">'
-        +'<button onclick="vendorBookingAction(\''+b.id+'\',\'decline\')" style="flex:1;padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Booking</button>'
-        +'<button onclick="vendorBookingAction(\''+b.id+'\',\'accept\')" style="flex:1;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Accept Booking</button>'
+        +'<button onclick="vendorBookingAction(\''+b.id+'\',\'decline\')" style="flex:1;padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline '+_bkN(b)+'</button>'
+        +'<button onclick="vendorBookingAction(\''+b.id+'\',\'accept\')" style="flex:1;padding:13px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;">Accept '+_bkN(b)+'</button>'
         +'</div>';
     }else if(b.status==='CONFIRMED'){
       if(b.pendingEditSnapshot){
@@ -14182,7 +14197,7 @@ async function openVendorBookingDetail(id){
         +_pendingEditSummaryHtml(pe,!isCookB)
         +((pe.totalKobo!==undefined&&pe.totalKobo<b.totalKobo)?'<div style="margin-top:8px;font-size:11px;color:#9A9390;">Accepting refunds the '+N(Math.round((b.totalKobo-pe.totalKobo)/100))+' difference to the customer\'s escrow wallet.</div>':'')
         +'<div style="display:flex;gap:10px;margin-top:12px;">'
-        +'<button onclick="vendorDeclineEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Edited Booking</button>'
+        +'<button onclick="vendorDeclineEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Decline Edited '+_bkN(b)+'</button>'
         +'<button onclick="vendorAcceptEditedBooking(\''+b.id+'\')" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">Accept &amp; Continue</button>'
         +'</div></div>';
     }
@@ -14215,7 +14230,7 @@ async function openVendorBookingDetail(id){
         +'<button onclick="openVendorBookingCall()" style="padding:12px 4px;border-radius:12px;border:1.5px solid #2ECC71;background:rgba(46,204,113,.08);color:#2ECC71;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:20px">&#x1F4DE;</span>Call</button>'
         +'</div>'
       ))
-      +(vendorCancellable?'<button onclick="openCancelBookingReasonModal(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel Booking</button>':'')
+      +(vendorCancellable?'<button onclick="openCancelBookingReasonModal(\''+b.id+'\')" style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel '+_bkN(b)+'</button>':'')
       +'</div>'
     );
     var content='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
@@ -14572,6 +14587,12 @@ var _customerBookingDetailReqSeq=0;
 // Used by the customer's, vendor's and rider's history details so every
 // side gets one Rate row (customer only -- ratings are customer-given) and
 // one named Report button per other party, like Shop-For-Me.
+// A cake is an ORDER everywhere a cake user reads it; every other type
+// stays a BOOKING. _bkTypeById lets screens that only get an id (the
+// cancel dialog) still pick the right word.
+window._bkTypeById=window._bkTypeById||{};
+function _bkN(b){ return (b&&b.type==='CAKE')?'Order':'Booking'; }
+function _rememberBkTypes(list){ (list||[]).forEach(function(b){ if(b&&b.id&&b.type)window._bkTypeById[b.id]=b.type; }); }
 function _vendorRoleLabel(type){
   return type==='CAKE'?'Baker':(type==='CATERING'?'Caterer':(type==='EVENT_PLANNING'?'Event Planner':'Cook'));
 }
@@ -14698,7 +14719,7 @@ async function openCustomerHistoryDetail(kind,id){
     var res=await api('/bookings/'+id);
     if(_mySeq!==_customerBookingDetailReqSeq)return;
     var b=res.booking;
-    b.reportTicket=res.reportTicket;b.myReports=res.myReports||{};
+    b.reportTicket=res.reportTicket;b.myReports=res.myReports||{};_rememberBkTypes([b]);
     var v=b.vendor||{};
     var vu=v.user||{};
     // Stashed for the zero-arg Chat/Call/WhatsApp buttons below -- avoids
@@ -14710,7 +14731,7 @@ async function openCustomerHistoryDetail(kind,id){
     window._bookingDetailRider=b.rider?{id:b.rider.user.id,name:b.rider.user.name||'Rider',phone:b.rider.user.phone||'',bookingId:b.id}:null;
     var when=b.eventDate?new Date(b.eventDate).toLocaleDateString():'Date TBD';
     var rows=[
-      ['Booking #',b.bookingNumber||'—'],
+      [_bkN(b)+' #',b.bookingNumber||'—'],
       ['Vendor',v.bizName||'—'],
       ['Status',b.status],
       ['Service',b.type==='EVENT_PLANNING'?'Event Planning':(b.type==='CATERING'?'Catering':(b.type==='CAKE'?'Cake':'Home Cook'))],
@@ -14964,7 +14985,7 @@ async function openCustomerHistoryDetail(kind,id){
       +'</div>'
       +terminalBanner
       +(awaitingVendorDecision?(
-        '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For Vendor To Accept Your Booking</div>'
+        '<div style="margin-top:14px;padding:13px 14px;border-radius:13px;background:rgba(154,86,86,.08);border:1.5px solid #2A2850;text-align:center;color:#9A9390;font-weight:700;font-size:13px;">&#x23F3; Waiting For '+(b.type==='CAKE'?'The Baker To Accept Your Order':'Vendor To Accept Your Booking')+'</div>'
       ):'')
       +(unpaidCook?(
         '<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(245,166,35,.1);border:1.5px solid rgba(245,166,35,.3);">'
@@ -15042,8 +15063,8 @@ async function openCustomerHistoryDetail(kind,id){
       ):'')
       +((editable||cancellable)?(
         '<div style="display:flex;gap:10px;margin-top:10px;">'
-        +(editable?'<button onclick="openEditBookingModalById(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit Booking</button>':'')
-        +(cancellable?'<button onclick="openCancelBookingReasonModal(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel Booking</button>':'')
+        +(editable?'<button onclick="openEditBookingModalById(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:none;background:#E8392E;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x270F;&#xFE0F; Edit '+_bkN(b)+'</button>':'')
+        +(cancellable?'<button onclick="openCancelBookingReasonModal(\''+b.id+'\')" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">Cancel '+_bkN(b)+'</button>':'')
         +'</div>'
       ):'')
       +'<button onclick="closeBottomSheet();eGo(\'home\')" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">&#x1F3E0; Back Home</button>';
@@ -15448,7 +15469,7 @@ function openCancelBookingReasonModal(id){
   // role ('customer'/'vendor'/'rider'/'shopper'), unaffected by navigation.
   var reasons=(S.role==='customer')?CANCEL_BOOKING_REASONS:VENDOR_CANCEL_BOOKING_REASONS;
   showProcedureModal('<div style="padding:0 0 20px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Cancel Booking</div></div>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Cancel '+_bkN({type:(window._bkTypeById||{})[id]})+'</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Select every reason that applies.</p>'
     +'<div id="cbr-reasons-list">'
     +reasons.map(function(r,i){return '<div onclick="toggleCancelBookingReason(this)" data-reason="'+r+'" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;"><div id="cbr-box-'+i+'" style="width:18px;height:18px;border-radius:5px;border:2px solid #555;flex-shrink:0;"></div><span style="color:#F2EDE8;font-size:13px;">'+r+'</span></div>';}).join('')
@@ -15592,7 +15613,7 @@ async function openEditBookingModal(b){
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
-    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit Booking</div></div>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+_bkN(b)+'</div></div>'
     +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Changes are sent to the vendor for approval. You can edit right up until the booking\'s date.</p>'
     +_arField(isCook?'Cooking Date':'Event Date','eb-date',b.eventDate?new Date(b.eventDate).toISOString().slice(0,10):'','date')
     +_arField(isCook?'Cooking Time':'Event Time','eb-time',b.eventTime||'','')
@@ -15830,8 +15851,8 @@ function showBookingEditFundsChoice(diffKobo,realBalanceKobo,priceContext){
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><button onclick="_reopenEditBookingForm()" class="ibtn" style="background:#242424;">&#x2190;</button></div>'
     +'<div style="text-align:center;margin-bottom:18px;">'
     +'<div style="font-size:36px;margin-bottom:8px;">⚠️</div>'
-    +'<div style="font-size:17px;font-weight:900;color:#F2EDE8;">Insufficient Funds For This Booking</div>'
-    +'<div style="font-size:13px;color:#9A9390;margin-top:10px;line-height:1.5;">You need '+N(Math.round(diffKobo/100))+' more to complete this booking. You have '+N(Math.round(realBalanceKobo/100))+' in your wallet.</div>'
+    +'<div style="font-size:17px;font-weight:900;color:#F2EDE8;">Insufficient Funds For This '+_bkN(window._editingBooking||_editingBooking)+'</div>'
+    +'<div style="font-size:13px;color:#9A9390;margin-top:10px;line-height:1.5;">You need '+N(Math.round(diffKobo/100))+' more to complete this '+_bkN(window._editingBooking||_editingBooking).toLowerCase()+'. You have '+N(Math.round(realBalanceKobo/100))+' in your wallet.</div>'
     +'</div>'
     +'<button onclick="_bookingEditFundsChoice(\'WALLET\')" style="width:100%;padding:13px;margin-bottom:10px;border-radius:12px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">💰 Use My Wallet Balance</button>'
     +'<button onclick="_bookingEditFundsChoice(\'OTHER\')" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">➕ Add Funds Another Way</button>'
@@ -16228,8 +16249,8 @@ function cookBkRender(phase){
   }else if(phase==='confirmed'){
     var d=_cb.details;
     h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
-      +'<p style="color:#2ECC71;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">&#x2705; Booking Confirmed!</p>'
-      +'<h2 style="font-size:20px;font-weight:900;margin:0">'+(isCateringVendor?'Your Booking Details':'Your Session Details')+'</h2></div>'
+      +'<p style="color:#2ECC71;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">&#x2705; '+(isCakeVendor?'Order':'Booking')+' Confirmed!</p>'
+      +'<h2 style="font-size:20px;font-weight:900;margin:0">'+(isCateringVendor?'Your Booking Details':(isCakeVendor?'Your Order Details':'Your Session Details'))+'</h2></div>'
       +'<div style="padding:16px 16px 80px">'
         +'<div style="background:#1C1C1C;border:2px solid rgba(46,204,113,.3);border-radius:16px;padding:16px;margin-bottom:16px;text-align:center">'
           +'<div style="font-size:64px;margin-bottom:8px">'+c.em+'</div>'
@@ -16254,8 +16275,8 @@ function cookBkRender(phase){
           +'<p style="color:#F5A623;font-size:13px;line-height:1.5;margin:0"><b>Note:</b> '+(isCateringVendor?'The caterer provides the food, ingredients, and service staff for your event -- you just need to provide the venue.':(isCakeVendor?'Your baker will prepare this to order. Once it\'s ready, a rider will pick it up and deliver it to you -- track the rider live and chat/call your baker or rider from your booking details.':'You are the one to provide the cooking items, ingredients, and space for this service. The cook provides only the labour and expertise.'))+'</p>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
-          +'<button onclick="openEditBookingModal(_cb.booking)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(59,159,232,.3);background:transparent;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">&#x270F;&#xFE0F; Edit Booking</button>'
-          +'<button onclick="openCancelBookingReasonModal(_cb.booking.id)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">Cancel Booking</button>'
+          +'<button onclick="openEditBookingModal(_cb.booking)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(59,159,232,.3);background:transparent;color:#3B9FE8;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">&#x270F;&#xFE0F; Edit '+(isCakeVendor?'Order':'Booking')+'</button>'
+          +'<button onclick="openCancelBookingReasonModal(_cb.booking.id)" style="padding:13px;border-radius:12px;border:1.5px solid rgba(232,57,46,.3);background:transparent;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer">Cancel '+(isCakeVendor?'Order':'Booking')+'</button>'
         +'</div>'
         +'<button onclick="closeCookBooking()" style="width:100%;padding:13px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:14px;cursor:pointer">&#x1F3E0; Back Home</button>'
       +'</div>';
@@ -16699,6 +16720,7 @@ async function cookBkConfirmBooking(){
     _cb.bookingNumber=res.booking.bookingNumber;
     _cb.total=Math.round(res.booking.totalKobo/100);
     _cb.booking=res.booking;
+    _rememberBkTypes([res.booking]);
     // Payment now happens immediately when the request is sent, before the
     // vendor decides -- not after acceptance. The confirmation screen only
     // shows once payment actually succeeds; if the customer backs out of
@@ -17475,13 +17497,13 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking){
       var paymentMethod=methodMap[window._escrowMethod]||'WALLET';
       var res=await api('/bookings/'+bookingId+'/pay',{method:'POST',body:JSON.stringify({paymentMethod:paymentMethod})});
       if(res.paid){
-        showToast&&showToast('Payment successful — sent to the vendor for review.','success');
+        showToast&&showToast(booking&&booking.type==='CAKE'?'Payment successful — your order has been sent to the baker.':'Payment successful — sent to the vendor for review.','success');
         if(onSuccess)onSuccess(); else renderEHistory();
         return;
       }
       if(res.manual){
         openManualBankTransferModal(res,function(){
-          showToast&&showToast('Payment confirmed — sent to the vendor for review.','success');
+          showToast&&showToast(booking&&booking.type==='CAKE'?'Payment confirmed — your order has been sent to the baker.':'Payment confirmed — sent to the vendor for review.','success');
           if(onSuccess)onSuccess(); else renderEHistory();
         },function(){
           // Back out of Bank Transfer -- re-open the same payment-method
@@ -17501,7 +17523,7 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking){
           var r=await api('/bookings/'+bookingId);
           return r.booking.status!=='REQUESTED';
         }, function(){
-          showToast&&showToast('Payment confirmed — sent to the vendor for review.','success');
+          showToast&&showToast(booking&&booking.type==='CAKE'?'Payment confirmed — your order has been sent to the baker.':'Payment confirmed — sent to the vendor for review.','success');
           if(onSuccess)onSuccess(); else if(S.curScreen==='history')renderEHistory();
         });
       }

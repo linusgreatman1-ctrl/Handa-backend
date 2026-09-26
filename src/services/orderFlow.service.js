@@ -94,12 +94,12 @@ async function confirmBookingPayment(bookingId, reference, io) {
   const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: nextStatus, confirmedAt: new Date() } });
 
   if (viaProposal) {
-    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment secured", `The customer's payment for booking #${booking.bookingNumber} is now secured in escrow.`, { bookingId }).catch(() => {});
-    await notify(io, booking.customerId, "ORDER_UPDATE", "Payment secured", `Your payment for booking #${booking.bookingNumber} is secured in escrow.`, { bookingId }).catch(() => {});
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment secured", `The customer's payment for ${booking.type === "CAKE" ? "order" : "booking"} #${booking.bookingNumber} is now secured in escrow.`, { bookingId }).catch(() => {});
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Payment secured", `Your payment for ${booking.type === "CAKE" ? "order" : "booking"} #${booking.bookingNumber} is secured in escrow.`, { bookingId }).catch(() => {});
   } else {
     const typeLabel =
       booking.type === "EVENT_PLANNING" ? "event planning" : booking.type === "CATERING" ? "catering" : booking.type === "CAKE" ? "cake" : "home cook";
-    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "New paid booking request", `A customer paid for a ${typeLabel} booking -- accept or decline it.`, { bookingId }).catch(() => {});
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", booking.type === "CAKE" ? "New paid cake order" : "New paid booking request", booking.type === "CAKE" ? "A customer paid for a cake order -- accept or decline it." : `A customer paid for a ${typeLabel} booking -- accept or decline it.`, { bookingId }).catch(() => {});
   }
   return updated;
 }

@@ -205,8 +205,14 @@ function attachLiveSocket(httpServer) {
     // learn each other's live socket id and start real SDP/ICE signaling.
     // Kept on its own bookingcall:* namespace so it can never collide
     // with an SFM/confirm call this same user might also have in flight.
-    socket.on("bookingcall:invite", async ({ toUserId, bookingId, callerName, callerAvatar, callerRole }) => {
+    socket.on("bookingcall:invite", async ({ toUserId, bookingId, callerName, callerAvatar, callerRole, callId }) => {
       if (!toUserId) return;
+      // The party check below awaits the DB, while a cancel is handled
+      // instantly -- so a ring sent just before the caller cancelled could
+      // be delivered AFTER the cancel, re-opening a ringing screen on the
+      // callee that nothing ever clears (they then look "busy" to every
+      // later caller). Drop any invite for a call that's been cancelled.
+      if (callId && socket.data.cancelledCalls && socket.data.cancelledCalls.has(callId)) return;
       if (bookingId) {
         // The frontend reuses this same generic call system for two real
         // contexts: Cook/EP bookings AND Shop-For-Me sessions (customer <->
@@ -234,9 +240,11 @@ function attachLiveSocket(httpServer) {
           if (!allowed) return;
         }
       }
+      if (callId && socket.data.cancelledCalls && socket.data.cancelledCalls.has(callId)) return; // cancelled while we checked
       io.to(`user:${toUserId}`).emit("bookingcall:incoming", {
         fromUserId: user.id,
         fromSocketId: socket.id,
+        callId: callId || null,
         bookingId: bookingId || null,
         callerName: callerName || user.name,
         callerAvatar: callerAvatar || "👤",
@@ -251,9 +259,13 @@ function attachLiveSocket(httpServer) {
       if (!toSocketId) return;
       io.to(toSocketId).emit("bookingcall:declined", { fromUserId: user.id, bookingId: bookingId || null, reason: reason || null });
     });
-    socket.on("bookingcall:cancel", ({ toUserId, bookingId }) => {
+    socket.on("bookingcall:cancel", ({ toUserId, bookingId, callId }) => {
       if (!toUserId) return;
-      io.to(`user:${toUserId}`).emit("bookingcall:cancelled", { fromUserId: user.id, bookingId: bookingId || null });
+      if (callId) {
+        socket.data.cancelledCalls = socket.data.cancelledCalls || new Set();
+        socket.data.cancelledCalls.add(callId);
+      }
+      io.to(`user:${toUserId}`).emit("bookingcall:cancelled", { fromUserId: user.id, bookingId: bookingId || null, callId: callId || null });
     });
     socket.on("bookingcall:end", ({ toSocketId, bookingId }) => {
       if (!toSocketId) return;
