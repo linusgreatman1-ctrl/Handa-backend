@@ -107,10 +107,15 @@ async function listMenuItems(req, res, next) {
 // if the price is fine (or nothing needs checking).
 async function _validateCateringTierPrice(vendorId, vtype, packageTier, priceKobo) {
   if (vtype !== "CATERING" || !packageTier) return null;
+  // packageTier is either a package id or a template key ("basic"). Only
+  // query `key` with a real PackageKey value -- an id there is an invalid
+  // enum value and made Prisma throw (500) for every id-linked dish.
+  const asKey = String(packageTier).toUpperCase();
+  const isKey = ["BASIC", "STANDARD", "PREMIUM"].includes(asKey);
   const pkg = await prisma.servicePackage.findFirst({
     where: {
       vendorId,
-      OR: [{ id: packageTier }, { key: packageTier.toUpperCase() }],
+      OR: [{ id: String(packageTier) }, ...(isKey ? [{ key: asKey }] : [])],
     },
   });
   if (!pkg) return "That package no longer exists -- pick another tier.";
@@ -125,9 +130,16 @@ async function _validateCateringTierPrice(vendorId, vtype, packageTier, priceKob
   return null;
 }
 
+// "What's in this meal" lines -- trimmed, blanks dropped, capped so a
+// pasted essay can't bloat every catalog payload.
+function _cleanContents(contents) {
+  if (!Array.isArray(contents)) return [];
+  return contents.map((s) => String(s).trim().slice(0, 120)).filter(Boolean).slice(0, 20);
+}
+
 async function createMenuItem(req, res, next) {
   try {
-    const { name, description, emoji, imageUrl, category, priceKobo, prepTimeMinutes, popular, leadTimeNote, packageTier } = req.body;
+    const { name, description, emoji, imageUrl, category, priceKobo, prepTimeMinutes, popular, leadTimeNote, packageTier, contents } = req.body;
     if (!name || priceKobo === undefined) return res.status(400).json({ error: "name and priceKobo are required." });
 
     const vtype = req.user.vendorProfile.vtype;
@@ -147,6 +159,7 @@ async function createMenuItem(req, res, next) {
         popular: !!popular,
         leadTimeNote: leadTimeNote || null,
         packageTier: vtype === "CATERING" ? packageTier || null : null,
+        contents: _cleanContents(contents),
       },
     });
     res.status(201).json({ item });
@@ -160,7 +173,7 @@ async function updateMenuItem(req, res, next) {
     const item = await prisma.menuItem.findUnique({ where: { id: req.params.itemId } });
     if (!item || item.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Menu item not found." });
 
-    const { name, description, emoji, imageUrl, category, priceKobo, prepTimeMinutes, popular, inStock, leadTimeNote, packageTier } = req.body;
+    const { name, description, emoji, imageUrl, category, priceKobo, prepTimeMinutes, popular, inStock, leadTimeNote, packageTier, contents } = req.body;
     const vtype = req.user.vendorProfile.vtype;
     const nextTier = packageTier !== undefined ? packageTier : item.packageTier;
     const nextPrice = priceKobo !== undefined ? Number(priceKobo) : item.priceKobo;
@@ -181,6 +194,7 @@ async function updateMenuItem(req, res, next) {
         ...(inStock !== undefined && { inStock }),
         ...(leadTimeNote !== undefined && { leadTimeNote: leadTimeNote || null }),
         ...(packageTier !== undefined && vtype === "CATERING" && { packageTier: packageTier || null }),
+        ...(contents !== undefined && { contents: _cleanContents(contents) }),
       },
     });
     res.json({ item: updated });
@@ -264,6 +278,20 @@ async function updateServicePackage(req, res, next) {
       if (minPriceKobo !== undefined || maxPriceKobo !== undefined) {
         const rangeError = _validatePriceRange(min, max);
         if (rangeError) return res.status(400).json({ error: rangeError });
+        // Narrowing the range out from under meals customers already see
+        // listed under this package would make an existing meal's price fall
+        // outside what the package now advertises -- refuse, same as adding
+        // a new meal at that price would be refused.
+        const outOfRange = await prisma.menuItem.findFirst({
+          where: {
+            vendorId: pkg.vendorId,
+            packageTier: { in: pkg.key === "CUSTOM" ? [pkg.id] : [pkg.id, pkg.key, pkg.key.toLowerCase()] },
+            OR: [{ priceKobo: { lt: min } }, { priceKobo: { gt: max } }],
+          },
+        });
+        if (outOfRange) {
+          return res.status(400).json({ error: `"${outOfRange.name}" is priced outside this new range — update its price or move it to another package first.` });
+        }
         data = { ...data, minPriceKobo: min, maxPriceKobo: max, priceKobo: min };
       }
     } else {

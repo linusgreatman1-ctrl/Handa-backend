@@ -48,7 +48,11 @@ async function resolveBookingItems(items, vendorId) {
     if (!name || priceKobo <= 0) throw Object.assign(new Error("A custom item needs both a name and a price."), { status: 400 });
     if (priceKobo > 100000000) throw Object.assign(new Error("Custom item price is unreasonably high."), { status: 400 }); // ₦1,000,000 sanity cap
     itemsTotalKobo += priceKobo * qty;
-    return { menuItemId: null, name, priceKobo, qty, custom: true };
+    // The customer's own note on what a free-text "Other" dish should
+    // contain per head (drinks or not, which kind) -- there's no catalog
+    // item's `contents` to describe it, so it travels with the order.
+    const notes = reqItem.customNotes ? String(reqItem.customNotes).trim().slice(0, 500) : undefined;
+    return { menuItemId: null, name, priceKobo, qty, custom: true, ...(notes && { notes }) };
   });
   return { selectedItemsSnapshot, itemsTotalKobo };
 }

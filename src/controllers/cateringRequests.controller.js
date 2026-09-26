@@ -189,7 +189,7 @@ async function acceptProposal(req, res, next) {
           guestCount: request.guestCount,
           eventType: request.eventType,
           selectedItems: selectedItemsSnapshot,
-          notes: [request.mealPreferences ? "Meals: " + request.mealPreferences : null, request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
+          notes: [request.mealPreferences || null, request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
           paymentMethod: "CARD",
           totalKobo: proposal.priceKobo,
         },

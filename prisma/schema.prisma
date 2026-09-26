@@ -356,6 +356,10 @@ model MenuItem {
   // customer on the catalog card is never violated by what they actually
   // see once they pick that package. Null for every other vendor type.
   packageTier     String?
+  // What's actually in the plate per head, shown to the customer when they
+  // tap a meal -- e.g. ["1 plate of jollof rice", "2 pieces of chicken",
+  // "Moi-moi", "Drink: Chapman"].
+  contents        String[] @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

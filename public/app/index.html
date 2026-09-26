@@ -2402,8 +2402,20 @@ function openPostCateringRequestModal(){
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">Your Phone</label><input class="if" id="cr-poster-phone" type="tel" value="'+((S.user&&S.user.phone)||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'
     + _arSelect('Occasion','cr-type','<option>Wedding</option><option>Birthday</option><option>Corporate Event</option><option>Conference</option><option>Party</option><option>Naming Ceremony</option><option>Burial/Memorial</option><option>Other</option>')
     + _arField('Event Date','cr-date','','date')
+    + _arField('Event Time','cr-time','','time')
     + _arField('Venue / Location','cr-venue','e.g. Eko Hotel, Lagos','',(S.user&&S.user.address)||'')
     + _arField('Expected Guests','cr-guests','e.g. 200','number')
+    // What each plate should hold per head, and drinks -- the caterer
+    // prices their proposal off this.
+    + '<div style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;margin-top:14px;">'
+    + '<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:2px;">🍽️ Meals &amp; Drinks</div>'
+    + '<div style="font-size:11px;color:#9A9390;margin-bottom:8px;">Tell caterers what each guest should get.</div>'
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:6px 0 4px;">Meal preferences (what each meal should contain per head)</label>'
+    + '<textarea id="cr-meals" rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;" placeholder="e.g. Jollof rice with 2 pieces of chicken and moi-moi; Fried rice with plantain and salad"></textarea>'
+    + '<label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">Drinks per head?</label>'
+    + '<select id="cr-drinks" onchange="document.getElementById(\'cr-drinks-kind-wrap\').style.display=this.value===\'Yes\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;"><option>No</option><option>Yes</option></select>'
+    + '<div id="cr-drinks-kind-wrap" style="display:none;"><label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">What kind of drinks?</label><input id="cr-drinks-kind" placeholder="e.g. Chapman, Zobo, soft drinks, bottled water" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"></div>'
+    + '</div>'
     + _arField('Budget (₦)','cr-budget','e.g. 800000','number')
     + _arField('Timeframe','cr-timeframe','e.g. Need this within 2 weeks','')
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 6px;">Services Needed</label>'
@@ -2435,12 +2447,18 @@ async function submitCateringRequest(){
   var services=[].slice.call(document.querySelectorAll('.cr-svc:checked')).map(function(c){return c.value;});
   var otherSvc=(document.getElementById('cr-svc-other')||{}).value||'';
   if((document.getElementById('cr-svc-other-cb')||{}).checked&&otherSvc.trim())services.push(otherSvc.trim());
+  var eventTime=(document.getElementById('cr-time')||{}).value||'';
+  var meals=((document.getElementById('cr-meals')||{}).value||'').trim();
+  var drinks=(document.getElementById('cr-drinks')||{}).value||'No';
+  var drinksKind=((document.getElementById('cr-drinks-kind')||{}).value||'').trim();
+  var mealPreferences=[meals?'Meals: '+meals:'',drinks==='Yes'?('Drinks: Yes'+(drinksKind?' — '+drinksKind:'')):'Drinks: No'].filter(Boolean).join('\n');
   if(!eventDate){showToast&&showToast('Please select an event date','warning');return;}
   if(!venue.trim()){showToast&&showToast('Please enter a venue','warning');return;}
   try{
     await api('/catering-requests',{method:'POST',body:JSON.stringify({
       posterName:posterName.trim()||undefined, posterPhone:posterPhone.trim()||undefined,
-      eventType:eventType, eventDate:eventDate, venue:venue.trim(),
+      eventType:eventType, eventDate:eventDate, eventTime:eventTime||undefined, venue:venue.trim(),
+      mealPreferences:mealPreferences||undefined,
       guestCount: guests?parseInt(guests):null, budgetKobo: budget?Math.round(parseFloat(budget)*100):null,
       servicesRequested: services, notes: notes.trim()||null, timeframe: timeframe.trim()||null,
     })});
@@ -2528,7 +2546,7 @@ async function openCateringRequestDetailModal(id){
     var rows=[
       ['Occasion', r.eventType],
       ['Status', r.status.replace('_',' ')],
-      ['Date', new Date(r.eventDate).toLocaleDateString()],
+      ['Date', new Date(r.eventDate).toLocaleDateString()+(r.eventTime?' at '+r.eventTime:'')],
       ['Venue', r.venue||'Not set'],
     ];
     if(r.guestCount)rows.push(['Guests', r.guestCount]);
@@ -2537,6 +2555,7 @@ async function openCateringRequestDetailModal(id){
     var infoCard='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(x){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+x[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+x[1]+'</span></div>';}).join('')
       +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;">'+r.servicesRequested.join(', ')+'</div></div>':'')
+      +(r.mealPreferences?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Meals &amp; Drinks</div><div style="font-size:13px;color:#F2EDE8;white-space:pre-line;">'+r.mealPreferences+'</div></div>':'')
       +(r.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+r.notes+'</div></div>':'')
       +'</div>';
     var proposalsWriteup=!activeProposals.length
@@ -2616,12 +2635,13 @@ async function openCateringRequestForVendor(requestId){
     var header='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:17px;font-weight:900;color:#F2EDE8;">Catering Request</div></div>';
     var details='<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:14px;margin-bottom:16px;">'
       +'<b style="color:#F2EDE8;font-size:15px;">'+r.eventType+'</b>'
-      +'<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.7;">📍 '+r.venue+'<br>📅 '+new Date(r.eventDate).toLocaleDateString()
+      +'<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.7;">📍 '+r.venue+'<br>📅 '+new Date(r.eventDate).toLocaleDateString()+(r.eventTime?' at '+r.eventTime:'')
       +(r.guestCount?'<br>👥 '+r.guestCount+' guests':'')
       +(r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
       +'</div>'
       +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
       +(r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
+      +(r.mealPreferences?'<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#242424;"><div style="font-size:11px;color:#F5A623;font-weight:800;margin-bottom:4px;">🍽️ MEALS &amp; DRINKS</div><div style="font-size:12px;color:#F2EDE8;white-space:pre-line;">'+r.mealPreferences+'</div></div>':'')
       +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">Note: '+r.notes+'</div>':'')
       +'<div style="border-top:1px solid #2A2850;margin-top:10px;padding-top:10px;font-size:12px;color:#9A9390;">Posted by <span style="color:#F2EDE8;font-weight:700;">'+(r.posterName||(r.customer&&r.customer.name)||'Customer')+'</span>'+((r.posterPhone||(r.customer&&r.customer.phone))?' • '+(r.posterPhone||r.customer.phone):'')+'</div>'
       +'</div>';
@@ -3121,11 +3141,13 @@ async function loadRealCatalog(){
 
     function pkgObj(v){
       var o = {};
-      (v.servicePackages||[]).forEach(function(p){ o[p.key.toLowerCase()] = { id:p.id, label:p.label, price:Math.round(p.priceKobo/100), inc:p.includes||[], guests:p.guestCount||null }; });
+      // minPriceKobo/maxPriceKobo: a Catering package's per-head range (null
+      // for Event Planner's flat-price packages).
+      (v.servicePackages||[]).forEach(function(p){ o[p.key.toLowerCase()] = { id:p.id, key:p.key.toLowerCase(), label:p.label, price:Math.round(p.priceKobo/100), minPriceKobo:p.minPriceKobo, maxPriceKobo:p.maxPriceKobo, inc:p.includes||[], guests:p.guestCount||null }; });
       // CUSTOM packages aren't limited to one per vendor like the fixed
       // templates are (they'd collide on the o['custom'] key above) — keep
       // the real list separately so the booking flow can show all of them.
-      o._custom = (v.servicePackages||[]).filter(function(p){return p.key==='CUSTOM';}).map(function(p){ return { id:p.id, key:'custom_'+p.id, label:p.label, price:Math.round(p.priceKobo/100), inc:p.includes||[], guests:p.guestCount||null }; });
+      o._custom = (v.servicePackages||[]).filter(function(p){return p.key==='CUSTOM';}).map(function(p){ return { id:p.id, key:'custom_'+p.id, label:p.label, price:Math.round(p.priceKobo/100), minPriceKobo:p.minPriceKobo, maxPriceKobo:p.maxPriceKobo, inc:p.includes||[], guests:p.guestCount||null }; });
       return o;
     }
     var newEp = byType.EVENT_PLANNER.map(function(v){
@@ -3137,12 +3159,12 @@ async function loadRealCatalog(){
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
         // POST /api/bookings can look them up.
-        menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'' }; }),
+        menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'', contents:m.contents||[] }; }),
         pkgs:pkgObj(v) };
     });
     var newCatering = byType.CATERING.map(function(v){
       return { id:v.id, vtype:'CATERING', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Continental & Local', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👨‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per head', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
-        menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'' }; }),
+        menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'', contents:m.contents||[], tier:m.packageTier||null }; }),
         pkgs:pkgObj(v) };
     });
 
@@ -3502,12 +3524,36 @@ function openAddMenu(itemId){
     +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='catering'?'Price per Head (&#x20a6;) *':'Price (&#x20a6;) *')+'</label>'
-    +'<input id="new-item-price" type="number" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="'+(S.vtype==='catering'?'e.g. 3000':'e.g. 2500')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
+    +'<input id="new-item-price" type="number" oninput="checkNewItemPackageRange()" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="'+(S.vtype==='catering'?'e.g. 3000':'e.g. 2500')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
     +'<div style="font-size:11px;color:#F5A623;margin-top:6px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.'+(S.vtype==='catering'?' This is charged per guest when a customer books you for their event.':'')+'</div>'
     +'</div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Emoji (optional — or add a photo below)</label>'
     +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="🍛" maxlength="4" oninput="window._emojiManuallySet=true" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
+    // Catering: every dish sits under one of the caterer's packages, and its
+    // price must fall inside that package's per-head range.
+    +(S.vtype==='catering'?(
+      '<div style="margin-bottom:16px;">'
+      +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Part of Package *</label>'
+      +'<select id="new-item-package" onchange="checkNewItemPackageRange()" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
+      +'<option value="">— Choose a package —</option>'
+      +(window._myPackages||[]).map(function(p){
+        var cur=item&&item.packageTier;
+        var sel=cur&&(cur===p.id||cur.toUpperCase()===p.key)?' selected':'';
+        var range=(p.minPriceKobo!=null&&p.maxPriceKobo!=null)?(' ('+N(Math.round(p.minPriceKobo/100))+'–'+N(Math.round(p.maxPriceKobo/100))+'/head)'):'';
+        return '<option value="'+p.id+'"'+sel+'>'+p.label+range+'</option>';
+      }).join('')
+      +'</select>'
+      +'<div id="new-item-package-hint" style="font-size:11px;color:#9A9390;margin-top:6px;">'+((window._myPackages||[]).length?'':'Add a package first (Basic, Standard, Premium or your own) so you can place this meal under it.')+'</div>'
+      +'</div>'
+    ):'')
+    +((S.vtype==='catering'||S.vtype==='home_cook'||S.vtype==='cook'||!S.vtype)?(
+      '<div style="margin-bottom:16px;">'
+      +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">What\'s in this meal'+(S.vtype==='catering'?' per head':'')+' (one per line)</label>'
+      +'<textarea id="new-item-contents" rows="4" placeholder="Rice&#10;2 pieces of meat&#10;Moi-moi&#10;Drink: Chapman" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+((item&&item.contents)||[]).join('\n')+'</textarea>'
+      +'<div style="font-size:11px;color:#9A9390;margin-top:6px;">Customers see this when they tap the meal, including any drink.</div>'
+      +'</div>'
+    ):'')
     +(S.vtype==='cake'?(
       '<div style="margin-bottom:16px;">'
       +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Category</label>'
@@ -3529,6 +3575,7 @@ function openAddMenu(itemId){
     +'<button onclick="saveMenuItem('+(editing?'\''+itemId+'\'':'null')+')" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">'+(editing?'Save Changes':'Add to Menu')+'</button>'
     +'</div>'
   );
+  setTimeout(checkNewItemPackageRange,0);
 }
 // Keyword -> emoji suggestions for a menu item's name, so a vendor typing
 // "Jollof Rice" or "Grilled Chicken" gets a sensible varied default instead
@@ -3611,6 +3658,20 @@ function previewNewItemPhoto(inp){
   };
   reader.readAsDataURL(file);
 }
+// Live hint under "Part of Package": shows the chosen package's per-head
+// range and warns before saving if the price falls outside it (the server
+// refuses it too, see vendors.controller.js _validateCateringTierPrice).
+function checkNewItemPackageRange(){
+  var hint=document.getElementById('new-item-package-hint');
+  var pkgSel=document.getElementById('new-item-package');
+  if(!hint||!pkgSel)return;
+  var pkg=(window._myPackages||[]).find(function(p){return p.id===pkgSel.value;});
+  if(!pkg||pkg.minPriceKobo==null||pkg.maxPriceKobo==null){hint.style.color='#9A9390';hint.textContent=pkg?'':'';return;}
+  var minN=Math.round(pkg.minPriceKobo/100),maxN=Math.round(pkg.maxPriceKobo/100);
+  var price=parseFloat(((document.getElementById('new-item-price')||{}).value)||'0');
+  if(price&&(price<minN||price>maxN)){hint.style.color='#E8392E';hint.textContent='⚠️ Must be between '+N(minN)+' and '+N(maxN)+' per head for '+pkg.label+'.';}
+  else{hint.style.color='#9A9390';hint.textContent=pkg.label+' is '+N(minN)+'–'+N(maxN)+' per head.';}
+}
 async function saveMenuItem(itemId){
   var nm=document.getElementById('new-item-name');
   var pr=document.getElementById('new-item-price');
@@ -3618,6 +3679,13 @@ async function saveMenuItem(itemId){
   if(!nm||!nm.value.trim()){toast('Enter item name');return;}
   if(!pr||!parseFloat(pr.value)){toast('Enter valid price');return;}
   var body={name:nm.value.trim(),priceKobo:Math.round(parseFloat(pr.value)*100),emoji:(em&&em.value.trim())||undefined};
+  var contentsEl=document.getElementById('new-item-contents');
+  if(contentsEl)body.contents=contentsEl.value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  if(S.vtype==='catering'){
+    var pkgEl=document.getElementById('new-item-package');
+    if(!pkgEl||!pkgEl.value){toast('Choose which package this meal belongs to');return;}
+    body.packageTier=pkgEl.value;
+  }
   if(S.vtype==='cake'){
     var catEl=document.getElementById('new-item-category');
     var leadEl=document.getElementById('new-item-leadtime');
@@ -9385,6 +9453,12 @@ async function renderVendorMenu(){
         +'<div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+item.name+'</div>'
         +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+N(Math.round(item.priceKobo/100))+perHeadSuffix+'</div>'
         +(isCake&&item.leadTimeNote?'<div style="color:#9A9390;font-size:11px;margin-top:2px;">⏱ '+item.leadTimeNote+'</div>':'')
+        // Catering: which package this dish sits under (or a nudge if none).
+        +(S.vtype==='catering'?(function(){
+          var pk=(window._myPackages||[]).find(function(p){return item.packageTier&&(p.id===item.packageTier||p.key===String(item.packageTier).toUpperCase());});
+          return pk?'<div style="color:#9B59B6;font-size:11px;font-weight:700;margin-top:2px;">📦 '+pk.label+'</div>':'<div style="color:#E8392E;font-size:11px;font-weight:700;margin-top:2px;">⚠️ Not in a package — tap Edit to choose one</div>';
+        })():'')
+        +((item.contents&&item.contents.length)?'<div style="color:#9A9390;font-size:11px;margin-top:2px;">'+item.contents.join(' • ')+'</div>':'')
         +'</div></div>'
         +'<div style="display:flex;gap:6px;">'
         +'<button onclick="openAddMenu(\''+item.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
@@ -13332,16 +13406,22 @@ function renderCatering(list){
     var tags=(c.tags||[]).slice(0,4);
     var extra=(c.tags||[]).length>4?(c.tags.length-4):0;
     var tagsHtml=tags.length?('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">'+tags.map(function(t){return '<span style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:4px 9px;font-size:11px;color:#F2EDE8;">'+t+'</span>';}).join('')+(extra?'<span style="background:rgba(232,57,46,.12);border:1px solid rgba(232,57,46,.3);border-radius:8px;padding:4px 9px;font-size:11px;color:#E8392E;font-weight:700;">+'+extra+' more</span>':'')+'</div>'):'';
-    var tiers=_cateringPackages.filter(function(tpl){return c.pkgs&&c.pkgs[tpl.id];}).map(function(tpl){
-      var real=c.pkgs[tpl.id];
-      var st=tierStyle[tpl.id]||{label:tpl.id.toUpperCase(),border:'#2A2850'};
-      return '<div style="flex:1;text-align:center;padding:10px 6px;border-radius:10px;border:1.5px solid '+st.border+';background:#1C1C1C;">'
-        +'<div style="font-size:10px;font-weight:800;letter-spacing:.5px;color:'+st.border+';margin-bottom:4px;">'+st.label+'</div>'
-        +'<div style="font-size:13px;font-weight:800;color:#F2EDE8;">₦'+Number(real.price).toLocaleString()+'</div>'
-        +'<div style="font-size:9px;color:#9A9390;">/hd</div>'
+    // Every package the caterer offers (Basic/Standard/Premium and their
+    // own custom ones), each with its real per-head range -- so the count
+    // here always matches what the booking flow's "Choose a Package" shows.
+    var cPkgs=_cateringPkgList(c);
+    var tiers=cPkgs.map(function(p){
+      var st=(p.key&&tierStyle[p.key])||{label:p.label.toUpperCase(),border:'#9B59B6'};
+      var range=(p.minPriceKobo!=null&&p.maxPriceKobo!=null)
+        ?('₦'+Number(Math.round(p.minPriceKobo/100)).toLocaleString()+'–'+Number(Math.round(p.maxPriceKobo/100)).toLocaleString())
+        :'—';
+      return '<div style="flex:1 1 calc(33% - 8px);min-width:96px;text-align:center;padding:10px 6px;border-radius:10px;border:1.5px solid '+st.border+';background:#1C1C1C;box-sizing:border-box;">'
+        +'<div style="font-size:10px;font-weight:800;letter-spacing:.5px;color:'+st.border+';margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+st.label+'</div>'
+        +'<div style="font-size:12px;font-weight:800;color:#F2EDE8;">'+range+'</div>'
+        +'<div style="font-size:9px;color:#9A9390;">per head</div>'
         +'</div>';
     }).join('');
-    var tiersHtml=tiers?('<div style="display:flex;gap:8px;margin-bottom:12px">'+tiers+'</div>'):'<div style="text-align:center;padding:10px;margin-bottom:12px;color:#9A9390;font-size:12px;background:#1C1C1C;border-radius:10px;">Pricing not set up yet</div>';
+    var tiersHtml=tiers?('<div style="font-size:11px;color:#9A9390;font-weight:700;margin-bottom:6px;">'+cPkgs.length+' package'+(cPkgs.length===1?'':'s')+'</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">'+tiers+'</div>'):'<div style="text-align:center;padding:10px;margin-bottom:12px;color:#9A9390;font-size:12px;background:#1C1C1C;border-radius:10px;">Pricing not set up yet</div>';
     return '<div style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:2px solid '+(c.promo?'#F5A623':'#2a2a2a')+';margin-bottom:16px;position:relative'+(c.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'
       +(c.promo?'<div class="promo-tag">⭐ FEATURED</div>':'')
       +vendorHeaderMedia(c,'linear-gradient(135deg,#2d1a0d,#111)',90,60)
@@ -13764,9 +13844,12 @@ function bindBookingLiveUpdateListener(){
 // vendor's and customer's own booking-detail Items lists so a change
 // here applies everywhere at once.
 function _itemRowHtml(it,isEP){
-  if(isEP)return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+'</div>';
+  // A customer's own "Other" dish carries their note on what it should
+  // contain (drinks or not, which kind) -- shown under it on both sides.
+  var notesHtml=it.notes?('<div style="font-size:11px;color:#9A9390;padding:1px 0 3px 12px;font-style:italic;">'+it.notes+'</div>'):'';
+  if(isEP)return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+'</div>'+notesHtml;
   var lineTotal=Math.round((it.priceKobo||0)*(it.qty||1)/100);
-  return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;display:flex;justify-content:space-between;gap:10px;"><span>• '+it.name+' x'+it.qty+'</span><span style="color:#9A9390;white-space:nowrap;">'+N(lineTotal)+'</span></div>';
+  return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;display:flex;justify-content:space-between;gap:10px;"><span>• '+it.name+' x'+it.qty+'</span><span style="color:#9A9390;white-space:nowrap;">'+N(lineTotal)+'</span></div>'+notesHtml;
 }
 function _packageIncludesHtml(b){
   var inc=b.servicePackage&&b.servicePackage.includes;
@@ -16259,54 +16342,128 @@ function confirmMealPicker(){
 // ── Event Catering Package: event type + guest count + food selection
 // (real menu items + free-text "Other"), no fixed meal-count cap. ──
 var _eventCatering=null;
+// A caterer's real packages (Basic/Standard/Premium templates they've
+// offered, plus any custom ones) as one list for the "Choose a Package"
+// step -- each with its per-head range and non-food inclusions.
+function _cateringPkgList(c){
+  var pk=(c&&c.pkgs)||{},out=[];
+  (_cateringPackages||[]).forEach(function(t){var r=pk[t.id];if(r)out.push({id:r.id,key:t.id,label:r.label||t.nm,em:t.em,minPriceKobo:r.minPriceKobo,maxPriceKobo:r.maxPriceKobo,inc:r.inc||[]});});
+  (pk._custom||[]).forEach(function(r){out.push({id:r.id,key:null,label:r.label,em:'✨',minPriceKobo:r.minPriceKobo,maxPriceKobo:r.maxPriceKobo,inc:r.inc||[]});});
+  return out;
+}
+function _cateringPkgRange(p){
+  if(p.minPriceKobo!=null&&p.maxPriceKobo!=null)return N(Math.round(p.minPriceKobo/100))+'–'+N(Math.round(p.maxPriceKobo/100))+'/head';
+  return 'Price per head';
+}
+// A meal belongs to a package if its tier is that package's id, or (older
+// template tiers) its key -- same match the server uses when validating.
+function _mealInCateringPkg(m,p){
+  if(!m.tier||!p)return false;
+  return m.tier===p.id||(p.key&&m.tier.toLowerCase()===p.key);
+}
+// Customer taps a meal -> what's actually in the plate per head.
+function showMealContentsModal(menuItemId){
+  var c=_cb.cook;if(!c)return;
+  var m=(c.menu||[]).find(function(x){return x.id===menuItemId;});
+  if(!m)return;
+  showProcedureModal('<div style="padding:0 0 10px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(m.em||'🍽️')+' '+m.nm+'</div></div>'
+    +(m.img?'<img src="'+m.img+'" style="width:100%;max-height:200px;object-fit:cover;border-radius:14px;margin-bottom:12px;">':'')
+    +'<div style="font-weight:800;color:#9B59B6;font-size:18px;margin-bottom:14px;">'+N(m.pr)+' per head</div>'
+    +((m.contents&&m.contents.length)?('<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">What\'s in this meal (per head)</p>'
+      +m.contents.map(function(i){return '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;"><span style="color:#2ECC71;flex-shrink:0;">&#x2713;</span><span style="color:#F2EDE8;font-size:14px;">'+i+'</span></div>';}).join(''))
+      :'<p style="color:#9A9390;font-size:13px;">'+(m.desc||'The caterer hasn\'t listed what\'s in this meal yet.')+'</p>')
+    +'</div>');
+}
 function openEventCateringPicker(tpl){
-  _eventCatering={tpl:tpl,eventType:'Wedding',selections:[]};
+  _eventCatering={tpl:tpl,eventType:'Wedding',selections:[],pkg:null};
+  renderEventCateringPicker();
+}
+function selectEventCateringPackage(pkgId){
+  var ec=_eventCatering;
+  var p=_cateringPkgList(_cb.cook).find(function(x){return x.id===pkgId;});
+  if(!p)return;
+  // Switching package clears picked meals -- they belong to the old one.
+  if(!ec.pkg||ec.pkg.id!==p.id)ec.selections=[];
+  ec.pkg=p;
   renderEventCateringPicker();
 }
 function renderEventCateringPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
-  var c=_cb.cook,menu=c.menu||[];
+  var c=_cb.cook,allMenu=c.menu||[];
   var ec=_eventCatering;
+  var isCatering=c&&c.vtype==='CATERING';
+  // Catering: Event Type -> Choose a Package -> that package's meals.
+  // (Home Cook's own event-catering template has no packages step.)
+  var pkgs=isCatering?_cateringPkgList(c):[];
+  var pkg=ec.pkg;
+  var menu=isCatering?(pkg?allMenu.filter(function(m){return _mealInCateringPkg(m,pkg);}):[]):allMenu;
   // Catering has no other "packages" phase to fall back to (see
   // bookCatering) -- this picker IS the whole booking flow, so its own
   // back button closes the overlay instead of surfacing Home Cook's
   // unrelated meal-prep package list.
-  var backAction=c&&c.vtype==='CATERING'?'closeCookBooking()':"cookBkRender('packages')";
+  var backAction=isCatering?'closeCookBooking()':"cookBkRender('packages')";
+  var sec=function(t){return '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:4px 0 12px">'+t+'</p>';};
   var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
     +'<button onclick="'+backAction+'" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
-    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+ec.tpl.nm+'</h2>'
+    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+(isCatering?c.nm:ec.tpl.nm)+'</h2>'
     +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">Tell us about your event</p>'
     +'</div>'
     +'<div style="padding:16px 16px 100px">'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Event Type</label>'
-    +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
+    +sec(isCatering?'1. Event Type':'Event Type')
+    +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:18px;">'
     +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
-    +'</select>'
-    +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select Foods</p>'
-    +menu.map(function(m){
+    +'</select>';
+  if(isCatering){
+    h+=sec('2. Choose a Package');
+    if(!pkgs.length)h+='<div style="text-align:center;padding:20px 10px;color:#9A9390;font-size:13px;">This caterer hasn\'t set up any packages yet.</div>';
+    h+=pkgs.map(function(p){
+      var on=pkg&&pkg.id===p.id;
+      var count=allMenu.filter(function(m){return _mealInCateringPkg(m,p);}).length;
+      return '<div onclick="selectEventCateringPackage(\''+p.id+'\')" style="background:'+(on?'rgba(155,89,182,.12)':'#1C1C1C')+';border:2px solid '+(on?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
+        +'<div style="display:flex;align-items:center;gap:12px;">'
+        +'<span style="font-size:26px;flex-shrink:0">'+p.em+'</span>'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:800;color:#F2EDE8;font-size:14px">'+p.label+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px">'+count+' meal'+(count===1?'':'s')+' to choose from</div></div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:13px;text-align:right;flex-shrink:0">'+_cateringPkgRange(p)+'</div></div>'
+        +(p.inc.length?'<div style="margin-top:10px;padding-top:10px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;margin-bottom:6px;">Included besides the food</div>'
+          +p.inc.map(function(i){return '<div style="font-size:12px;color:#F2EDE8;margin-bottom:3px;"><span style="color:#2ECC71;">&#x2713;</span> '+i+'</div>';}).join('')+'</div>':'')
+        +'</div>';
+    }).join('');
+    h+=pkg?sec('3. Choose Your Meals — tap a meal to see what\'s in it'):'<div style="text-align:center;padding:10px;color:#9A9390;font-size:12px;">Pick a package to see its meals.</div>';
+  }else{
+    h+=sec('Select Foods — tap a dish to see what\'s in it');
+  }
+  if(!isCatering||pkg){
+    if(!menu.length)h+='<div style="text-align:center;padding:16px 10px;color:#9A9390;font-size:13px;">'+(isCatering?'No meals have been added to this package yet.':'No menu items yet.')+'</div>';
+    h+=menu.map(function(m){
       var picked=ec.selections.some(function(x){return x.menuItemId===m.id;});
-      return '<label style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
-        +'<input type="checkbox" '+(picked?'checked':'')+' onchange="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0">'
+      return '<div style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;">'
+        +'<input type="checkbox" '+(picked?'checked':'')+' onclick="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0;cursor:pointer;">'
+        +'<div onclick="showMealContentsModal(\''+m.id+'\')" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">'
         +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
-        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div></div>'
-        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
-        +'</label>';
+        +'<div style="flex:1;min-width:0"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div>'
+        +'<div style="font-size:11px;color:#9A9390;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+((m.contents&&m.contents.length)?m.contents.join(' &bull; '):'Tap to see what\'s included')+'</div></div>'
+        +'</div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px;flex-shrink:0;">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
+        +'</div>';
     }).join('')
     +ec.selections.filter(function(x){return x.custom;}).map(function(x){
       return '<div style="display:flex;align-items:center;gap:12px;background:rgba(155,89,182,.12);border:1.5px solid #9B59B6;border-radius:14px;padding:14px;margin-bottom:10px">'
         +'<span style="font-size:26px;flex-shrink:0">✍️</span>'
-        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request</div></div>'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request'+(x.notes?' &bull; '+x.notes:'')+'</div></div>'
         +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'/head</div>'
         +'<span onclick="removeEventCateringCustom(\''+x._cid+'\')" style="color:#E8392E;cursor:pointer;font-size:18px;margin-left:6px">&times;</span>'
         +'</div>';
     }).join('')
     +'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:14px;margin-top:6px">'
-    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — type what you want</div>'
+    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — describe what you want</div>'
     +'<input id="ec-other-name" placeholder="e.g. Small Chops, Cocktails..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
-    +'<input id="ec-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+    +'<textarea id="ec-other-notes" rows="2" placeholder="What should it contain per head? With drinks or not, and which kind (Chapman, Zobo, soft drink, water...)?" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;"></textarea>'
+    +'<input id="ec-other-price" type="number" placeholder="Price per head (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
     +'<button onclick="addEventCateringCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #9B59B6;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer">+ Add</button>'
-    +'</div>'
-    +'</div>'
+    +'</div>';
+  }
+  h+='</div>'
     +'<div style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px">'
     +'<div style="text-align:center;margin-bottom:12px;color:#9A9390;font-size:11px;">Total is calculated from your guest count next</div>'
     +'<button onclick="confirmEventCatering()" '+(ec.selections.length===0?'disabled style="width:100%;padding:14px;border-radius:12px;border:none;background:#555;color:#999;font-weight:800;font-size:14px;cursor:not-allowed"':'style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer"')+'>Continue</button>'
@@ -16321,10 +16478,11 @@ function toggleEventCateringItem(id,priceNaira,name){
 }
 function addEventCateringCustom(){
   var name=(document.getElementById('ec-other-name')||{}).value||'';
+  var notes=(document.getElementById('ec-other-notes')||{}).value||'';
   var price=parseFloat((document.getElementById('ec-other-price')||{}).value);
   if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
   if(!(price>0)){showToast&&showToast('Enter a price','warning');return;}
-  _eventCatering.selections.push({name:name.trim(),priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
+  _eventCatering.selections.push({name:name.trim(),notes:notes.trim()||undefined,priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
   renderEventCateringPicker();
 }
 function removeEventCateringCustom(cid){
@@ -16339,7 +16497,10 @@ function confirmEventCatering(){
   // (packages list, sticky total bar, details form) to treat pr as a
   // per-head figure instead of a flat amount.
   var perHeadSum=_eventCatering.selections.reduce(function(s,x){return s+x.priceKobo;},0);
-  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:_eventCatering.tpl.nm+' — '+_eventCatering.eventType,em:_eventCatering.tpl.em,pr:Math.round(perHeadSum/100),needsGuestCount:true,includes:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType};
+  // A caterer's chosen package names the order ("Standard Catering —
+  // Wedding") and brings its own non-food inclusions along.
+  var ecPkg=_eventCatering.pkg;
+  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:(ecPkg?ecPkg.label:_eventCatering.tpl.nm)+' — '+_eventCatering.eventType,em:(ecPkg&&ecPkg.em)||_eventCatering.tpl.em,pr:Math.round(perHeadSum/100),needsGuestCount:true,includes:(ecPkg&&ecPkg.inc&&ecPkg.inc.length)?ecPkg.inc:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType};
   _cb.selected={};
   // Catering has no other packages to browse/compare (this picker IS the
   // whole flow, see bookCatering/renderEventCateringPicker) -- go straight
@@ -16413,7 +16574,7 @@ async function cookBkConfirmBooking(){
     // changes needed (it already just does priceKobo * qty per item).
     items=items.concat(_cb.selectedPkg.mealPickerItems.map(function(x){
       var qty=catering?guests:x.qty;
-      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:qty}:{menuItemId:x.menuItemId,qty:qty};
+      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,customNotes:x.notes,qty:qty}:{menuItemId:x.menuItemId,qty:qty};
     }));
   }
   // Event type is its own real field now, shown alongside date/venue/
