@@ -2292,11 +2292,12 @@ async function loadRealCatalog(){
 
     function pkgObj(v){
       var o = {};
-      (v.servicePackages||[]).forEach(function(p){ o[p.key.toLowerCase()] = { id:p.id, label:p.label, price:Math.round(p.priceKobo/100), inc:p.includes||[], guests:p.guestCount||null }; });
+      function reshape(p){ return { id:p.id, label:p.label, price:Math.round(p.priceKobo/100), priceMinKobo:p.priceMinKobo!=null?p.priceMinKobo:null, priceMaxKobo:p.priceMaxKobo!=null?p.priceMaxKobo:null, inc:p.includes||[], guests:p.guestCount||null }; }
+      (v.servicePackages||[]).forEach(function(p){ o[p.key.toLowerCase()] = reshape(p); });
       // CUSTOM packages aren't limited to one per vendor like the fixed
       // templates are (they'd collide on the o['custom'] key above) — keep
       // the real list separately so the booking flow can show all of them.
-      o._custom = (v.servicePackages||[]).filter(function(p){return p.key==='CUSTOM';}).map(function(p){ return { id:p.id, key:'custom_'+p.id, label:p.label, price:Math.round(p.priceKobo/100), inc:p.includes||[], guests:p.guestCount||null }; });
+      o._custom = (v.servicePackages||[]).filter(function(p){return p.key==='CUSTOM';}).map(function(p){ return Object.assign(reshape(p),{key:'custom_'+p.id}); });
       return o;
     }
     var newEp = byType.EVENT_PLANNER.map(function(v){
@@ -2308,7 +2309,7 @@ async function loadRealCatalog(){
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
         // POST /api/bookings can look them up.
-        menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'' }; }),
+        menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'', contents:m.contents||[], packageId:m.packageId||null }; }),
         pkgs:pkgObj(v) };
     });
 
@@ -2369,6 +2370,38 @@ var _hcPackages=[
   {id:'premium',nm:'Event Catering Package',em:'🎉',pr:90000,desc:'Cooking for a gathering or small event',includes:['Custom menu for your event','Larger batch cooking','Serving-ready presentation','Coordination on delivery time'],mealCount:null,isEventCatering:true}
 ];
 function vendorPackageTemplates(){ return S.vtype==='event_planner'?_epPackages:_hcPackages; }
+// Formats a reshaped package object (from pkgObj in loadRealCatalog) as a
+// customer-facing price string — a per-head range when the vendor set one
+// (Home Cook), or the flat price otherwise (Event Planner / a Home Cook
+// package created before ranges existed). Never includes the currency
+// symbol itself — callers prepend '&#x20a6;' so a range reads
+// "₦4,000–8,000/head" rather than "₦4,000–₦8,000/head".
+function pkgRangeLabel(real){
+  if(!real)return '';
+  if(real.priceMinKobo!=null&&real.priceMaxKobo!=null){
+    return Number(Math.round(real.priceMinKobo/100)).toLocaleString()+'–'+Number(Math.round(real.priceMaxKobo/100)).toLocaleString()+'/head';
+  }
+  return Number(real.price).toLocaleString();
+}
+// "What's included ℹ️" tap target on a package card — shows the vendor's
+// own non-food inclusions (servers, timeline coordination, staffing,
+// clean-up, logistics, etc.) plus the price range already shown on the
+// card, so the customer sees the full offer before picking meals.
+function showPackageIncludesModal(pkgId){
+  var c=_cb.cook;if(!c)return;
+  var real=(c.pkgs&&c.pkgs[pkgId])||((c.pkgs&&c.pkgs._custom)||[]).find(function(p){return p.key===pkgId;});
+  var tpl=_hcPackages.find(function(p){return p.id===pkgId;});
+  if(!real)return;
+  var label=tpl?tpl.nm:real.label;
+  var inc=real.inc||[];
+  showProcedureModal('<div style="padding:0 0 10px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(tpl?tpl.em+' ':'✨ ')+(real.label||label)+'</div></div>'
+    +'<div style="font-weight:800;color:#9B59B6;font-size:16px;margin-bottom:14px;">&#x20a6;'+pkgRangeLabel(real)+'</div>'
+    +(inc.length?('<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Included with this package</p>'
+      +inc.map(function(i){return '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;"><span style="color:#2ECC71;flex-shrink:0;">&#x2713;</span><span style="color:#F2EDE8;font-size:14px;">'+i+'</span></div>';}).join(''))
+      :'<p style="color:#9A9390;font-size:13px;">The vendor hasn\'t listed anything beyond the food for this package.</p>')
+    +'</div>');
+}
 
 
 
@@ -2608,12 +2641,29 @@ function openAddMenu(itemId){
     +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Price (&#x20a6;) *</label>'
-    +'<input id="new-item-price" type="number" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="e.g. 2500" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
+    +'<input id="new-item-price" type="number" oninput="checkNewItemPackageRange()" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="e.g. 2500" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
     +'<div style="font-size:11px;color:#F5A623;margin-top:6px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep. This is also the per-head price if a customer books it as part of Event Catering.</div>'
     +'</div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Emoji (optional — or add a photo below)</label>'
     +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="🍛" maxlength="4" oninput="window._emojiManuallySet=true" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
+    +'<div style="margin-bottom:16px;">'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">What\'s included per head (one per line)</label>'
+    +'<textarea id="new-item-contents" rows="4" placeholder="1 plate of rice&#10;2 pieces of chicken&#10;Moi-moi&#10;Drink: Chapman" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+((item&&item.contents)||[]).join('\n')+'</textarea>'
+    +'<div style="font-size:11px;color:#9A9390;margin-top:6px;">Shown to customers when they tap this item — what\'s actually in the plate, including any drink.</div>'
+    +'</div>'
+    +'<div style="margin-bottom:16px;">'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Part of Package</label>'
+    +'<select id="new-item-package" onchange="checkNewItemPackageRange()" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
+    +'<option value="">— General (not tied to a package) —</option>'
+    +(window._myPackages||[]).map(function(p){
+      var sel=item&&item.packageId===p.id?' selected':'';
+      var range=(p.priceMinKobo!=null&&p.priceMaxKobo!=null)?(' ('+N(Math.round(p.priceMinKobo/100))+'–'+N(Math.round(p.priceMaxKobo/100))+'/head)'):'';
+      return '<option value="'+p.id+'"'+sel+'>'+p.label+range+'</option>';
+    }).join('')
+    +'</select>'
+    +'<div id="new-item-package-hint" style="font-size:11px;color:#F5A623;margin-top:6px;"></div>'
+    +'</div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Photo (optional)</label>'
     +'<div style="display:flex;align-items:center;gap:12px;">'
@@ -2623,6 +2673,7 @@ function openAddMenu(itemId){
     +'<button onclick="saveMenuItem('+(editing?'\''+itemId+'\'':'null')+')" style="width:100%;background:#E8392E;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;">'+(editing?'Save Changes':'Add to Menu')+'</button>'
     +'</div>'
   );
+  setTimeout(checkNewItemPackageRange,0);
 }
 // Keyword -> emoji suggestions for a menu item's name, so a vendor typing
 // "Jollof Rice" or "Grilled Chicken" gets a sensible varied default instead
@@ -2705,13 +2756,35 @@ function previewNewItemPhoto(inp){
   };
   reader.readAsDataURL(file);
 }
+// Live-warns when the entered price falls outside the selected package's
+// own declared per-head range — mirrors the server-side check in
+// createMenuItem/updateMenuItem so the vendor sees the problem before
+// submitting, not just after a rejected request.
+function checkNewItemPackageRange(){
+  var hint=document.getElementById('new-item-package-hint');
+  var pkgSel=document.getElementById('new-item-package');
+  var prEl=document.getElementById('new-item-price');
+  if(!hint||!pkgSel)return;
+  var pkg=(window._myPackages||[]).find(function(p){return p.id===pkgSel.value;});
+  if(!pkg||pkg.priceMinKobo==null||pkg.priceMaxKobo==null){hint.textContent='';return;}
+  var minN=Math.round(pkg.priceMinKobo/100),maxN=Math.round(pkg.priceMaxKobo/100);
+  var price=parseFloat((prEl&&prEl.value)||'0');
+  if(price&&(price<minN||price>maxN)){
+    hint.textContent='⚠️ Outside this package\'s advertised range ('+N(minN)+'–'+N(maxN)+'/head) — customers already see that range.';
+  }else{
+    hint.textContent='This package is advertised as '+N(minN)+'–'+N(maxN)+'/head.';
+  }
+}
 async function saveMenuItem(itemId){
   var nm=document.getElementById('new-item-name');
   var pr=document.getElementById('new-item-price');
   var em=document.getElementById('new-item-emoji');
+  var contentsEl=document.getElementById('new-item-contents');
+  var pkgEl=document.getElementById('new-item-package');
   if(!nm||!nm.value.trim()){toast('Enter item name');return;}
   if(!pr||!parseFloat(pr.value)){toast('Enter valid price');return;}
-  var body={name:nm.value.trim(),priceKobo:Math.round(parseFloat(pr.value)*100),emoji:(em&&em.value.trim())||undefined};
+  var contents=((contentsEl&&contentsEl.value)||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  var body={name:nm.value.trim(),priceKobo:Math.round(parseFloat(pr.value)*100),emoji:(em&&em.value.trim())||undefined,contents:contents,packageId:(pkgEl&&pkgEl.value)||null};
   var photoInput=document.getElementById('new-item-photo-input');
   var photoFile=(photoInput&&photoInput.files&&photoInput.files[0])||null;
   try{
@@ -8064,6 +8137,18 @@ async function renderVendorPackages(){
     if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load packages')+'</div>';
   }
 }
+// Home Cook packages are priced per head over a range (the meals under
+// them vary in cost) and never carry a guest count — that concept is
+// Event Planner-only (a fixed-scope job like "Wedding for 200"). Sharing
+// this one render/form path for both vendor types, gated on S.vtype,
+// keeps the two from drifting into separate copies of the same markup.
+function isHomeCookVendor(){ return S.vtype!=='event_planner'; }
+function pkgPriceLine(mp){
+  if(isHomeCookVendor()&&mp.priceMinKobo!=null&&mp.priceMaxKobo!=null){
+    return N(Math.round(mp.priceMinKobo/100))+'–'+N(Math.round(mp.priceMaxKobo/100))+'/head';
+  }
+  return N(Math.round(mp.priceKobo/100))+(mp.guestCount?' · '+mp.guestCount+' guests':'');
+}
 function renderVendorPackagesInto(containerId, mine){
   var listEl=document.getElementById(containerId);if(!listEl)return;
   var custom=(mine||[]).filter(function(p){return p.key==='CUSTOM';});
@@ -8071,7 +8156,7 @@ function renderVendorPackagesInto(containerId, mine){
     return '<div style="background:#242424;border-radius:13px;padding:13px 14px;border:1.5px solid rgba(232,57,46,.35);display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;">'
       +'<div style="display:flex;gap:10px;align-items:center;"><span style="font-size:24px;">✨</span>'
       +'<div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+mp.label+'</div>'
-      +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+N(Math.round(mp.priceKobo/100))+(mp.guestCount?' · '+mp.guestCount+' guests':'')+'</div></div></div>'
+      +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+pkgPriceLine(mp)+'</div></div></div>'
       +'<div style="display:flex;gap:6px;">'
       +'<button onclick="openEditPackage(\''+mp.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;">Edit</button>'
       +'<button onclick="deletePackageReal(\''+mp.id+'\')" style="background:rgba(232,57,46,.1);border:1px solid rgba(232,57,46,.2);border-radius:8px;padding:6px 10px;color:#E8392E;font-size:11px;cursor:pointer;">&#x2715;</button>'
@@ -8084,7 +8169,7 @@ function renderVendorPackagesInto(containerId, mine){
       return '<div style="background:#242424;border-radius:13px;padding:13px 14px;border:1.5px solid rgba(46,204,113,.35);display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;">'
         +'<div style="display:flex;gap:10px;align-items:center;"><span style="font-size:24px;">'+tpl.em+'</span>'
         +'<div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+mp.label+'</div>'
-        +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+N(Math.round(mp.priceKobo/100))+(mp.guestCount?' · '+mp.guestCount+' guests':'')+'</div></div></div>'
+        +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+pkgPriceLine(mp)+'</div></div></div>'
         +'<div style="display:flex;gap:6px;">'
         +'<button onclick="openEditPackage(\''+mp.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;">Edit</button>'
         +'<button onclick="deletePackageReal(\''+mp.id+'\')" style="background:rgba(232,57,46,.1);border:1px solid rgba(232,57,46,.2);border-radius:8px;padding:6px 10px;color:#E8392E;font-size:11px;cursor:pointer;">&#x2715;</button>'
@@ -8094,40 +8179,95 @@ function renderVendorPackagesInto(containerId, mine){
       +'<div style="display:flex;gap:10px;align-items:center;"><span style="font-size:24px;opacity:.5;">'+tpl.em+'</span>'
       +'<div><div style="font-weight:700;font-size:13px;color:#9A9390;">'+tpl.nm+'</div>'
       +'<div style="color:#555;font-size:12px;">Not offered yet</div></div></div>'
-      +'<button onclick="addDefaultPackage(\''+key+'\')" style="background:#2ECC71;border:none;border-radius:8px;padding:7px 12px;color:#111;font-weight:700;font-size:11px;cursor:pointer;">+ Offer</button>'
+      +'<button onclick="'+(isHomeCookVendor()?'openAddTemplatePackage(\''+key+'\')':'addDefaultPackage(\''+key+'\')')+'" style="background:#2ECC71;border:none;border-radius:8px;padding:7px 12px;color:#111;font-weight:700;font-size:11px;cursor:pointer;">+ Offer</button>'
       +'</div>';
   }).join('')+customHtml;
+}
+// Shared form body for both "add a custom package" and "offer this
+// template package" — only the price section differs (a per-head range
+// for Home Cook, a single lump sum for Event Planner), and Home Cook never
+// asks for a guest count.
+function packageFormBody(prefill){
+  prefill=prefill||{};
+  var priceSection=isHomeCookVendor()
+    ?('<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price Per Head (&#x20a6;) *</label>'
+      +'<div style="display:flex;gap:8px;margin-bottom:6px;">'
+      +'<input id="acp-price-min" type="number" placeholder="Min e.g. 4000" value="'+(prefill.priceMinKobo!=null?Math.round(prefill.priceMinKobo/100):'')+'" style="flex:1;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;outline:none;box-sizing:border-box;">'
+      +'<input id="acp-price-max" type="number" placeholder="Max e.g. 8000" value="'+(prefill.priceMaxKobo!=null?Math.round(prefill.priceMaxKobo/100):'')+'" style="flex:1;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;outline:none;box-sizing:border-box;">'
+      +'</div>'
+      +'<div style="font-size:11px;color:#9A9390;margin-bottom:12px;">This is the range customers see before picking meals — every meal you add under this package must fall inside it.</div>')
+    :('<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;) *</label>'
+      +'<input id="acp-price" type="number" placeholder="e.g. 250000" value="'+(prefill.priceKobo!=null?Math.round(prefill.priceKobo/100):'')+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">');
+  return '<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Package Name *</label>'
+    +'<input id="acp-label" type="text" value="'+(prefill.label||'')+'" placeholder="e.g. Small Garden Wedding" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
+    +priceSection
+    +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this is what you keep.</div>'
+    +(isHomeCookVendor()?'':(
+      '<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
+      +'<input id="acp-guests" type="number" placeholder="e.g. 100" value="'+(prefill.guestCount||'')+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
+    ))
+    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">What\'s Included'+(isHomeCookVendor()?' — besides the food':'')+' (one per line)</label>'
+    +'<textarea id="acp-includes" rows="4" placeholder="'+(isHomeCookVendor()?'Serving staff&#10;Timeline coordination&#10;On-site event staffing&#10;Clean-up &amp; waste management&#10;Delivery logistics':'Full event coordination&#10;Decor setup&#10;...')+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'+(prefill.includes||[]).join('\n')+'</textarea>';
+}
+function readPackagePriceFields(){
+  if(isHomeCookVendor()){
+    var min=parseFloat((document.getElementById('acp-price-min')||{}).value||'0');
+    var max=parseFloat((document.getElementById('acp-price-max')||{}).value||'0');
+    if(!min||min<=0||!max||max<=0){showToast&&showToast('Enter both a min and max price per head','warning');return null;}
+    if(min>max){showToast&&showToast('Min price can\'t be higher than max','warning');return null;}
+    return {priceKobo:Math.round(min*100),priceMinKobo:Math.round(min*100),priceMaxKobo:Math.round(max*100)};
+  }
+  var price=parseFloat((document.getElementById('acp-price')||{}).value||'0');
+  if(!price||price<=0){showToast&&showToast('Enter a valid price','warning');return null;}
+  return {priceKobo:Math.round(price*100)};
 }
 function openAddCustomPackage(){
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add a Package</div></div>'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Package Name *</label>'
-    +'<input id="acp-label" type="text" placeholder="e.g. Small Garden Wedding" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;) *</label>'
-    +'<input id="acp-price" type="number" placeholder="e.g. 250000" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">'
-    +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
-    +'<input id="acp-guests" type="number" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">What\'s Included (one per line)</label>'
-    +'<textarea id="acp-includes" rows="4" placeholder="Full event coordination&#10;Decor setup&#10;..." style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;"></textarea>'
+    +packageFormBody()
     +'<button onclick="submitAddCustomPackage()" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;">Add Package</button>'
     +'</div>');
 }
 async function submitAddCustomPackage(){
   var label=(document.getElementById('acp-label')||{}).value||'';
-  var price=parseFloat((document.getElementById('acp-price')||{}).value||'0');
-  var guests=(document.getElementById('acp-guests')||{}).value||'';
   var includes=((document.getElementById('acp-includes')||{}).value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
   if(!label.trim()){showToast&&showToast('Enter a package name','warning');return;}
-  if(!price||price<=0){showToast&&showToast('Enter a valid price','warning');return;}
+  var priceFields=readPackagePriceFields();
+  if(!priceFields)return;
+  var guests=(document.getElementById('acp-guests')||{}).value||'';
   try{
-    await api('/vendors/me/packages',{method:'POST',body:JSON.stringify({key:'CUSTOM',label:label.trim(),priceKobo:Math.round(price*100),includes:includes,guestCount:guests||undefined})});
+    await api('/vendors/me/packages',{method:'POST',body:JSON.stringify(Object.assign({key:'CUSTOM',label:label.trim(),includes:includes,guestCount:guests||undefined},priceFields))});
     closeProcedureModal();showToast&&showToast('Package added!','success');refreshVendorPackagesScreen();
   }catch(err){showToast&&showToast(err.message||'Could not add package','warning');}
 }
 function refreshVendorPackagesScreen(){
   if(S.vtype==='event_planner')renderVendorPackages();
   else renderVendorMenu();
+}
+// Event Planner: instant-create from the template's own defaults (unchanged
+// behavior). Home Cook: the caterer must set their own per-head range — a
+// hardcoded default price would be meaningless since it's their own meals
+// that determine it — so this opens a prefilled form instead.
+function openAddTemplatePackage(key){
+  var tpl=vendorPackageTemplates().find(function(p){return p.id.toUpperCase()===key;});
+  if(!tpl)return;
+  showProcedureModal('<div style="padding:0 0 20px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Offer '+tpl.nm+'</div></div>'
+    +packageFormBody({label:tpl.nm,includes:tpl.includes})
+    +'<button onclick="submitAddTemplatePackage(\''+key+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;">Start Offering</button>'
+    +'</div>');
+}
+async function submitAddTemplatePackage(key){
+  var label=(document.getElementById('acp-label')||{}).value||'';
+  var includes=((document.getElementById('acp-includes')||{}).value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  if(!label.trim()){showToast&&showToast('Enter a package name','warning');return;}
+  var priceFields=readPackagePriceFields();
+  if(!priceFields)return;
+  try{
+    await api('/vendors/me/packages',{method:'POST',body:JSON.stringify(Object.assign({key:key,label:label.trim(),includes:includes},priceFields))});
+    showToast&&showToast(label+' added!','success');
+    closeProcedureModal();refreshVendorPackagesScreen();
+  }catch(err){showToast&&showToast(err.message||'Could not add package','warning');}
 }
 async function addDefaultPackage(key){
   var tpl=vendorPackageTemplates().find(function(p){return p.id.toUpperCase()===key;});
@@ -8143,21 +8283,18 @@ function openEditPackage(pkgId){
   if(!pkg)return;
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+pkg.label+'</div></div>'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;)</label>'
-    +'<input id="pk-price" type="number" value="'+Math.round(pkg.priceKobo/100)+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">'
-    +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
-    +'<input id="pk-guests" type="number" value="'+(pkg.guestCount||'')+'" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'
+    +packageFormBody(pkg)
     +'<button onclick="submitEditPackage(\''+pkgId+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px;">Save</button>'
     +'<button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
     +'</div>');
 }
 async function submitEditPackage(pkgId){
-  var price=parseFloat((document.getElementById('pk-price')||{}).value||'0');
-  var guests=(document.getElementById('pk-guests')||{}).value||'';
-  if(!price||price<=0){showToast&&showToast('Enter a valid price','warning');return;}
+  var includes=((document.getElementById('acp-includes')||{}).value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  var priceFields=readPackagePriceFields();
+  if(!priceFields)return;
+  var guests=(document.getElementById('acp-guests')||{}).value||'';
   try{
-    await api('/vendors/me/packages/'+pkgId,{method:'PUT',body:JSON.stringify({priceKobo:Math.round(price*100),guestCount:guests?parseInt(guests):null})});
+    await api('/vendors/me/packages/'+pkgId,{method:'PUT',body:JSON.stringify(Object.assign({includes:includes,guestCount:guests?parseInt(guests):null},priceFields))});
     closeProcedureModal();showToast&&showToast('Package updated!','success');refreshVendorPackagesScreen();
   }catch(err){showToast&&showToast(err.message||'Could not update package','warning');}
 }
@@ -11682,9 +11819,14 @@ function bindBookingLiveUpdateListener(){
 // vendor's and customer's own booking-detail Items lists so a change
 // here applies everywhere at once.
 function _itemRowHtml(it,isEP){
-  if(isEP)return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+'</div>';
+  // A customer-typed "Other" item (no real menuItemId) can carry their own
+  // free-text notes on what it should contain per head / drinks — a real
+  // catalog item's contents live on the MenuItem itself instead (shown via
+  // showMealContentsModal while picking, not repeated here).
+  var notesHtml=it.notes?('<div style="font-size:11px;color:#9A9390;padding:1px 0 3px 12px;font-style:italic;">'+it.notes+'</div>'):'';
+  if(isEP)return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+'</div>'+notesHtml;
   var lineTotal=Math.round((it.priceKobo||0)*(it.qty||1)/100);
-  return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;display:flex;justify-content:space-between;gap:10px;"><span>• '+it.name+' x'+it.qty+'</span><span style="color:#9A9390;white-space:nowrap;">'+N(lineTotal)+'</span></div>';
+  return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;display:flex;justify-content:space-between;gap:10px;"><span>• '+it.name+' x'+it.qty+'</span><span style="color:#9A9390;white-space:nowrap;">'+N(lineTotal)+'</span></div>'+notesHtml;
 }
 function _packageIncludesHtml(b){
   var inc=b.servicePackage&&b.servicePackage.includes;
@@ -13466,33 +13608,43 @@ function cookBkRender(phase){
       +'<div style="padding:16px 16px 0">'
         +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Packages</p>'
           +_hcPackages.map(function(pkg){
-            // mealCount/isEventCatering packages are always offered (itemized
-            // from the vendor's real menu via the meal picker, no vendor
-            // pre-configuration needed) — only genuinely vendor-configured
-            // fixed packages stay gated on a real ServicePackage row.
-            var isPicker=pkg.mealCount||pkg.isEventCatering;
             var real=c.pkgs&&c.pkgs[pkg.id];
-            if(!isPicker&&!real)return '';
+            // 'Multiple Meals Package' has no natural per-vendor price/range
+            // (it's always "pick anything, priced by what you choose") so it
+            // stays available with no vendor configuration needed. Basic /
+            // Standard / Event Catering Package are now real, vendor-set
+            // packages — own price-per-head range, own non-food includes,
+            // own linked meals — so they only show once the vendor has
+            // actually set one up (same gating a CUSTOM package always had).
+            var alwaysOn=pkg.id==='multi';
+            if(!alwaysOn&&!real)return '';
             var selP=_cb.selectedPkg&&_cb.selectedPkg.id===pkg.id;
-            var label=isPicker?(selP?_cb.selectedPkg.nm:pkg.nm):real.label;
-            var priceDisplay=isPicker?(selP?(Number(_cb.selectedPkg.pr).toLocaleString()+(_cb.selectedPkg.needsGuestCount?'/head':'')):'Select meals'):Number(real.price).toLocaleString();
-            var subDesc=isPicker?pkg.desc:(pkg.desc+(real.guests?' &bull; '+real.guests+' guests':''));
+            var label=(alwaysOn||!real)?(selP?_cb.selectedPkg.nm:pkg.nm):real.label;
+            var rangeTxt=real?pkgRangeLabel(real):null;
+            var priceDisplay=selP
+              ?(Number(_cb.selectedPkg.pr).toLocaleString()+((_cb.selectedPkg.needsGuestCount||!alwaysOn)?'/head':''))
+              :(alwaysOn?'Select meals':rangeTxt);
+            var subDesc=alwaysOn?pkg.desc:pkg.desc;
+            var infoBtn=(!alwaysOn&&real)?('<span onclick="event.stopPropagation();showPackageIncludesModal(\''+pkg.id+'\')" style="color:#9B59B6;font-size:11px;font-weight:700;text-decoration:underline;cursor:pointer;">What\'s included ℹ️</span>'):'';
             return '<div onclick="selectCookPackage(\''+pkg.id+'\')" style="background:'+(selP?'rgba(155,89,182,.12)':'#1C1C1C')+';border:2px solid '+(selP?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
               +'<div style="display:flex;align-items:center;gap:12px">'
                 +'<span style="font-size:26px;flex-shrink:0">'+pkg.em+'</span>'
                 +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+label+'</div>'
-                +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+subDesc+'</div></div>'
-                +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#9B59B6;font-size:14px">'+(isPicker&&!selP?priceDisplay:'&#x20a6;'+priceDisplay)+'</div></div>'
+                +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+subDesc+'</div>'
+                +(infoBtn?'<div style="margin-top:4px">'+infoBtn+'</div>':'')+'</div>'
+                +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#9B59B6;font-size:14px">'+((alwaysOn&&!selP)?priceDisplay:(priceDisplay?'&#x20a6;'+priceDisplay:'—'))+'</div></div>'
               +'</div></div>';
           }).join('')
           +((c.pkgs&&c.pkgs._custom||[]).map(function(real){
             var selP=_cb.selectedPkg&&_cb.selectedPkg.id===real.key;
+            var rangeTxt=pkgRangeLabel(real);
             return '<div onclick="selectCookPackage(\''+real.key+'\')" style="background:'+(selP?'rgba(155,89,182,.12)':'#1C1C1C')+';border:2px solid '+(selP?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
               +'<div style="display:flex;align-items:center;gap:12px">'
                 +'<span style="font-size:26px;flex-shrink:0">✨</span>'
                 +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+real.label+'</div>'
-                +(real.guests?'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+real.guests+' guests</div>':'')+'</div>'
-                +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(real.price).toLocaleString()+'</div></div>'
+                +(real.guests?'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+real.guests+' guests</div>':'')
+                +(real.inc&&real.inc.length?'<div style="margin-top:4px"><span onclick="event.stopPropagation();showPackageIncludesModal(\''+real.key+'\')" style="color:#9B59B6;font-size:11px;font-weight:700;text-decoration:underline;cursor:pointer;">What\'s included ℹ️</span></div>':'')+'</div>'
+                +'<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+rangeTxt+'</div></div>'
               +'</div></div>';
           }).join(''))
       +'</div>'
@@ -13644,8 +13796,14 @@ function cookBkRender(phase){
 
 function selectCookPackage(id){
   var tpl=_hcPackages.find(function(p){return p.id===id;});
-  if(tpl&&tpl.isEventCatering){ openEventCateringPicker(tpl); return; }
-  if(tpl&&tpl.mealCount){ openMealPicker(tpl); return; }
+  var real=tpl&&_cb.cook&&_cb.cook.pkgs&&_cb.cook.pkgs[id];
+  // Basic/Standard/Event Catering Package now require a real vendor
+  // package to exist before they're even shown (see cookBkRender), so by
+  // the time this fires `real` is always set for them — only 'multi' ever
+  // reaches here with no real package, and it deliberately picks from the
+  // vendor's whole menu with no package filter.
+  if(tpl&&tpl.isEventCatering){ openEventCateringPicker(tpl,real); return; }
+  if(tpl&&tpl.mealCount){ openMealPicker(tpl,real); return; }
   if(_cb.selectedPkg&&_cb.selectedPkg.id===id){_cb.selectedPkg=null;cookBkRender('packages');return;}
   if(tpl){
     var real=_cb.cook&&_cb.cook.pkgs&&_cb.cook.pkgs[id];
@@ -13665,46 +13823,71 @@ function selectCookPackage(id){
 // on the backend accepts either a real menuItemId or a
 // {customName,customPriceKobo} pair). ──
 var _mealPicker=null;
-function openMealPicker(tpl){
-  _mealPicker={tpl:tpl,selections:[]}; // selections: [{menuItemId?,name,priceKobo,qty:1,custom?}]
+function openMealPicker(tpl,real){
+  _mealPicker={tpl:tpl,real:real||null,selections:[]}; // selections: [{menuItemId?,name,priceKobo,qty:1,custom?}]
   renderMealPicker();
 }
 function mealPickerCount(){ return _mealPicker.selections.length; }
 function mealPickerRequired(){ return _mealPicker.tpl.mealCount===Infinity?null:_mealPicker.tpl.mealCount; }
+// Real menu item -> customer-facing "what's in the plate" popup. Custom
+// free-text rows have no vendor-set contents (there's no catalog item to
+// describe), so this is only ever wired to real menuItemId checkboxes.
+function showMealContentsModal(menuItemId){
+  var c=_cb.cook;if(!c)return;
+  var m=(c.menu||[]).find(function(x){return x.id===menuItemId;});
+  if(!m)return;
+  showProcedureModal('<div style="padding:0 0 10px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(m.em||'🍽️')+' '+m.nm+'</div></div>'
+    +'<div style="font-weight:800;color:#9B59B6;font-size:16px;margin-bottom:14px;">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
+    +((m.contents&&m.contents.length)?('<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">What\'s in this meal</p>'
+      +m.contents.map(function(i){return '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;"><span style="color:#2ECC71;flex-shrink:0;">&#x2713;</span><span style="color:#F2EDE8;font-size:14px;">'+i+'</span></div>';}).join(''))
+      :'<p style="color:#9A9390;font-size:13px;">The vendor hasn\'t described what\'s included in this meal yet.</p>')
+    +'</div>');
+}
 function renderMealPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
-  var c=_cb.cook,menu=c.menu||[];
-  var tpl=_mealPicker.tpl,required=mealPickerRequired(),count=mealPickerCount();
+  var c=_cb.cook,allMenu=c.menu||[];
+  var tpl=_mealPicker.tpl,real=_mealPicker.real,required=mealPickerRequired(),count=mealPickerCount();
+  // 'multi' has no real package (see selectCookPackage) and picks from the
+  // whole menu; Basic/Standard filter down to only the meals the vendor
+  // scoped under their real package.
+  var menu=real?allMenu.filter(function(m){return m.packageId===real.id;}):allMenu;
   var total=_mealPicker.selections.reduce(function(s,x){return s+x.priceKobo;},0);
   var full=required!=null&&count>=required;
   var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
     +'<button onclick="cookBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
-    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+tpl.nm+'</h2>'
+    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+(real&&real.label?real.label:tpl.nm)+'</h2>'
     +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">'+(required!=null?('Select exactly '+required+' meal'+(required===1?'':'s')+' — '+count+' of '+required+' selected'):('Select any number of meals — '+count+' selected'))+'</p>'
     +'</div>'
     +'<div style="padding:16px 16px 100px">'
-    +(menu.length?'':'<div style="text-align:center;padding:30px 10px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🍽️</p><p>This cook hasn\'t added any menu items yet.</p></div>')
+    +((real&&real.inc&&real.inc.length)?('<div style="background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.3);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+      +'<div style="font-weight:700;color:#9B59B6;font-size:12px;margin-bottom:6px;">This package also includes:</div>'
+      +'<div style="color:#F2EDE8;font-size:12px;line-height:1.6;">'+real.inc.join(' &bull; ')+'</div></div>'):'')
+    +(menu.length?'':'<div style="text-align:center;padding:30px 10px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">🍽️</p><p>'+(real?'No meals have been added to this package yet.':'This cook hasn\'t added any menu items yet.')+'</p></div>')
     +menu.map(function(m){
       var picked=_mealPicker.selections.some(function(x){return x.menuItemId===m.id;});
       var disabled=!picked&&full;
-      return '<label style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;'+(disabled?'opacity:.4;':'cursor:pointer;')+'">'
-        +'<input type="checkbox" '+(picked?'checked':'')+(disabled?' disabled':'')+' onchange="toggleMealPickerItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0">'
+      return '<div style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;'+(disabled?'opacity:.4;':'')+'">'
+        +'<input type="checkbox" '+(picked?'checked':'')+(disabled?' disabled':'')+' onclick="toggleMealPickerItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0;cursor:pointer;">'
+        +'<div onclick="showMealContentsModal(\''+m.id+'\')" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">'
         +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
-        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div></div>'
-        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'</div>'
-        +'</label>';
+        +'<div style="flex:1;min-width:0"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div><div style="color:#9B59B6;font-size:10px;font-weight:700;text-decoration:underline;">What\'s included &#x2139;&#xFE0F;</div></div>'
+        +'</div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px;flex-shrink:0;">&#x20a6;'+Number(m.pr).toLocaleString()+'</div>'
+        +'</div>';
     }).join('')
     +_mealPicker.selections.filter(function(x){return x.custom;}).map(function(x,ci){
       return '<div style="display:flex;align-items:center;gap:12px;background:rgba(155,89,182,.12);border:1.5px solid #9B59B6;border-radius:14px;padding:14px;margin-bottom:10px">'
         +'<span style="font-size:26px;flex-shrink:0">✍️</span>'
-        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request</div></div>'
+        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request'+(x.notes?' &bull; '+x.notes:'')+'</div></div>'
         +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'</div>'
         +'<span onclick="removeMealPickerCustom(\''+x._cid+'\')" style="color:#E8392E;cursor:pointer;font-size:18px;margin-left:6px">&times;</span>'
         +'</div>';
     }).join('')
     +(full?'':'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:14px;margin-top:6px">'
-      +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — type what you want</div>'
+      +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — describe what you want</div>'
       +'<input id="mp-other-name" placeholder="e.g. Suya, Ofada Rice..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+      +'<textarea id="mp-other-notes" rows="2" placeholder="What should this contain? With drinks or not — and which kind?" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;"></textarea>'
       +'<input id="mp-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
       +'<button onclick="addMealPickerCustom()" style="width:100%;padding:10px;border-radius:10px;border:none;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;border:1.5px solid #9B59B6">+ Add</button>'
       +'</div>')
@@ -13729,10 +13912,11 @@ function addMealPickerCustom(){
   var required=mealPickerRequired();
   if(required!=null&&mealPickerCount()>=required){showToast&&showToast('You already selected '+required+' meals','warning');return;}
   var name=(document.getElementById('mp-other-name')||{}).value||'';
+  var notes=(document.getElementById('mp-other-notes')||{}).value||'';
   var price=parseFloat((document.getElementById('mp-other-price')||{}).value);
   if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
   if(!(price>0)){showToast&&showToast('Enter a price','warning');return;}
-  _mealPicker.selections.push({name:name.trim(),priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
+  _mealPicker.selections.push({name:name.trim(),notes:notes.trim()||undefined,priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
   renderMealPicker();
 }
 function removeMealPickerCustom(cid){
@@ -13753,17 +13937,18 @@ function confirmMealPicker(){
 // ── Event Catering Package: event type + guest count + food selection
 // (real menu items + free-text "Other"), no fixed meal-count cap. ──
 var _eventCatering=null;
-function openEventCateringPicker(tpl){
-  _eventCatering={tpl:tpl,eventType:'Wedding',selections:[]};
+function openEventCateringPicker(tpl,real){
+  _eventCatering={tpl:tpl,real:real||null,eventType:'Wedding',selections:[]};
   renderEventCateringPicker();
 }
 function renderEventCateringPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
-  var c=_cb.cook,menu=c.menu||[];
-  var ec=_eventCatering;
+  var c=_cb.cook,allMenu=c.menu||[];
+  var ec=_eventCatering,real=ec.real;
+  var menu=real?allMenu.filter(function(m){return m.packageId===real.id;}):allMenu;
   var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
     +'<button onclick="cookBkRender(\'packages\')" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
-    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+ec.tpl.nm+'</h2>'
+    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+(real&&real.label?real.label:ec.tpl.nm)+'</h2>'
     +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">Tell us about your event</p>'
     +'</div>'
     +'<div style="padding:16px 16px 100px">'
@@ -13771,28 +13956,35 @@ function renderEventCateringPicker(){
     +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:14px;">'
     +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
     +'</select>'
-    +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select Foods</p>'
+    +((real&&real.inc&&real.inc.length)?('<div style="background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.3);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+      +'<div style="font-weight:700;color:#9B59B6;font-size:12px;margin-bottom:6px;">This package also includes:</div>'
+      +'<div style="color:#F2EDE8;font-size:12px;line-height:1.6;">'+real.inc.join(' &bull; ')+'</div></div>'):'')
+    +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select Foods — tap a dish to see what\'s included</p>'
+    +(menu.length?'':'<div style="text-align:center;padding:20px 10px;color:#9A9390"><p>'+(real?'No meals have been added to this package yet.':'This cook hasn\'t added any menu items yet.')+'</p></div>')
     +menu.map(function(m){
       var picked=ec.selections.some(function(x){return x.menuItemId===m.id;});
-      return '<label style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
-        +'<input type="checkbox" '+(picked?'checked':'')+' onchange="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0">'
+      return '<div style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;">'
+        +'<input type="checkbox" '+(picked?'checked':'')+' onclick="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0;cursor:pointer;">'
+        +'<div onclick="showMealContentsModal(\''+m.id+'\')" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">'
         +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
-        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div></div>'
-        +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
-        +'</label>';
+        +'<div style="flex:1;min-width:0"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div><div style="color:#9B59B6;font-size:10px;font-weight:700;text-decoration:underline;">What\'s included &#x2139;&#xFE0F;</div></div>'
+        +'</div>'
+        +'<div style="font-weight:800;color:#9B59B6;font-size:14px;flex-shrink:0;">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
+        +'</div>';
     }).join('')
     +ec.selections.filter(function(x){return x.custom;}).map(function(x){
       return '<div style="display:flex;align-items:center;gap:12px;background:rgba(155,89,182,.12);border:1.5px solid #9B59B6;border-radius:14px;padding:14px;margin-bottom:10px">'
         +'<span style="font-size:26px;flex-shrink:0">✍️</span>'
-        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request</div></div>'
+        +'<div style="flex:1"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+x.name+'</div><div style="font-size:11px;color:#9A9390;">Custom request'+(x.notes?' &bull; '+x.notes:'')+'</div></div>'
         +'<div style="font-weight:800;color:#9B59B6;font-size:14px">&#x20a6;'+Number(x.priceKobo/100).toLocaleString()+'/head</div>'
         +'<span onclick="removeEventCateringCustom(\''+x._cid+'\')" style="color:#E8392E;cursor:pointer;font-size:18px;margin-left:6px">&times;</span>'
         +'</div>';
     }).join('')
     +'<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:14px;margin-top:6px">'
-    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — type what you want</div>'
+    +'<div style="font-weight:700;color:#F2EDE8;font-size:13px;margin-bottom:8px">Other — describe what you want</div>'
     +'<input id="ec-other-name" placeholder="e.g. Small Chops, Cocktails..." style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
-    +'<input id="ec-other-price" type="number" placeholder="Price (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
+    +'<textarea id="ec-other-notes" rows="2" placeholder="What should this contain per head? With drinks or not — and which kind (Chapman, Zobo, soft drink, water...)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px;"></textarea>'
+    +'<input id="ec-other-price" type="number" placeholder="Price per head (&#x20a6;)" style="width:100%;box-sizing:border-box;padding:10px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;margin-bottom:8px">'
     +'<button onclick="addEventCateringCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #9B59B6;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer">+ Add</button>'
     +'</div>'
     +'</div>'
@@ -13810,10 +14002,11 @@ function toggleEventCateringItem(id,priceNaira,name){
 }
 function addEventCateringCustom(){
   var name=(document.getElementById('ec-other-name')||{}).value||'';
+  var notes=(document.getElementById('ec-other-notes')||{}).value||'';
   var price=parseFloat((document.getElementById('ec-other-price')||{}).value);
   if(!name.trim()){showToast&&showToast('Type what you want','warning');return;}
   if(!(price>0)){showToast&&showToast('Enter a price','warning');return;}
-  _eventCatering.selections.push({name:name.trim(),priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
+  _eventCatering.selections.push({name:name.trim(),notes:notes.trim()||undefined,priceKobo:Math.round(price*100),qty:1,custom:true,_cid:'c'+Date.now()});
   renderEventCateringPicker();
 }
 function removeEventCateringCustom(cid){
@@ -13896,7 +14089,7 @@ async function cookBkConfirmBooking(){
     // changes needed (it already just does priceKobo * qty per item).
     items=items.concat(_cb.selectedPkg.mealPickerItems.map(function(x){
       var qty=catering?guests:x.qty;
-      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,qty:qty}:{menuItemId:x.menuItemId,qty:qty};
+      return x.custom?{customName:x.name,customPriceKobo:x.priceKobo,customNotes:x.notes,qty:qty}:{menuItemId:x.menuItemId,qty:qty};
     }));
   }
   // Event type is its own real field now, shown alongside date/venue/

@@ -97,10 +97,34 @@ async function listMenuItems(req, res, next) {
   }
 }
 
+// A meal scoped to a package must be priced within that package's own
+// advertised per-head range — the whole point of showing customers "Basic:
+// ₦4,000-₦8,000/head" up front is that nothing they pick under it can cost
+// more (or less) than that. Packages with no range set (Event Planner's
+// lump-sum packages, or a Home Cook package created before this existed)
+// impose no constraint. Returns a validated packageId (or null/undefined
+// passthrough) or throws a 400.
+async function resolveMenuItemPackage(packageId, vendorId, priceKobo) {
+  if (packageId === undefined) return undefined;
+  if (packageId === null || packageId === "") return null;
+  const pkg = await prisma.servicePackage.findUnique({ where: { id: packageId } });
+  if (!pkg || pkg.vendorId !== vendorId) throw Object.assign(new Error("Invalid package for this vendor."), { status: 400 });
+  if (priceKobo !== undefined && pkg.priceMinKobo != null && pkg.priceMaxKobo != null) {
+    if (priceKobo < pkg.priceMinKobo || priceKobo > pkg.priceMaxKobo) {
+      const minN = Math.round(pkg.priceMinKobo / 100).toLocaleString();
+      const maxN = Math.round(pkg.priceMaxKobo / 100).toLocaleString();
+      throw Object.assign(new Error(`Price must be between ₦${minN} and ₦${maxN} per head for the ${pkg.label} package.`), { status: 400 });
+    }
+  }
+  return packageId;
+}
+
 async function createMenuItem(req, res, next) {
   try {
-    const { name, description, emoji, imageUrl, category, unit, priceKobo, prepTimeMinutes, deliveryDays, popular } = req.body;
+    const { name, description, emoji, imageUrl, category, unit, priceKobo, prepTimeMinutes, deliveryDays, popular, contents, packageId } = req.body;
     if (!name || priceKobo === undefined) return res.status(400).json({ error: "name and priceKobo are required." });
+
+    const resolvedPackageId = await resolveMenuItemPackage(packageId, req.user.vendorProfile.id, priceKobo);
 
     const item = await prisma.menuItem.create({
       data: {
@@ -115,6 +139,8 @@ async function createMenuItem(req, res, next) {
         prepTimeMinutes,
         deliveryDays,
         popular: !!popular,
+        contents: Array.isArray(contents) ? contents : [],
+        packageId: resolvedPackageId || null,
       },
     });
     res.status(201).json({ item });
@@ -128,7 +154,11 @@ async function updateMenuItem(req, res, next) {
     const item = await prisma.menuItem.findUnique({ where: { id: req.params.itemId } });
     if (!item || item.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Menu item not found." });
 
-    const { name, description, emoji, imageUrl, category, unit, priceKobo, prepTimeMinutes, deliveryDays, popular, inStock } = req.body;
+    const { name, description, emoji, imageUrl, category, unit, priceKobo, prepTimeMinutes, deliveryDays, popular, inStock, contents, packageId } = req.body;
+    const effectivePackageId = packageId !== undefined ? packageId : item.packageId;
+    const effectivePriceKobo = priceKobo !== undefined ? priceKobo : item.priceKobo;
+    const resolvedPackageId = await resolveMenuItemPackage(effectivePackageId, req.user.vendorProfile.id, effectivePriceKobo);
+
     const updated = await prisma.menuItem.update({
       where: { id: req.params.itemId },
       data: {
@@ -143,6 +173,8 @@ async function updateMenuItem(req, res, next) {
         ...(deliveryDays !== undefined && { deliveryDays }),
         ...(popular !== undefined && { popular }),
         ...(inStock !== undefined && { inStock }),
+        ...(contents !== undefined && { contents: Array.isArray(contents) ? contents : [] }),
+        ...(packageId !== undefined && { packageId: resolvedPackageId || null }),
       },
     });
     res.json({ item: updated });
@@ -175,18 +207,38 @@ async function deleteMenuItem(req, res, next) {
   }
 }
 
-// ── Service packages (event planners: basic/standard/premium/…) ──
+// ── Service packages: fixed-tier or CUSTOM, sold by either vendor type.
+// Event Planner packages are typically a single lump-sum priceKobo for a
+// fixed-scope job (guestCount caps it); Home Cook packages instead set
+// priceMinKobo/priceMaxKobo, a per-head range the meals under them (see
+// createMenuItem/updateMenuItem above) must stay inside. ──
+
+function validatePriceRange(priceMinKobo, priceMaxKobo) {
+  const hasMin = priceMinKobo !== undefined && priceMinKobo !== null && priceMinKobo !== "";
+  const hasMax = priceMaxKobo !== undefined && priceMaxKobo !== null && priceMaxKobo !== "";
+  if (!hasMin && !hasMax) return { priceMinKobo: null, priceMaxKobo: null };
+  if (!hasMin || !hasMax) throw Object.assign(new Error("Provide both a minimum and maximum price per head."), { status: 400 });
+  const min = parseInt(priceMinKobo);
+  const max = parseInt(priceMaxKobo);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
+    throw Object.assign(new Error("Price range must be positive numbers."), { status: 400 });
+  }
+  if (min > max) throw Object.assign(new Error("Minimum price can't be higher than the maximum."), { status: 400 });
+  return { priceMinKobo: min, priceMaxKobo: max };
+}
 
 async function createServicePackage(req, res, next) {
   try {
-    const { key, label, priceKobo, includes, guestCount } = req.body;
+    const { key, label, priceKobo, includes, guestCount, priceMinKobo, priceMaxKobo } = req.body;
     if (!key || !label || priceKobo === undefined) return res.status(400).json({ error: "key, label, and priceKobo are required." });
+    const range = validatePriceRange(priceMinKobo, priceMaxKobo);
     const pkg = await prisma.servicePackage.create({
       data: {
         vendorId: req.user.vendorProfile.id,
         key,
         label,
         priceKobo,
+        ...range,
         includes: Array.isArray(includes) ? includes : [],
         guestCount: guestCount !== undefined && guestCount !== null && guestCount !== "" ? parseInt(guestCount) : null,
       },
@@ -201,12 +253,32 @@ async function updateServicePackage(req, res, next) {
   try {
     const pkg = await prisma.servicePackage.findUnique({ where: { id: req.params.pkgId } });
     if (!pkg || pkg.vendorId !== req.user.vendorProfile.id) return res.status(404).json({ error: "Package not found." });
-    const { label, priceKobo, includes, guestCount } = req.body;
+    const { label, priceKobo, includes, guestCount, priceMinKobo, priceMaxKobo } = req.body;
+
+    let range;
+    if (priceMinKobo !== undefined || priceMaxKobo !== undefined) {
+      range = validatePriceRange(priceMinKobo, priceMaxKobo);
+      // Narrowing the range out from under meals customers already see
+      // listed under this package would silently make an existing meal's
+      // price fall outside what the package now advertises -- reject
+      // instead, same as createMenuItem/updateMenuItem would refuse a new
+      // meal in that position.
+      if (range.priceMinKobo != null) {
+        const outOfRange = await prisma.menuItem.findFirst({
+          where: { packageId: pkg.id, OR: [{ priceKobo: { lt: range.priceMinKobo } }, { priceKobo: { gt: range.priceMaxKobo } }] },
+        });
+        if (outOfRange) {
+          return res.status(400).json({ error: `"${outOfRange.name}" is priced outside this new range — update or unlink it from this package first.` });
+        }
+      }
+    }
+
     const updated = await prisma.servicePackage.update({
       where: { id: req.params.pkgId },
       data: {
         ...(label !== undefined && { label }),
         ...(priceKobo !== undefined && { priceKobo }),
+        ...(range && range),
         ...(includes !== undefined && { includes }),
         ...(guestCount !== undefined && { guestCount: guestCount === null || guestCount === "" ? null : parseInt(guestCount) }),
       },

@@ -319,9 +319,16 @@ model RegisteredSeller {
 // Cook specials sold by HOME_COOK vendors — real menu items the customer
 // picks from during a booking.
 model MenuItem {
-  id       String        @id @default(uuid())
-  vendorId String
-  vendor   VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  id        String          @id @default(uuid())
+  vendorId  String
+  vendor    VendorProfile   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  packageId String?
+  // A meal can be scoped to one of the vendor's own packages (Home Cook's
+  // Basic/Standard/Premium tiers) so the customer's meal-picker only shows
+  // what's actually offered under the package they picked. Left null for
+  // general a-la-carte items not tied to any package. onDelete: SetNull so
+  // removing a package never deletes the meals under it, just unscopes them.
+  package   ServicePackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
 
   name            String
   description     String?
@@ -329,6 +336,9 @@ model MenuItem {
   imageUrl        String?
   category        String?
   priceKobo       Int
+  // What's actually in the plate per head, customer-visible on tap — e.g.
+  // ["1 plate of jollof rice", "2 pieces of chicken", "Moi-moi", "Drink: Chapman"].
+  contents        String[] @default([])
   prepTimeMinutes Int?
   popular         Boolean @default(false)
   inStock         Boolean @default(true)
@@ -338,6 +348,7 @@ model MenuItem {
 
   @@index([vendorId])
   @@index([vendorId, category])
+  @@index([packageId])
 }
 
 enum PackageKey {
@@ -360,11 +371,20 @@ model ServicePackage {
   key        PackageKey
   label      String
   priceKobo  Int
+  // Home Cook packages are priced per head over a range (the meals under
+  // them vary in cost) rather than a single lump sum — both null keeps the
+  // existing single-priceKobo behavior for Event Planner's fixed-scope
+  // packages untouched. When set, every MenuItem under this package must
+  // have a priceKobo within [priceMinKobo, priceMaxKobo] (enforced in
+  // vendors.controller.js's createMenuItem/updateMenuItem).
+  priceMinKobo Int?
+  priceMaxKobo Int?
   includes   String[]      @default([])
   guestCount Int?
   createdAt  DateTime      @default(now())
 
-  bookings Booking[]
+  bookings  Booking[]
+  menuItems MenuItem[]
 
   @@index([vendorId])
 }
