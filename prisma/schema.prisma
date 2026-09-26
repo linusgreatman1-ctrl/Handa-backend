@@ -97,6 +97,8 @@ model User {
   chatMessages           ChatMessage[]
   kycDocuments           KycDocument[]
   eventRequests          EventRequest[]
+  cateringRequests       CateringRequest[]
+  cakeRequests           CakeRequest[]
   favourites             Favourite[]
   appSettingsUpdated     AppSetting[]
   aiConversations        AiConversationLog[]
@@ -144,6 +146,8 @@ model Address {
 enum VendorType {
   HOME_COOK
   EVENT_PLANNER
+  CATERING
+  CAKE
 }
 
 model VendorProfile {
@@ -182,6 +186,8 @@ model VendorProfile {
   featureBoosts     FeatureBoost[]
   commissionPeriods CommissionPeriod[]
   eventProposals    EventProposal[]
+  cateringProposals CateringProposal[]
+  cakeProposals     CakeProposal[]
 
   @@index([vtype])
   @@index([isOnline])
@@ -210,6 +216,7 @@ model RiderProfile {
   updatedAt DateTime @updatedAt
 
   shopSessionsAsRider ShopSession[] @relation("ShopSessionRider")
+  bookingsAsRider     Booking[]     @relation("BookingRider")
 
   @@index([isOnline])
 }
@@ -332,6 +339,23 @@ model MenuItem {
   prepTimeMinutes Int?
   popular         Boolean @default(false)
   inStock         Boolean @default(true)
+  // Free-text "not readily available" notice a CAKE vendor sets per design
+  // (e.g. "24-48 hrs notice", "Made to order -- 3-5 days") shown to the
+  // customer on the item before they order, so they can decide whether to
+  // go ahead knowing the wait. Generic on the model (any vendor type could
+  // set it) but only ever surfaced in the UI for Cakes.
+  leadTimeNote    String?
+  // CATERING only -- which of the vendor's own ServicePackage tiers this
+  // dish belongs to (the package's own .key lowercased, e.g. "basic", or a
+  // CUSTOM package's own id for a vendor-defined tier). A caterer's food
+  // picker is scoped to one chosen package at booking time (see
+  // renderEventCateringPicker), so every catering dish must sit in exactly
+  // one tier -- and its priceKobo is validated server-side (vendors.
+  // controller.js) to fall inside that package's own declared
+  // minPriceKobo/maxPriceKobo per-head range, so the range shown to the
+  // customer on the catalog card is never violated by what they actually
+  // see once they pick that package. Null for every other vendor type.
+  packageTier     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -359,7 +383,22 @@ model ServicePackage {
   vendor     VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   key        PackageKey
   label      String
+  // Event Planner: a single flat fixed price for the whole event -- unused
+  // (never read) for CATERING packages, which price per head instead; kept
+  // required so EP's existing flow needs no changes. For CATERING this is
+  // kept equal to minPriceKobo purely so any code that still just reads
+  // .priceKobo (sorting a catalog card by "starting price", etc.) gets a
+  // sane real number instead of 0.
   priceKobo  Int
+  // CATERING only -- the per-head price RANGE this tier is sold at (e.g.
+  // Basic: ₦4,000-8,000/head), shown on the catalog card. Every MenuItem a
+  // vendor assigns to this tier (MenuItem.packageTier) must have its own
+  // priceKobo fall inside [minPriceKobo, maxPriceKobo] -- enforced in
+  // vendors.controller.js's createMenuItem/updateMenuItem -- so a customer
+  // who already saw this range on the catalog card can never be shown a
+  // dish priced outside it once they actually pick the tier. Null for EP.
+  minPriceKobo Int?
+  maxPriceKobo Int?
   includes   String[]      @default([])
   guestCount Int?
   createdAt  DateTime      @default(now())
@@ -385,6 +424,8 @@ enum PaymentMethod {
 enum BookingType {
   HOME_COOK
   EVENT_PLANNING
+  CATERING
+  CAKE
 }
 
 enum BookingStatus {
@@ -537,12 +578,39 @@ model Booking {
   // edit was approved, not just during the brief pending-approval window.
   wasEdited Boolean @default(false)
 
+  // ── Rider delivery (CAKE bookings only) ──────────────────────────────
+  // Nothing here is ever touched by Home Cook/Event Planner/Catering
+  // bookings -- these stay null for them forever. A cake has to be baked
+  // before a rider is useful, so dispatch only happens once the vendor
+  // explicitly marks it ready (vendorReadyAt), not at payment time. From
+  // there this mirrors ShopSession's own shopper->rider->customer handoff
+  // (pickupCode/deliveryCode, arrival timestamps, transitionHandler-style
+  // atomic claims) rather than inventing a parallel status enum --
+  // booking.status stays CONFIRMED throughout the whole delivery, these
+  // timestamps are the real sub-state machine.
+  vendorReadyAt             DateTime?
+  // Set when the baker taps "Search for a Rider" (a separate, deliberate
+  // step after Mark Ready, same as a shopper's own find-rider) -- the only
+  // thing that actually makes a cake delivery visible to online riders.
+  riderSearchStartedAt      DateTime? // vendor marked the cake ready for pickup -> broadcasts to dispatch:riders
+  riderId                   String?
+  rider                     RiderProfile? @relation("BookingRider", fields: [riderId], references: [id])
+  riderFeeKobo              Int? // separate from totalKobo -- its own EscrowHold, payeeRole RIDER
+  pickupCode                String? // shown to vendor, entered by rider at pickup
+  deliveryCode              String? // shown to customer, entered by rider at delivery
+  riderAcceptedAt           DateTime?
+  riderArrivedVendorAt      DateTime?
+  vendorHandoverConfirmedAt DateTime? // rider actually has the cake, "out for delivery"
+  riderArrivedCustomerAt    DateTime?
+  deliveredAt               DateTime?
+
   escrowHolds EscrowHold[]
   ratings     Rating[]
 
   @@index([customerId])
   @@index([vendorId])
   @@index([status])
+  @@index([riderId])
 }
 
 // ── Event proposal / comparison marketplace ────────────────────────────
@@ -630,6 +698,176 @@ model EventProposal {
   @@index([vendorId])
   // orderFlow.confirmBookingPayment looks this up by bookingId on every
   // booking payment to detect the proposal-created-EP-booking path.
+  @@index([bookingId])
+}
+
+// ── Catering proposal / comparison marketplace ─────────────────────────
+// Same shape as the EventRequest/EventProposal pair above, but for the
+// standalone CATERING vendor type: a customer posts one CateringRequest
+// (no vendor picked yet), qualified CATERING vendors each submit a
+// CateringProposal, and accepting one proposal creates a real Booking
+// (type CATERING) and auto-declines the rest. Direct single-vendor
+// booking (createBooking) is unchanged and still how caterers can also
+// be booked straight off their catalog page.
+enum CateringRequestStatus {
+  OPEN
+  PROPOSAL_ACCEPTED
+  CANCELLED
+}
+
+model CateringRequest {
+  id         String @id @default(uuid())
+  customerId String
+  customer   User   @relation(fields: [customerId], references: [id])
+
+  // Explicit poster name/phone, distinct from the account's own User
+  // fields -- same rationale as EventRequest.posterName/posterPhone.
+  posterName  String?
+  posterPhone String?
+
+  eventType         String // occasion this catering is for (Wedding, Birthday, Corporate, Burial, Naming, Other)
+  eventDate         DateTime
+  eventTime         String?
+  venue             String
+  guestCount        Int?
+  budgetKobo        Int?
+  servicesRequested String[] @default([])
+  // What the customer wants each meal to actually contain per head --
+  // portion expectations, whether drinks are included and what kind, etc.
+  // Kept separate from the generic notes field (below) so a caterer
+  // reading proposals always finds it in the same place instead of it
+  // being buried inside free-form notes.
+  mealPreferences   String?
+  notes             String?
+  timeframe         String?
+
+  status             CateringRequestStatus @default(OPEN)
+  acceptedProposalId String?
+
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+
+  proposals CateringProposal[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+enum CateringProposalStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
+
+model CateringProposal {
+  id                String          @id @default(uuid())
+  cateringRequestId String
+  cateringRequest   CateringRequest @relation(fields: [cateringRequestId], references: [id], onDelete: Cascade)
+  vendorId          String
+  vendor            VendorProfile   @relation(fields: [vendorId], references: [id])
+
+  priceKobo        Int
+  servicesIncluded String[] @default([])
+  timeline         String?
+  notes            String?
+
+  status    CateringProposalStatus @default(PENDING)
+  createdAt DateTime               @default(now())
+
+  // Set once, the moment this proposal is accepted -- the real Booking
+  // created for it (acceptProposal, cateringRequests.controller.js).
+  bookingId String?
+
+  @@index([cateringRequestId])
+  @@index([vendorId])
+  // orderFlow.confirmBookingPayment looks this up by bookingId on every
+  // booking payment to detect the proposal-created-catering-booking path.
+  @@index([bookingId])
+}
+
+// ── Cake proposal / comparison marketplace ─────────────────────────────
+// Same shape as CateringRequest/CateringProposal, for custom cakes that
+// aren't one of a vendor's standard catalog designs: a customer describes
+// what they want (with reference photos) instead of picking a real
+// MenuItem, qualified CAKE vendors each submit a priced proposal (their
+// own version of the catalog's per-design leadTimeNote, as a real
+// timeline string), and accepting one creates a real Booking (type CAKE)
+// that then goes through the same rider-delivery flow as a direct order.
+enum CakeRequestStatus {
+  OPEN
+  PROPOSAL_ACCEPTED
+  CANCELLED
+}
+
+model CakeRequest {
+  id         String @id @default(uuid())
+  customerId String
+  customer   User   @relation(fields: [customerId], references: [id])
+
+  posterName  String?
+  posterPhone String?
+
+  occasion           String // Birthday, Wedding, Naming, Corporate, Other
+  neededByDate       DateTime
+  neededByTime       String?
+  // Where the cake should be delivered -- collected on the request itself
+  // so bakers can price delivery distance into their proposal; still
+  // editable at accept time (acceptProposal's own deliveryAddress wins).
+  deliveryAddress    String?
+  servings           Int?
+  flavourPreference  String?
+  budgetKobo         Int?
+  notes              String?
+  // Reference photos of the cake style/design the customer wants -- a
+  // plain string array (matches ShopperProfile.specialties/
+  // EventRequest.servicesRequested's own String[] convention elsewhere in
+  // this schema) rather than a child table, since no per-photo metadata
+  // (caption, uploader, ordering) is needed.
+  referencePhotoUrls String[] @default([])
+
+  status             CakeRequestStatus @default(OPEN)
+  acceptedProposalId String?
+
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+
+  proposals CakeProposal[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+enum CakeProposalStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
+
+model CakeProposal {
+  id            String        @id @default(uuid())
+  cakeRequestId String
+  cakeRequest   CakeRequest   @relation(fields: [cakeRequestId], references: [id], onDelete: Cascade)
+  vendorId      String
+  vendor        VendorProfile @relation(fields: [vendorId], references: [id])
+
+  priceKobo Int
+  // This proposal's own equivalent of a catalog MenuItem's leadTimeNote --
+  // e.g. "Ready in 3 days", set per-request since a custom design's timeline
+  // isn't known until the vendor actually reviews what was asked for.
+  timeline  String?
+  notes     String?
+
+  status    CakeProposalStatus @default(PENDING)
+  createdAt DateTime           @default(now())
+
+  // Set once accepted -- the real Booking created for it (acceptProposal,
+  // cakeRequests.controller.js).
+  bookingId String?
+
+  @@index([cakeRequestId])
+  @@index([vendorId])
   @@index([bookingId])
 }
 

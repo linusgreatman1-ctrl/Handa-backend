@@ -18,6 +18,8 @@ const bookingRemindersSvc = require("../services/bookingReminders.service");
 //   dispatch:riders        — every ONLINE rider, for new-delivery broadcasts
 //   dispatch:shoppers      — every ONLINE shopper, for new-session broadcasts
 //   dispatch:eventplanners — every connected EVENT_PLANNER vendor, for real-time event-request/proposal updates
+//   dispatch:caterers      — every connected CATERING vendor, for real-time catering-request/proposal updates
+//   dispatch:cakevendors   — every connected CAKE vendor, for real-time cake-request/proposal updates
 //   vendor:{vendorProfileId} — a vendor's own dashboard (new booking alerts)
 //   booking:{bookingId}
 //   shop-session:{sessionId}
@@ -65,6 +67,8 @@ function attachLiveSocket(httpServer) {
     socket.join(`user:${user.id}`);
     if (user.vendorProfile) socket.join(`vendor:${user.vendorProfile.id}`);
     if (user.vendorProfile && user.vendorProfile.vtype === "EVENT_PLANNER") socket.join(`dispatch:eventplanners`);
+    if (user.vendorProfile && user.vendorProfile.vtype === "CATERING") socket.join(`dispatch:caterers`);
+    if (user.vendorProfile && user.vendorProfile.vtype === "CAKE") socket.join(`dispatch:cakevendors`);
     if (user.riderProfile) socket.join(`dispatch:riders`);
     if (user.shopperProfile) socket.join(`dispatch:shoppers`);
     // Real-time Live Chat notifications (see chat.controller.js's
@@ -82,7 +86,10 @@ function attachLiveSocket(httpServer) {
       if (!bookingId) return typeof ack === "function" && ack({ joined: false });
       const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
       if (!booking) return typeof ack === "function" && ack({ joined: false });
-      const allowed = booking.customerId === user.id || (user.vendorProfile && booking.vendorId === user.vendorProfile.id);
+      // The assigned rider of a CAKE delivery is a party too -- without this
+      // their screen never received booking:updated.
+      const allowed = booking.customerId === user.id || (user.vendorProfile && booking.vendorId === user.vendorProfile.id) ||
+        (user.riderProfile && booking.riderId === user.riderProfile.id);
       if (allowed) socket.join(`booking:${bookingId}`);
       if (typeof ack === "function") ack({ joined: !!allowed });
     });
@@ -210,9 +217,12 @@ function attachLiveSocket(httpServer) {
         // lookup returns null, early return), even though the caller had
         // already been through this exact session's own party checks to
         // even see the Call button.
-        const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: { select: { userId: true } } } });
+        const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: { select: { userId: true } }, rider: { select: { userId: true } } } });
         if (booking) {
-          const allowed = booking.customerId === user.id || (booking.vendor && booking.vendor.userId === user.id);
+          // CAKE bookings add a third real party once a rider is assigned
+          // (see Booking.riderId) -- every other booking type's `rider` is
+          // always null here, so this is a no-op for them.
+          const allowed = booking.customerId === user.id || (booking.vendor && booking.vendor.userId === user.id) || (booking.rider && booking.rider.userId === user.id);
           if (!allowed) return;
         } else {
           const session = await prisma.shopSession.findUnique({
@@ -330,6 +340,12 @@ function attachLiveSocket(httpServer) {
   setInterval(() => {
     shopSessionsCtrl.finalizeAutoReleasedSessions(io).catch((err) => console.error("[shop-session] auto-release finalize sweep failed:", err));
   }, sweepMs);
+
+  // Delivered cake orders release baker + rider 90s after delivery; the
+  // per-delivery timer does it on time, this catches any lost to a restart.
+  setInterval(() => {
+    require("../controllers/bookings.controller").finalizeDueCakeDeliveries(io).catch((err) => console.error("[cake] auto-release sweep failed:", err));
+  }, 20 * 1000);
 
   // Same off-request-path pattern as the escrow sweep above — a vendor's
   // commission period lapsing into OVERDUE isn't something any single

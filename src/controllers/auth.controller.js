@@ -87,6 +87,14 @@ async function register(req, res, next) {
       bizName,
       description,
       tags,
+      // VENDOR-only -- a starting rate collected right in the
+      // registration form (e.g. Catering's "Starting Price per Head",
+      // Home Cook's "Rate per Session") so a brand-new vendor's card
+      // shows a real number before they've configured any real
+      // MenuItem/ServicePackage rows. hourlyRateKobo naming matches the
+      // existing VendorProfile field this has always mapped to.
+      hourlyRateKobo,
+      ratePeriod,
       // RIDER-only
       vehicleType,
       plateNumber,
@@ -114,7 +122,7 @@ async function register(req, res, next) {
       return res.status(400).json({ error: "Invalid role." });
     }
     if (role === "VENDOR") {
-      if (!vtype || !["HOME_COOK", "EVENT_PLANNER"].includes(vtype)) {
+      if (!vtype || !["HOME_COOK", "EVENT_PLANNER", "CATERING", "CAKE"].includes(vtype)) {
         return res.status(400).json({ error: "A valid vendor type (vtype) is required." });
       }
       if (!bizName || !bizName.trim()) {
@@ -147,12 +155,18 @@ async function register(req, res, next) {
     const data = baseCreateData({ name, email, phone, passwordHash, role, address, state, lga, bankName, bankAccountNumber, bankAccountName });
 
     if (role === "VENDOR") {
+      const parsedRateKobo = Number(hourlyRateKobo);
       data.vendorProfile = {
         create: {
           vtype,
           bizName,
           description: description || null,
-          tags: Array.isArray(tags) ? tags : [],
+          // Registration submits this as multipart/form-data, so a single
+          // tag arrives as a plain string, not an array -- Array.isArray
+          // alone silently dropped it to [] every time.
+          tags: Array.isArray(tags) ? tags : typeof tags === "string" && tags.trim() ? [tags.trim()] : [],
+          hourlyRateKobo: Number.isFinite(parsedRateKobo) && parsedRateKobo > 0 ? Math.round(parsedRateKobo) : null,
+          ratePeriod: ratePeriod || null,
         },
       };
     } else if (role === "RIDER") {

@@ -55,4 +55,30 @@ async function notifyAllEventPlanners(io, title, body, data) {
   }
 }
 
-module.exports = { notify, notifyAllAdmins, notifyAllEventPlanners };
+// Same fan-out pattern as notifyAllEventPlanners, for every active CATERING
+// vendor -- a new catering request only ever surfaces live via the
+// dispatch:caterers socket room (catering-request:updated) otherwise, which
+// only helps a caterer who already has their dashboard's request section
+// open at that exact moment.
+async function notifyAllCaterers(io, title, body, data) {
+  const vendors = await prisma.vendorProfile.findMany({
+    where: { vtype: "CATERING", user: { status: "ACTIVE" } },
+    select: { userId: true },
+  });
+  for (const v of vendors) {
+    await notify(io, v.userId, "ORDER_UPDATE", title, body, data).catch(() => {});
+  }
+}
+
+// Same fan-out pattern, for every active CAKE vendor.
+async function notifyAllCakeVendors(io, title, body, data) {
+  const vendors = await prisma.vendorProfile.findMany({
+    where: { vtype: "CAKE", user: { status: "ACTIVE" } },
+    select: { userId: true },
+  });
+  for (const v of vendors) {
+    await notify(io, v.userId, "ORDER_UPDATE", title, body, data).catch(() => {});
+  }
+}
+
+module.exports = { notify, notifyAllAdmins, notifyAllEventPlanners, notifyAllCaterers, notifyAllCakeVendors };

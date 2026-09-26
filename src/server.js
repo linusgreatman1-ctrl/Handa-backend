@@ -31,6 +31,8 @@ const adminRoutes = require("./routes/admin.routes");
 const configRoutes = require("./routes/config.routes");
 const kycRoutes = require("./routes/kyc.routes");
 const eventRequestsRoutes = require("./routes/eventRequests.routes");
+const cateringRequestsRoutes = require("./routes/cateringRequests.routes");
+const cakeRequestsRoutes = require("./routes/cakeRequests.routes");
 const favouritesRoutes = require("./routes/favourites.routes");
 const voiceRoutes = require("./routes/voice.routes");
 
@@ -131,6 +133,8 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/config", configRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/event-requests", eventRequestsRoutes);
+app.use("/api/catering-requests", cateringRequestsRoutes);
+app.use("/api/cake-requests", cakeRequestsRoutes);
 app.use("/api/favourites", favouritesRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/voice", voiceRoutes);

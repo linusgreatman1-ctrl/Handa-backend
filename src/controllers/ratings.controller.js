@@ -6,9 +6,15 @@ const prisma = require("../config/db");
 // user.
 async function resolveContextAndRatee(contextType, contextId, rateeRole, raterId) {
   if (contextType === "BOOKING") {
-    const booking = await prisma.booking.findUnique({ where: { id: contextId }, include: { vendor: true } });
+    const booking = await prisma.booking.findUnique({ where: { id: contextId }, include: { vendor: true, rider: true } });
     if (!booking) throw Object.assign(new Error("Booking not found."), { status: 404 });
     if (booking.customerId !== raterId) throw Object.assign(new Error("Only the customer on this booking can rate it."), { status: 403 });
+    // A CAKE order also had a rider -- rated per booking the same way a
+    // Shop-For-Me session's rider is rated per session.
+    if (rateeRole === "RIDER") {
+      if (!booking.rider) throw Object.assign(new Error("This order had no rider."), { status: 400 });
+      return { rateeId: booking.rider.userId, field: { bookingId: booking.id } };
+    }
     if (rateeRole !== "VENDOR") throw Object.assign(new Error("Invalid rateeRole for a booking."), { status: 400 });
     return { rateeId: booking.vendor.userId, field: { bookingId: booking.id } };
   }

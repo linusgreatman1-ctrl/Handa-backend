@@ -48,19 +48,47 @@ async function confirmBookingPayment(bookingId, reference, io) {
   const existingHold = await prisma.escrowHold.findFirst({ where: { bookingId, payeeRole: "VENDOR" } });
   if (existingHold) return booking;
 
-  const isNegotiated = booking.type === "EVENT_PLANNING" || booking.packageKey === "premium";
+  const isNegotiated = booking.type === "EVENT_PLANNING" || booking.type === "CATERING" || booking.packageKey === "premium";
+  // CAKE via a Post-a-Cake-Request proposal (cakeRequests.controller.js's
+  // acceptProposal) needs the exact same treatment as EVENT_PLANNING/
+  // CATERING here -- the vendor already committed to this exact price the
+  // moment they submitted the proposal, so payment should skip straight to
+  // CONFIRMED instead of landing on PAID and prompting a redundant (and
+  // confusing -- they could "decline" a price they already offered)
+  // Accept/Decline step. This was missing entirely, so a proposal-based
+  // cake booking silently behaved like a direct catalog order instead.
   const viaProposal =
-    booking.type === "EVENT_PLANNING" && !!(await prisma.eventProposal.findFirst({ where: { bookingId }, select: { id: true } }));
+    (booking.type === "EVENT_PLANNING" && !!(await prisma.eventProposal.findFirst({ where: { bookingId }, select: { id: true } }))) ||
+    (booking.type === "CATERING" && !!(await prisma.cateringProposal.findFirst({ where: { bookingId }, select: { id: true } }))) ||
+    (booking.type === "CAKE" && !!(await prisma.cakeProposal.findFirst({ where: { bookingId }, select: { id: true } })));
 
+  // CAKE is split like a Shop-For-Me deposit: one escrow payment, one hold
+  // per beneficiary -- the baker's (cake price) and the rider's (the
+  // upfront delivery fee, payee filled in when a rider accepts). Neither
+  // uses the generic 24h timer: both release together on delivery
+  // completion (bookings.controller.js completeCakeOrder, 90s window).
+  const isCake = booking.type === "CAKE";
+  const riderFeeKobo = isCake ? booking.riderFeeKobo || 0 : 0;
   await escrow.createHold({
     contextType: "BOOKING",
     bookingId,
     payerId: booking.customerId,
     payeeId: booking.vendor.userId,
     payeeRole: "VENDOR",
-    amountKobo: booking.totalKobo,
-    autoRelease: !isNegotiated,
+    amountKobo: booking.totalKobo - riderFeeKobo,
+    autoRelease: !isNegotiated && !isCake,
   });
+  if (riderFeeKobo > 0) {
+    await escrow.createHold({
+      contextType: "BOOKING",
+      bookingId,
+      payerId: booking.customerId,
+      payeeId: null,
+      payeeRole: "RIDER",
+      amountKobo: riderFeeKobo,
+      autoRelease: false,
+    });
+  }
 
   const nextStatus = viaProposal ? "CONFIRMED" : "PAID";
   const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: nextStatus, confirmedAt: new Date() } });
@@ -69,7 +97,9 @@ async function confirmBookingPayment(bookingId, reference, io) {
     await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment secured", `The customer's payment for booking #${booking.bookingNumber} is now secured in escrow.`, { bookingId }).catch(() => {});
     await notify(io, booking.customerId, "ORDER_UPDATE", "Payment secured", `Your payment for booking #${booking.bookingNumber} is secured in escrow.`, { bookingId }).catch(() => {});
   } else {
-    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "New paid booking request", `A customer paid for a ${booking.type === "EVENT_PLANNING" ? "event planning" : "home cook"} booking -- accept or decline it.`, { bookingId }).catch(() => {});
+    const typeLabel =
+      booking.type === "EVENT_PLANNING" ? "event planning" : booking.type === "CATERING" ? "catering" : booking.type === "CAKE" ? "cake" : "home cook";
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "New paid booking request", `A customer paid for a ${typeLabel} booking -- accept or decline it.`, { bookingId }).catch(() => {});
   }
   return updated;
 }

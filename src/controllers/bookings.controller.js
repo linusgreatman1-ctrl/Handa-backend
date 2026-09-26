@@ -7,6 +7,22 @@ const manualPayments = require("../services/manualPayments.service");
 const { closeSupportThreadForContext } = require("./chat.controller");
 const { notify } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
+const { generateOtpCode } = require("../utils/otp");
+const distanceFee = require("../utils/distanceFee");
+
+// pickupCode/deliveryCode only mean anything as a spoken-in-person check --
+// the vendor reads pickupCode aloud to the rider at handover, the customer
+// reads deliveryCode aloud at drop-off. Handing either straight to the
+// rider's own client (the default Prisma serialization would, since
+// they're plain scalar columns with no field-level access control) lets
+// the rider skip ever actually being at the right place to ask, so both
+// are stripped from any booking object served to the assigned rider. Same
+// idea as the handover-code stripping already done for ShopSession.
+function stripRiderCodes(booking) {
+  if (!booking) return booking;
+  const { pickupCode, deliveryCode, ...rest } = booking;
+  return rest;
+}
 
 // Resolves a booking's `items` array into a priced snapshot. Each entry is
 // either a real catalog item ({menuItemId, qty} — price always looked up
@@ -66,16 +82,23 @@ function clampGuestCount(guestCount, servicePackage) {
   return n;
 }
 
-// Event Planner bookings (always) and Home Cook's Event Catering Package
-// (packageKey "premium") go through the negotiated-release flow instead of
-// an all-or-nothing escrow payout: full payment still happens upfront (see
-// orderFlow.confirmBookingPayment), but the vendor is paid out in stages
-// the customer controls (engageBooking/endBookingConversation/
-// releaseBookingPayment/requestAdditionalPayment/respondAdditionalPayment,
-// below), with whatever remains at completion paying out through the
-// existing completion flow unchanged.
+// Event Planner bookings (always), standalone CATERING bookings (always --
+// the old Home Cook "Event Catering Package" packageKey "premium" special
+// case now lives here as its own vendor type), and any lingering pre-split
+// Home Cook "premium" packageKey booking go through the negotiated-release
+// flow instead of an all-or-nothing escrow payout: full payment still
+// happens upfront (see orderFlow.confirmBookingPayment), but the vendor is
+// paid out in stages the customer controls (engageBooking/
+// endBookingConversation/releaseBookingPayment/requestAdditionalPayment/
+// respondAdditionalPayment, below), with whatever remains at completion
+// paying out through the existing completion flow unchanged.
 function isNegotiatedBooking(booking) {
-  return booking.type === "EVENT_PLANNING" || booking.packageKey === "premium";
+  return booking.type === "EVENT_PLANNING" || booking.type === "CATERING" || booking.packageKey === "premium";
+}
+
+const BOOKING_TYPE_LABEL = { EVENT_PLANNING: "event planning", CATERING: "catering", CAKE: "cake", HOME_COOK: "home cook" };
+function bookingTypeLabel(type) {
+  return BOOKING_TYPE_LABEL[type] || "home cook";
 }
 
 // Bookings cover catering, home-cook, and event-planning requests — custom
@@ -83,11 +106,43 @@ function isNegotiatedBooking(booking) {
 // unlike Order's fixed-price catalog checkout. Vendor must accept before
 // any money moves, matching the "booking request list" the frontend's
 // cook/event-planner dashboards show.
+// Same pricing as Shop-For-Me's predicted rider fee: real road distance via
+// Google Routes (baker's address -> delivery address) when configured,
+// otherwise distanceFee.js's state/LGA estimate (baker's registered area ->
+// customer's), both priced by the same feeKoboFromDistanceKm.
+async function estimateCakeRiderFee(vendorId, deliveryAddress, customerId) {
+  const vendor = await prisma.vendorProfile.findUnique({ where: { id: vendorId }, include: { user: { select: { address: true, state: true, lga: true } } } });
+  const vu = (vendor && vendor.user) || {};
+  const cu = (await prisma.user.findUnique({ where: { id: customerId }, select: { state: true, lga: true } })) || {};
+  if (deliveryAddress && (vu.address || vu.state)) {
+    try {
+      const origin = [vu.address, vu.lga, vu.state, "Nigeria"].filter(Boolean).join(", ");
+      const { distanceKm } = await require("../services/googleRoutes.service").computeRouteDistanceKm(origin, `${deliveryAddress}, Nigeria`);
+      return { feeKobo: distanceFee.feeKoboFromDistanceKm(distanceKm), distanceKm: Math.round(distanceKm * 10) / 10 };
+    } catch (err) {
+      // No GOOGLE_MAPS_API_KEY / unresolvable address -> estimate below.
+    }
+  }
+  return distanceFee.estimateRiderFeeKobo({ state: vu.state, lga: vu.lga }, { state: cu.state, lga: cu.lga });
+}
+
+// GET /bookings/cake-delivery-fee?vendorId=&address= -- the checkout's live
+// "Rider delivery fee" line, priced exactly as createBooking will charge it.
+async function getCakeDeliveryFee(req, res, next) {
+  try {
+    const { vendorId, address } = req.query;
+    if (!vendorId) return res.status(400).json({ error: "vendorId is required." });
+    res.json(await estimateCakeRiderFee(vendorId, address, req.user.id));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createBooking(req, res, next) {
   try {
     const { vendorId, type, servicePackageId, items, eventDate, eventTime, venue, guestCount, phone, notes, paymentMethod, packageKey, packageLabel, eventType } = req.body;
     if (!vendorId || !type) return res.status(400).json({ error: "vendorId and type are required." });
-    if (!["HOME_COOK", "EVENT_PLANNING"].includes(type)) return res.status(400).json({ error: "Invalid booking type." });
+    if (!["HOME_COOK", "EVENT_PLANNING", "CATERING", "CAKE"].includes(type)) return res.status(400).json({ error: "Invalid booking type." });
 
     const vendor = await prisma.vendorProfile.findUnique({ where: { id: vendorId } });
     if (!vendor) return res.status(404).json({ error: "Vendor not found." });
@@ -104,6 +159,15 @@ async function createBooking(req, res, next) {
     totalKobo += itemsTotalKobo;
 
     if (totalKobo <= 0) return res.status(400).json({ error: "Booking must include a service package and/or items." });
+
+    // CAKE: the rider's delivery fee is priced upfront (baker -> delivery
+    // address) and paid into escrow with the cake, exactly like a
+    // Shop-For-Me deposit carries its riderFeeKobo from the start.
+    let riderFeeKobo = null;
+    if (type === "CAKE") {
+      ({ feeKobo: riderFeeKobo } = await estimateCakeRiderFee(vendorId, venue, req.user.id));
+      totalKobo += riderFeeKobo;
+    }
 
     const booking = await prisma.booking.create({
       data: {
@@ -127,6 +191,7 @@ async function createBooking(req, res, next) {
         notes,
         paymentMethod: paymentMethod || "CARD",
         totalKobo,
+        ...(riderFeeKobo != null && { riderFeeKobo }),
       },
       include: { servicePackage: true },
     });
@@ -154,7 +219,19 @@ async function listBookings(req, res, next) {
     let where = { customerId: req.user.id };
     if (as === "vendor") {
       if (!req.user.vendorProfile) return res.status(403).json({ error: "No vendor profile found." });
-      where = { vendorId: req.user.vendorProfile.id };
+      // An order the customer never paid for (REQUESTED) isn't a real order
+      // yet -- vendors are never shown it, same rule as the "New paid
+      // booking request" notify only firing once payment clears.
+      where = {
+        vendorId: req.user.vendorProfile.id,
+        status: { not: "REQUESTED" },
+        NOT: { status: "CANCELLED", cancelReason: "Payment not completed" },
+      };
+    } else if (as === "rider") {
+      // A rider's own accepted CAKE deliveries -- available (not-yet-
+      // accepted) ones are a separate lookup, listAvailableCakeDeliveries.
+      if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
+      where = { riderId: req.user.riderProfile.id };
     }
     if (status) where.status = status;
 
@@ -164,6 +241,7 @@ async function listBookings(req, res, next) {
         vendor: { include: { user: { select: { name: true, phone: true } } } },
         servicePackage: true,
         customer: { select: { name: true, phone: true, address: true, state: true } },
+        rider: { include: { user: { select: { id: true, name: true, phone: true } } } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -193,7 +271,7 @@ async function listBookings(req, res, next) {
       }
     }
 
-    res.json({ bookings });
+    res.json({ bookings: as === "rider" ? bookings.map(stripRiderCodes) : bookings });
   } catch (err) {
     next(err);
   }
@@ -208,13 +286,18 @@ async function getBooking(req, res, next) {
         servicePackage: true,
         ratings: true,
         customer: { select: { id: true, name: true, phone: true, address: true, state: true } },
+        rider: { include: { user: { select: { id: true, name: true, phone: true, avatarUrl: true } } } },
       },
     });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
 
     const isCustomer = booking.customerId === req.user.id;
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
-    if (!isCustomer && !isVendor && req.user.role !== "ADMIN") return res.status(403).json({ error: "You do not have access to this booking." });
+    // CAKE bookings add a third real party once a rider accepts the
+    // delivery (booking.riderId) -- every other booking type's rider stays
+    // null, so this is always false for them.
+    const isRider = req.user.riderProfile && booking.riderId === req.user.riderProfile.id;
+    if (!isCustomer && !isVendor && !isRider && req.user.role !== "ADMIN") return res.status(403).json({ error: "You do not have access to this booking." });
 
     // Surfaces an in-progress dispute ticket (if any) so either party can
     // see/respond to it without a separate lookup — most recent first,
@@ -240,7 +323,7 @@ async function getBooking(req, res, next) {
     // never a negotiated booking or the hold's already fully drained.
     const vendorHold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
 
-    res.json({ booking, disputeTicket, reportTicket, escrowHoldRemainingKobo: vendorHold ? vendorHold.amountKobo : 0 });
+    res.json({ booking: isRider ? stripRiderCodes(booking) : booking, disputeTicket, reportTicket, escrowHoldRemainingKobo: vendorHold ? vendorHold.amountKobo : 0 });
   } catch (err) {
     next(err);
   }
@@ -271,7 +354,7 @@ async function buildBookingEditData(booking, body) {
   // zero out the real total on any items-only edit. Renaming keeps each
   // item's own already-carried-forward price (data-price on the frontend
   // input, unchanged) and never touches totalKobo at all.
-  if (booking.type === "EVENT_PLANNING" && items !== undefined) {
+  if ((booking.type === "EVENT_PLANNING" || booking.type === "CATERING") && items !== undefined) {
     const renamed = items
       .map((it) => ({
         name: (it.customName || "").trim(),
@@ -299,6 +382,9 @@ async function buildBookingEditData(booking, body) {
       totalKobo += (newSelectedItems || []).reduce((sum, i) => sum + i.priceKobo * i.qty, 0);
     }
     if (totalKobo <= 0) throw Object.assign(new Error("Booking must include a service package and/or items."), { status: 400 });
+    // CAKE's total also carries the rider fee collected upfront -- an item
+    // edit only changes the cake part.
+    if (booking.type === "CAKE") totalKobo += booking.riderFeeKobo || 0;
     data.servicePackageId = newServicePackage?.id || null;
     data.selectedItems = newSelectedItems;
     data.totalKobo = totalKobo;
@@ -441,7 +527,7 @@ async function updateBooking(req, res, next) {
       if (editDiffKobo != null && editDiffKobo < 0) {
         await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(-editDiffKobo / 100).toLocaleString()} was refunded to your wallet for the items removed from booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
       }
-      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+      req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
     }
 
@@ -469,7 +555,7 @@ async function updateBooking(req, res, next) {
     // exactly why "customer edited" -> "job started" -> "waiting on
     // customer" looked seamless everywhere downstream but silently broke
     // at this first step.
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated, pending: true });
   } catch (err) {
     next(err);
@@ -504,7 +590,7 @@ async function acceptEditedBooking(req, res, next) {
     if (editDiffKobo != null && editDiffKobo < 0) {
       await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(-editDiffKobo / 100).toLocaleString()} was refunded to your wallet for the items removed from booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
     }
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -520,7 +606,7 @@ async function declineEditedBooking(req, res, next) {
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingEditSnapshot: null, pendingEditRequestedAt: null } });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking edit declined", `The vendor declined your proposed changes to booking #${booking.bookingNumber} — the booking is unchanged.`, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -558,11 +644,10 @@ async function acceptBooking(req, res, next) {
       return res.status(409).json({ error: required === "PAID" && booking.status === "REQUESTED" ? "This booking hasn't been paid for yet." : `Booking is already ${booking.status.toLowerCase()}.` });
     }
 
-    const isEventPlanning = booking.type === "EVENT_PLANNING";
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "CONFIRMED" } });
-    const message = isEventPlanning ? "Your event planning booking was accepted and confirmed." : "Your home cook booking was accepted and confirmed.";
+    const message = `Your ${bookingTypeLabel(booking.type)} booking was accepted and confirmed.`;
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking accepted", message, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -584,12 +669,9 @@ async function declineBooking(req, res, next) {
 
     await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: "Booking declined by vendor" });
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "DECLINED" } });
-    const message =
-      booking.type === "EVENT_PLANNING"
-        ? "Your event planning booking request was declined -- your payment has been refunded to your wallet."
-        : "Your home cook booking request was declined -- your payment has been refunded to your wallet.";
+    const message = `Your ${bookingTypeLabel(booking.type)} booking request was declined -- your payment has been refunded to your wallet.`;
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking declined", message, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -678,7 +760,7 @@ async function startBookingJob(req, res, next) {
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorJobStartedAt: new Date() } });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Job started", `Your vendor has started the job for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -717,7 +799,7 @@ async function engageBooking(req, res, next) {
     // other side only ever finds out once a real chat message or call
     // request actually goes out (the existing chat/call notification
     // flow), not from this tap alone.
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -752,7 +834,7 @@ async function endBookingConversation(req, res, next) {
     });
     const notifyUserId = isCustomer ? booking.vendor.userId : booking.customerId;
     await notify(req.app.get("io"), notifyUserId, "ORDER_UPDATE", "Conversation ended", `The ${isCustomer ? "customer" : "vendor"} ended the conversation for booking #${booking.bookingNumber}.`, { bookingId: booking.id }).catch(() => {});
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -784,7 +866,7 @@ async function releaseBookingPayment(req, res, next) {
 
     const vendor = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
     if (vendor) await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Payment released", `The customer released ₦${Math.round(amountKobo / 100).toLocaleString()} for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -819,7 +901,7 @@ async function requestAdditionalPayment(req, res, next) {
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingPaymentRequestKobo: amountKobo, pendingPaymentRequestedAt: new Date() } });
     await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Vendor requesting additional payment", `The vendor is requesting ₦${Math.round(amountKobo / 100).toLocaleString()} for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -860,13 +942,13 @@ async function respondAdditionalPayment(req, res, next) {
           { bookingId: booking.id }
         );
       }
-      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+      req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
     }
 
     const updated = await prisma.booking.update({ where: { id: booking.id }, data: { pendingPaymentRequestKobo: null, pendingPaymentRequestedAt: null } });
     if (vendor) await notify(req.app.get("io"), vendor.userId, "ORDER_UPDATE", "Additional payment declined", `The customer declined your additional payment request for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -906,7 +988,7 @@ async function completeBooking(req, res, next) {
       `The vendor marked booking #${booking.bookingNumber} as complete. Please confirm so payment can be released.`,
       { bookingId: booking.id }
     );
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -937,7 +1019,7 @@ async function completeEventPlanningBooking(booking, io, escrowDescription) {
   const updated = await prisma.booking.update({ where: { id: booking.id }, data: { status: "COMPLETED", completedAt: now } });
   await notify(io, booking.customerId, "ORDER_UPDATE", "This Booking is completed", `Booking #${booking.bookingNumber} is complete. Thank you for using Handa!`, { bookingId: booking.id });
   closeSupportThreadForContext(booking.id);
-  io?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+  io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
   return updated;
 }
 
@@ -962,6 +1044,11 @@ async function confirmBookingCompletion(req, res, next) {
     if (!booking.vendorConfirmedCompleteAt) return res.status(409).json({ error: "The vendor hasn't marked this booking complete yet." });
     if (booking.customerConfirmedCompleteAt) return res.status(409).json({ error: "You already responded to this booking's completion." });
 
+    if (completed && booking.type === "CAKE") {
+      const done = await completeCakeOrder(req.app.get("io"), booking.id);
+      if (!done) return res.status(409).json({ error: "This order was already completed." });
+      return res.json({ booking: await prisma.booking.findUnique({ where: { id: booking.id } }) });
+    }
     if (completed) {
       await prisma.booking.update({ where: { id: booking.id }, data: { customerConfirmedCompleteAt: new Date() } });
       // Whatever's actually still HELD -- the full total for a plain
@@ -986,7 +1073,7 @@ async function confirmBookingCompletion(req, res, next) {
         );
       }
       closeSupportThreadForContext(booking.id);
-      req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+      req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
       return res.json({ booking: updated });
     }
 
@@ -1017,7 +1104,7 @@ async function confirmBookingCompletion(req, res, next) {
         { bookingId: booking.id, ticketId: ticket.id }
       );
     }
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking, ticket });
   } catch (err) {
     next(err);
@@ -1032,7 +1119,19 @@ async function cancelBooking(req, res, next) {
     const isVendor = req.user.vendorProfile && booking.vendorId === req.user.vendorProfile.id;
     if (!isCustomer && !isVendor) return res.status(404).json({ error: "Booking not found." });
     if (["COMPLETED", "CANCELLED"].includes(booking.status)) return res.status(409).json({ error: `Booking is already ${booking.status.toLowerCase()}.` });
-    if (booking.vendorJobStartedAt) return res.status(400).json({ error: "The vendor has already started this job — it can no longer be cancelled." });
+    // CAKE reuses vendorJobStartedAt as a side effect of markCakeReady (see
+    // its own comment) -- it's never a real "vendor is now irreversibly
+    // mid-job" signal for cake the way it is for Home Cook/EP/Catering, so
+    // this guard must not apply to it. A cake order can still be cancelled
+    // any time before the rider actually hands it to the customer -- once
+    // deliveredAt is set the booking auto-completes anyway and the
+    // COMPLETED check above already covers it.
+    if (booking.type !== "CAKE" && booking.vendorJobStartedAt) {
+      return res.status(400).json({ error: "The vendor has already started this job — it can no longer be cancelled." });
+    }
+    if (booking.type === "CAKE" && booking.deliveredAt) {
+      return res.status(400).json({ error: "This cake has already been delivered — it can no longer be cancelled." });
+    }
     // Negotiated bookings (Event Planner, Home Cook catering): once any
     // part-payment has been released to the vendor, cancellation is over --
     // matches the edit lock right above updateBooking's own guard. This is
@@ -1060,8 +1159,10 @@ async function cancelBooking(req, res, next) {
     // the original total (partialReleaseHold decrements the hold in place,
     // see escrow.service.js) -- already-released amounts are never clawed
     // back from the vendor.
+    let refundedKobo = 0;
     if (["PAID", "CONFIRMED"].includes(booking.status)) {
-      await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: `Booking cancelled by ${isCustomer ? "customer" : "vendor"}` });
+      const refunded = await escrow.refundAllHoldsForContext({ contextType: "BOOKING", bookingId: booking.id }, { description: `Booking cancelled by ${isCustomer ? "customer" : "vendor"}` });
+      refundedKobo = refunded.reduce((s, h) => s + h.amountKobo, 0);
     }
     const cancelledBy = isCustomer ? "CUSTOMER" : "VENDOR";
     const updated = await prisma.booking.update({
@@ -1085,19 +1186,338 @@ async function cancelBooking(req, res, next) {
     });
     closeSupportThreadForContext(booking.id);
     // Notify whichever side didn't do the cancelling.
-    if (isCustomer && booking.vendor) {
+    // An unpaid (REQUESTED) order was never shown to the vendor, so there's
+    // nothing to tell them when the customer abandons it.
+    if (isCustomer && booking.vendor && booking.status !== "REQUESTED") {
       await notify(req.app.get("io"), booking.vendor.userId, "ORDER_UPDATE", "Booking cancelled", `The customer cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
     } else if (isVendor) {
       await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Booking cancelled", `The vendor cancelled booking #${booking.bookingNumber}. Reason: ${reason}`, { bookingId: booking.id });
     }
-    req.app.get("io")?.to(`booking:${booking.id}`).emit("booking:updated", { bookingId: booking.id });
+    // The refund is credited instantly above -- always tell the customer
+    // exactly how much came back, whoever cancelled.
+    if (refundedKobo > 0) {
+      await notify(req.app.get("io"), booking.customerId, "ORDER_UPDATE", "Refund issued", `₦${Math.round(refundedKobo / 100).toLocaleString()} for #${booking.bookingNumber} has been refunded to your wallet.`, { bookingId: booking.id }).catch(() => {});
+    }
+    // A cake rider already on the job must hear it's off, too.
+    if (booking.riderId) {
+      const rp = await prisma.riderProfile.findUnique({ where: { id: booking.riderId }, select: { userId: true } });
+      if (rp) await notify(req.app.get("io"), rp.userId, "ORDER_UPDATE", "Delivery cancelled", `Order #${booking.bookingNumber} was cancelled -- no pickup or delivery needed.`, { bookingId: booking.id }).catch(() => {});
+    }
+    req.app.get("io")?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
     res.json({ booking: updated });
   } catch (err) {
     next(err);
   }
 }
 
+// ── CAKE rider delivery ────────────────────────────────────────────────
+// A baked cake has to actually be picked up from the vendor and delivered
+// to the customer -- new territory for Booking (every other type is
+// vendor-comes-to-you or pickup-yourself). Deliberately NOT a new
+// BookingStatus enum value or a ShopSession-style separate status field:
+// booking.status stays CONFIRMED for the whole delivery, exactly like a
+// negotiated booking's status stays CONFIRMED through its own multi-stage
+// release -- these timestamp fields (see schema.prisma's Booking model)
+// are the real sub-state machine, read together by the frontend to derive
+// which delivery phase is showing. Mirrors ShopSession's own
+// shopper->rider->customer handoff (findRider/acceptDelivery/markDelivered
+// in shopSessions.controller.js) as closely as possible rather than
+// inventing a parallel pattern.
+function assertCakeBooking(booking) {
+  if (booking.type !== "CAKE") {
+    const err = new Error("This action only applies to cake bookings.");
+    err.status = 400;
+    throw err;
+  }
+}
+
+// Vendor's "the cake is ready" tap -- only meaningful once paid (CONFIRMED).
+// Doubles as vendorJobStartedAt (baking IS the job, for a cake) so the
+// existing two-sided completion flow (completeBooking/confirmBookingCompletion)
+// needs no changes: confirmDelivery below sets vendorConfirmedCompleteAt the
+// same way completeBooking normally would, and the customer's existing
+// Yes/No confirm screen picks it up completely unchanged.
+async function markCakeReady(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertVendorOwnsBooking(req, booking);
+    assertCakeBooking(booking);
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "Booking must be confirmed (paid) before it can be marked ready." });
+    if (booking.vendorReadyAt) return res.status(409).json({ error: "This cake was already marked ready." });
+
+    // Marking ready no longer dispatches on its own -- the baker lands on
+    // their live delivery screen and taps "Search for a Rider" as a separate
+    // deliberate step (searchCakeRider below), same as a shopper's own
+    // find-rider after packaging.
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        vendorReadyAt: new Date(),
+        vendorJobStartedAt: booking.vendorJobStartedAt || new Date(),
+        pickupCode: generateOtpCode(),
+        deliveryCode: generateOtpCode(),
+      },
+    });
+    const io = req.app.get("io");
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Your cake is ready", `Order #${booking.bookingNumber} is ready -- your baker is about to find a rider to deliver it.`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// The baker's "Search for a Rider" tap -- the one thing that makes a ready
+// cake visible to online riders (listAvailableCakeDeliveries below) and
+// pings them live, mirroring shopSessions.controller.js's findRider.
+async function searchCakeRider(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertVendorOwnsBooking(req, booking);
+    assertCakeBooking(booking);
+    if (booking.status !== "CONFIRMED") return res.status(409).json({ error: "This order isn't active." });
+    if (!booking.vendorReadyAt) return res.status(409).json({ error: "Mark the cake ready first." });
+    if (booking.riderId) return res.status(409).json({ error: "A rider has already accepted this delivery." });
+
+    const updated = booking.riderSearchStartedAt
+      ? booking
+      : await prisma.booking.update({ where: { id: booking.id }, data: { riderSearchStartedAt: new Date() } });
+    const io = req.app.get("io");
+    io?.to("dispatch:riders").emit("dispatch:new-cake-delivery", { bookingId: booking.id });
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Finding a rider", `Your baker is searching for a rider to deliver order #${booking.bookingNumber}.`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Pull, not push -- same as ShopSession's listSessions?as=available (the
+// dispatch:riders socket event above is just a "go check the list" nudge).
+// Nearest-first: each delivery carries the same honest state/LGA-centroid
+// distance/ETA estimate the Shop-For-Me rider list already shows, and the
+// list is sorted by it so the closest pickups sit at the top.
+async function listAvailableCakeDeliveries(req, res, next) {
+  try {
+    if (!req.user.riderProfile) return res.status(403).json({ error: "Only rider accounts can view available deliveries." });
+    const bookings = await prisma.booking.findMany({
+      where: { type: "CAKE", vendorReadyAt: { not: null }, riderSearchStartedAt: { not: null }, riderId: null, status: "CONFIRMED" },
+      include: { vendor: { include: { user: { select: { name: true, address: true, state: true, lga: true } } } } },
+      orderBy: { riderSearchStartedAt: "asc" },
+    });
+    const riderUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { state: true, lga: true } });
+    const out = bookings.map(stripRiderCodes).map((b) => {
+      const vu = b.vendor && b.vendor.user;
+      if (vu && riderUser && riderUser.state && vu.state) {
+        const km = distanceFee.computeDistanceKm({ state: riderUser.state, lga: riderUser.lga }, { state: vu.state, lga: vu.lga });
+        b.distanceToVendorKm = Math.round(km * 10) / 10;
+        b.etaToVendorMinutes = Math.max(3, Math.round((km / 25) * 60));
+      }
+      return b;
+    });
+    out.sort((a, b) => (a.distanceToVendorKm ?? 9999) - (b.distanceToVendorKm ?? 9999));
+    res.json({ bookings: out });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// First-to-accept claim, same atomic compare-and-swap pattern as
+// ShopSession's acceptDelivery (updateMany with riderId still null in the
+// WHERE clause, so two riders racing on the same job can't both win).
+async function acceptCakeDelivery(req, res, next) {
+  try {
+    if (!req.user.riderProfile) return res.status(403).json({ error: "Only rider accounts can accept deliveries." });
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertCakeBooking(booking);
+    if (!booking.vendorReadyAt || !booking.riderSearchStartedAt || booking.riderId || booking.status !== "CONFIRMED") {
+      return res.status(409).json({ error: "This delivery is no longer available." });
+    }
+
+    const result = await prisma.booking.updateMany({
+      where: { id: booking.id, riderId: null },
+      data: { riderId: req.user.riderProfile.id, riderAcceptedAt: new Date() },
+    });
+    if (result.count === 0) return res.status(409).json({ error: "Another rider already accepted this delivery." });
+
+    // The customer already paid the rider fee into escrow at checkout (see
+    // confirmBookingPayment's unassigned RIDER hold) -- the accepting rider
+    // just becomes its payee. Nothing is ever created from thin air here.
+    await prisma.escrowHold.updateMany({
+      where: { contextType: "BOOKING", bookingId: booking.id, payeeRole: "RIDER", payeeId: null, status: "HELD" },
+      data: { payeeId: req.user.id },
+    });
+    const updated = await prisma.booking.findUnique({ where: { id: booking.id } });
+    const io = req.app.get("io");
+    await notify(io, booking.customerId, "ORDER_UPDATE", "A rider is on the way", `A rider accepted your cake delivery for booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Rider assigned", `A rider is coming to pick up booking #${booking.bookingNumber}.`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function assertRiderOnBooking(req, booking) {
+  if (!req.user.riderProfile || booking.riderId !== req.user.riderProfile.id) {
+    const err = new Error("Booking not found.");
+    err.status = 404;
+    throw err;
+  }
+}
+
+async function riderArrivedAtCakeVendor(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertRiderOnBooking(req, booking);
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { riderArrivedVendorAt: new Date() } });
+    const io = req.app.get("io");
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Rider has arrived", `The rider is at your location for order #${booking.bookingNumber} -- give them the pickup code.`, { bookingId: booking.id });
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Rider at the baker", `The rider has arrived at the baker to pick up order #${booking.bookingNumber}.`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Rider enters the pickup code the vendor can see on their own dashboard --
+// same lightweight in-person proof as ShopSession's handover codes.
+async function confirmCakePickup(req, res, next) {
+  try {
+    const { code } = req.body;
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id }, include: { vendor: true } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertRiderOnBooking(req, booking);
+    if (!code || String(code) !== booking.pickupCode) return res.status(400).json({ error: "Incorrect pickup code." });
+    if (booking.vendorHandoverConfirmedAt) return res.status(409).json({ error: "Pickup already confirmed." });
+
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { vendorHandoverConfirmedAt: new Date() } });
+    const io = req.app.get("io");
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Your cake is on the way", `Order #${booking.bookingNumber} has been picked up and is out for delivery.`, { bookingId: booking.id });
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Cake picked up", `The rider picked up order #${booking.bookingNumber} and is heading to the customer.`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function riderArrivedAtCakeCustomer(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertRiderOnBooking(req, booking);
+    const updated = await prisma.booking.update({ where: { id: booking.id }, data: { riderArrivedCustomerAt: new Date() } });
+    const io = req.app.get("io");
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Your rider has arrived", `The rider is at your address with order #${booking.bookingNumber} -- give them your delivery code.`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Rider enters the delivery code the CUSTOMER can see. This is the rider's
+// own job done -- their escrow hold releases right here, independent of
+// whether the customer is happy with the cake itself (that's the vendor's
+// hold, released separately by the customer's own existing
+// confirmBookingCompletion tap, unchanged -- vendorConfirmedCompleteAt set
+// below is exactly what that screen already waits for).
+async function confirmCakeDelivery(req, res, next) {
+  try {
+    const { code } = req.body;
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) return res.status(404).json({ error: "Booking not found." });
+    assertRiderOnBooking(req, booking);
+    if (!code || String(code) !== booking.deliveryCode) return res.status(400).json({ error: "Incorrect delivery code." });
+    if (booking.deliveredAt) return res.status(409).json({ error: "Delivery already confirmed." });
+
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: { deliveredAt: new Date(), vendorConfirmedCompleteAt: booking.vendorConfirmedCompleteAt || new Date() },
+    });
+    await prisma.riderProfile.update({ where: { id: req.user.riderProfile.id }, data: { deliveries: { increment: 1 } } });
+
+    // Same ending as Shop-For-Me: nothing is released yet. The customer has
+    // CAKE_RELEASE_WINDOW_MS to tap "Complete Order", after which the baker's
+    // and rider's payments release together automatically (timer below, with
+    // finalizeDueCakeDeliveries' sweep as the restart-safe backup).
+    const io = req.app.get("io");
+    scheduleCakeAutoRelease(io, booking.id);
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Your cake has been delivered", `Order #${booking.bookingNumber} was delivered. Complete the order to release payment — it releases automatically in 90 seconds.`, { bookingId: booking.id });
+    const vendorForNotify = await prisma.vendorProfile.findUnique({ where: { id: booking.vendorId }, select: { userId: true } });
+    if (vendorForNotify) await notify(io, vendorForNotify.userId, "ORDER_UPDATE", "Cake delivered", `The rider delivered order #${booking.bookingNumber}. Payment releases once the customer completes the order (or automatically in 90 seconds).`, { bookingId: booking.id });
+    io?.to([`booking:${booking.id}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId: booking.id });
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const CAKE_RELEASE_WINDOW_MS = 90 * 1000;
+
+// Completes a delivered CAKE order: releases every still-HELD hold (baker +
+// rider) at once and tells both what they were paid. Atomic claim on
+// customerConfirmedCompleteAt so the customer's own tap, the 90s timer and
+// the sweep can never double-release.
+async function completeCakeOrder(io, bookingId, { auto = false } = {}) {
+  // A reported problem freezes the money for Handa to resolve -- never
+  // auto-complete over it.
+  const disputed = await prisma.escrowHold.count({ where: { contextType: "BOOKING", bookingId, status: "DISPUTED" } });
+  if (disputed > 0) return null;
+  const now = new Date();
+  const { count } = await prisma.booking.updateMany({
+    where: { id: bookingId, type: "CAKE", status: "CONFIRMED", deliveredAt: { not: null }, customerConfirmedCompleteAt: null },
+    data: { customerConfirmedCompleteAt: now, status: "COMPLETED", completedAt: now },
+  });
+  if (count === 0) return null;
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { vendor: { select: { userId: true } }, rider: { select: { userId: true } } } });
+  const released = await escrow.releaseAllHoldsForContext(
+    { contextType: "BOOKING", bookingId },
+    { description: auto ? "Cake order auto-released after delivery" : "Cake order completed by customer" }
+  );
+  const sumFor = (role) => released.filter((h) => h.payeeRole === role).reduce((s, h) => s + h.amountKobo, 0);
+  const naira = (k) => `₦${Math.round(k / 100).toLocaleString()}`;
+  if (booking.vendor) {
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment released", `Order #${booking.bookingNumber} is complete — ${naira(sumFor("VENDOR"))} has been released to your wallet.`, { bookingId }).catch(() => {});
+  }
+  if (booking.rider) {
+    await notify(io, booking.rider.userId, "ORDER_UPDATE", "Payment released", `Your delivery fee for order #${booking.bookingNumber} (${naira(sumFor("RIDER"))}) has been released to your wallet.`, { bookingId }).catch(() => {});
+  }
+  if (auto) {
+    await notify(io, booking.customerId, "ORDER_UPDATE", "Order completed", `Payment for order #${booking.bookingNumber} was released automatically. Rate your baker and rider!`, { bookingId }).catch(() => {});
+  }
+  closeSupportThreadForContext(bookingId);
+  io?.to([`booking:${bookingId}`, `vendor:${booking.vendorId}`, `user:${booking.customerId}`]).emit("booking:updated", { bookingId });
+  return booking;
+}
+
+function scheduleCakeAutoRelease(io, bookingId, delayMs = CAKE_RELEASE_WINDOW_MS) {
+  setTimeout(() => {
+    completeCakeOrder(io, bookingId, { auto: true }).catch((err) => console.error("[cake] auto-release failed:", err));
+  }, Math.max(0, delayMs));
+}
+
+// Restart-safe backup for the in-memory timer above.
+async function finalizeDueCakeDeliveries(io) {
+  const due = await prisma.booking.findMany({
+    where: { type: "CAKE", status: "CONFIRMED", customerConfirmedCompleteAt: null, deliveredAt: { lte: new Date(Date.now() - CAKE_RELEASE_WINDOW_MS) } },
+    select: { id: true },
+  });
+  for (const b of due) await completeCakeOrder(io, b.id, { auto: true });
+  return due.length;
+}
+
 module.exports = {
+  completeCakeOrder,
+  estimateCakeRiderFee,
+  getCakeDeliveryFee,
+  finalizeDueCakeDeliveries,
   createBooking,
   listBookings,
   getBooking,
@@ -1117,4 +1537,12 @@ module.exports = {
   completeEventPlanningBooking,
   confirmBookingCompletion,
   cancelBooking,
+  markCakeReady,
+  searchCakeRider,
+  listAvailableCakeDeliveries,
+  acceptCakeDelivery,
+  riderArrivedAtCakeVendor,
+  confirmCakePickup,
+  riderArrivedAtCakeCustomer,
+  confirmCakeDelivery,
 };
