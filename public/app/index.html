@@ -982,7 +982,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     <button onclick="closeChat()" style="background:none;border:none;color:#F2EDE8;font-size:22px;cursor:pointer;padding:0">←</button>
     <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#F5A623,#E8392E);display:flex;align-items:center;justify-content:center;font-size:22px" id="chat-av">👤</div>
     <div style="flex:1"><p style="font-weight:700;font-size:15px;margin:0" id="chat-name">—</p><p style="color:#2ECC71;font-size:11px;margin:0" id="chat-status">● Online</p></div>
-    <button onclick="closeActiveChatThread()" title="End this chat" style="width:40px;height:40px;border-radius:50%;background:rgba(232,57,46,.12);border:2px solid rgba(232,57,46,.35);color:#E8392E;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:6px">✕</button>
+    <button id="chat-end-btn" onclick="closeActiveChatThread()" title="End this chat" style="width:40px;height:40px;border-radius:50%;background:rgba(232,57,46,.12);border:2px solid rgba(232,57,46,.35);color:#E8392E;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:6px">✕</button>
   </div>
   <div class="chat-msgs" id="chat-msgs"></div>
   <div class="chat-ft">
@@ -4249,7 +4249,13 @@ async function openChatByThreadId(threadId,title,avatarEm){
     msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:12px">'+(err.message||'Could not load chat')+'</div>';
   }
 }
+// Order/booking/Shop-For-Me conversations stay open for the whole order
+// (chat.controller.js PERSISTENT_CONTEXTS) -- no End button and no idle
+// auto-end for them; leaving the window (← back) never ends anything.
+function _isPersistentChat(){ return ['ORDER','BOOKING','SHOP_SESSION'].indexOf(window._activeChatContextType)>=0; }
 function _setChatComposerClosed(closed){
+  var endBtn=document.getElementById('chat-end-btn');
+  if(endBtn)endBtn.style.display=_isPersistentChat()?'none':'';
   var inp=document.getElementById('chat-inp');
   if(!inp)return;
   inp.disabled=!!closed;
@@ -4272,6 +4278,7 @@ function startChatIdleWatch(){
   // openChat/openSupportChat/openChatByThreadId opened the currently
   // active thread, straight from the real ChatThread.contextType.
   if(window._activeChatContextType==='SUPPORT'||window._activeChatContextType==='DISPUTE')return;
+  if(_isPersistentChat())return; // order conversations never auto-end
   chatBumpActivity();
   window._chatIdleIv=setInterval(function(){
     if(!window._activeChatThreadId)return;
@@ -6707,11 +6714,24 @@ function bcallStart(){
   },30000);
 }
 function bcallCancelOutgoing(){bcallEnd();}
+// Answered but the audio never connects -- typically two different mobile
+// networks with no TURN relay configured (config.routes.js /ice-servers).
+// Instead of "Connecting…" forever, end it and point both people at the
+// Phone/WhatsApp options that always work.
+function _bcallWatchConnect(c){
+  setTimeout(function(){
+    if(window._bcall===c&&c.status!=='connected'){
+      showToast&&showToast('Couldn’t connect the in-app call on this network. Try Phone Call or WhatsApp instead.','warning');
+      bcallEnd();
+    }
+  },20000);
+}
 function bcallAccept(){
   var inc=window._bcallIncoming;if(!inc)return;
   window._bcallIncoming=null;
   window._bcall={role:'callee',bookingId:inc.bookingId,otherUserId:inc.fromUserId,otherName:inc.callerName,otherAvatar:inc.callerAvatar,otherRole:inc.callerRole,pc:null,localStream:null,remoteSocketId:inc.fromSocketId,status:'connecting',startedAt:null,micMuted:false,_ts:Date.now()};
   renderBcallOverlay();
+  _bcallWatchConnect(window._bcall);
   if(inc.bookingId&&_socket)_socket.emit('booking:join',{bookingId:inc.bookingId});
   bcallSetupPeer().then(function(){
     if(_socket)_socket.emit('bookingcall:accept',{toSocketId:inc.fromSocketId,bookingId:inc.bookingId});
@@ -6847,6 +6867,7 @@ function bcallBindListeners(){
     c.remoteSocketId=p.fromSocketId;
     c.status='connecting';
     renderBcallOverlay();
+    _bcallWatchConnect(c);
     bcallSetupPeer().then(function(){
       if(window._bcall!==c||!c.pc)return;
       c.pc.createOffer().then(function(offer){

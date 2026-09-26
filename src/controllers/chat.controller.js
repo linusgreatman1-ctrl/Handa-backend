@@ -106,6 +106,22 @@ async function maybeSendAiReply(threadId, senderUserId, io) {
 // or a direct 1:1 pair, or creates one — the frontend's various chat
 // entry points (order chat, live-shopping chat, vendor messages, generic
 // support chat) all resolve to "get or create the thread for X".
+// Conversations tied to a live order/booking/Shop-For-Me session are one
+// continuous conversation for as long as that order exists. They used to
+// be "ended" by the header's End button (easily tapped to just close the
+// window) or a 3-minute idle timer -- after which the next Chat tap opened
+// a brand-new empty thread and the other person's messages were stranded
+// in the old one, so chat looked broken in every direction. These are
+// never treated as ended: opening, reading or sending into one reopens it.
+const PERSISTENT_CONTEXTS = ["ORDER", "BOOKING", "SHOP_SESSION"];
+async function reopenIfPersistent(thread) {
+  if (thread && thread.closedAt && PERSISTENT_CONTEXTS.includes(thread.contextType)) {
+    await prisma.chatThread.update({ where: { id: thread.id }, data: { closedAt: null } });
+    thread.closedAt = null;
+  }
+  return thread;
+}
+
 async function openThread(req, res, next) {
   try {
     const { contextType, contextId, participantIds } = req.body;
@@ -123,12 +139,18 @@ async function openThread(req, res, next) {
     // closed thread is never reused, so hitting the Chat button again
     // after either side ended it genuinely starts a new conversation
     // instead of reopening the dead one.
+    const persistent = PERSISTENT_CONTEXTS.includes(contextType);
     let thread = contextId
       ? await prisma.chatThread.findFirst({
-          where: { contextType, contextId, closedAt: null, participants: { some: { userId: req.user.id } } },
+          // Order conversations: always the same thread (newest), reopened
+          // if it was ever closed. Everything else: a closed thread is never
+          // reused, so ending it genuinely starts a new conversation.
+          where: { contextType, contextId, ...(persistent ? {} : { closedAt: null }), participants: { some: { userId: req.user.id } } },
           include: { participants: true },
+          orderBy: { createdAt: "desc" },
         })
       : null;
+    if (thread) await reopenIfPersistent(thread);
 
     if (!thread) {
       thread = await prisma.chatThread.create({
@@ -180,6 +202,7 @@ async function listMessages(req, res, next) {
       prisma.chatThread.findUnique({ where: { id: req.params.id } }),
       prisma.chatMessage.findMany({ where: { threadId: req.params.id }, orderBy: { createdAt: "asc" }, take: 200 }),
     ]);
+    await reopenIfPersistent(thread);
     await prisma.chatParticipant.update({
       where: { threadId_userId: { threadId: req.params.id, userId: req.user.id } },
       data: { lastReadAt: new Date() },
@@ -193,7 +216,8 @@ async function listMessages(req, res, next) {
 async function sendMessage(req, res, next) {
   try {
     await assertParticipant(req.params.id, req.user.id);
-    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id }, select: { closedAt: true, contextType: true } });
+    const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id }, select: { id: true, closedAt: true, contextType: true } });
+    await reopenIfPersistent(thread);
     if (thread?.closedAt) return res.status(409).json({ error: "This chat has ended." });
     const { body, attachmentUrl } = req.body;
     if ((!body || !body.trim()) && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
@@ -255,6 +279,9 @@ async function closeThread(req, res, next) {
     const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
     if (!thread) return res.status(404).json({ error: "Thread not found." });
     if (thread.closedAt) return res.json({ thread });
+    // Order conversations can't be ended (see PERSISTENT_CONTEXTS) -- a
+    // close just leaves the thread as is for both sides.
+    if (PERSISTENT_CONTEXTS.includes(thread.contextType)) return res.json({ thread });
     const updated = await prisma.chatThread.update({
       where: { id: req.params.id },
       data: { closedAt: new Date(), closedBy: req.user.id },
