@@ -1632,16 +1632,18 @@ async function finalizeAutoReleasedSessions(io) {
 // escrow service, to avoid double-notifying a booking's vendor).
 async function notifyPayoutRecipients(io, session) {
   const amountText = (kobo) => `₦${Math.round(kobo / 100).toLocaleString()}`;
+  // What actually lands in the wallet after Handa's cut.
+  const netOf = (kobo, role) => kobo - Math.round(kobo * (escrow.PLATFORM_COMMISSION_RATES[role] || 0));
   if (session.shopperId) {
     const shopper = await prisma.shopperProfile.findUnique({ where: { id: session.shopperId }, select: { userId: true } });
     if (shopper) {
-      await notify(io, shopper.userId, "ORDER_UPDATE", "Payment released", `Your shopper fee for this session (${amountText(session.sessionFeeKobo)}) has been released to your wallet.`, { sessionId: session.id }).catch(() => {});
+      await notify(io, shopper.userId, "ORDER_UPDATE", "Payment released", `${amountText(netOf(session.sessionFeeKobo, "SHOPPER"))} has been paid to your wallet for this session (${amountText(session.sessionFeeKobo)} fee, less ${amountText(session.sessionFeeKobo - netOf(session.sessionFeeKobo, "SHOPPER"))} Handa fee).`, { sessionId: session.id }).catch(() => {});
     }
   }
   if (session.riderId) {
     const rider = await prisma.riderProfile.findUnique({ where: { id: session.riderId }, select: { userId: true } });
     if (rider) {
-      await notify(io, rider.userId, "ORDER_UPDATE", "Payment released", `Your delivery fee for this session (${amountText(session.riderFeeKobo)}) has been released to your wallet.`, { sessionId: session.id }).catch(() => {});
+      await notify(io, rider.userId, "ORDER_UPDATE", "Payment released", `${amountText(netOf(session.riderFeeKobo, "RIDER"))} has been paid to your wallet for this delivery (${amountText(session.riderFeeKobo)} fee, less ${amountText(session.riderFeeKobo - netOf(session.riderFeeKobo, "RIDER"))} Handa fee).`, { sessionId: session.id }).catch(() => {});
     }
   }
 }

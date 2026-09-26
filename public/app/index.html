@@ -9974,7 +9974,7 @@ var _riderDeclinedCakeIds=new Set();
 function _riderCakeDeliveryCardHtml(b){
   var v=b.vendor||{},vu=v.user||{};
   return '<div id="rider-cake-card-'+b.id+'" style="background:linear-gradient(135deg,#2d0d18,#1C1C1C);border:2px solid #E91E8C;border-radius:18px;padding:18px;margin-bottom:12px;">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🎂</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#E91E8C;">🔔 Cake Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round((b.riderFeeKobo||0)/100)).toLocaleString()+' fee</div></div><span style="background:#E91E8C;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#fff;">NEW</span></div>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🎂</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#E91E8C;">🔔 Cake Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">You earn ₦'+Number(Math.round(_netPayoutKobo(b.riderFeeKobo,'RIDER')/100)).toLocaleString()+'</div></div><span style="background:#E91E8C;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#fff;">NEW</span></div>'
     +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:8px;"><div style="font-weight:700;font-size:13px;color:#E91E8C;">📍 Pick up from: '+(v.bizName||vu.name||'Baker')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(vu.address||[vu.lga,vu.state].filter(Boolean).join(', ')||'Address shared on acceptance')+(b.distanceToVendorKm!=null?' • ~'+b.distanceToVendorKm+'km • ~'+b.etaToVendorMinutes+' min away':'')+'</div></div>'
     +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: Customer</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(b.venue||'Address on acceptance')+'</div></div>'
     +'<div style="display:flex;gap:8px;"><button onclick="acceptCakeDeliveryUI(\''+b.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#E91E8C,#B0146A);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button>'
@@ -10037,7 +10037,7 @@ async function loadRiderAvailableDeliveries(){
     if(!sessions.length&&!cakeDeliveries.length){list.innerHTML='<div style="color:#9A9390;font-size:13px;text-align:center;padding:14px">No deliveries waiting right now — you\'ll be notified the moment one appears.</div>';return;}
     list.innerHTML=cakeDeliveries.map(_riderCakeDeliveryCardHtml).join('')+sessions.map(function(s){
       return '<div id="rider-delivery-card-'+s.id+'" style="background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:18px;margin-bottom:12px;">'
-        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 Shop-For-Me Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div><span style="background:#F5A623;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 Shop-For-Me Delivery</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">You earn ₦'+Number(Math.round(_netPayoutKobo(s.riderFeeKobo,'RIDER')/100)).toLocaleString()+' • '+s.items.length+' items</div></div><span style="background:#F5A623;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:800;color:#111;">NEW</span></div>'
         +(s.shopper&&s.shopper.user?('<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:8px;"><div style="font-weight:700;font-size:13px;color:#F5A623;">📍 Pick up from: '+(s.shopper.user.name||'Shopper')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.shopper.market||s.shopper.user.address||'Market location shared on acceptance')+(s.distanceToShopperKm!=null?' • ~'+s.distanceToShopperKm+'km • ~'+s.etaToShopperMinutes+' min away':'')+'</div></div>'):'')
         +'<div style="background:rgba(0,0,0,.25);border-radius:12px;padding:12px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#F2EDE8;">Deliver to: '+(s.customer?s.customer.name:'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:1px;">'+(s.deliveryAddress||'Address on acceptance')+'</div></div>'
         +'<div style="display:flex;gap:8px;"><button onclick="acceptRiderDelivery(\''+s.id+'\')" style="flex:2;padding:11px;border-radius:11px;border:none;background:linear-gradient(135deg,#F5A623,#E07A00);color:#111;font-weight:800;font-size:14px;cursor:pointer;">✓ Accept &amp; Navigate</button>'
@@ -10070,7 +10070,7 @@ async function showRiderDispatchPopup(sessionId){
     var _rdCard=document.getElementById('rider-delivery-card-'+s.id);
     if(_rdCard&&_rdCard.offsetParent)return; // already visible in the list
     var html='<div id="rider-dispatch-popup" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:10000;max-width:420px;margin:0 auto;background:linear-gradient(135deg,#1a2a1a,#1C1C1C);border:2px solid #F5A623;border-radius:18px;padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.6);font-family:\'DM Sans\',sans-serif;">'
-      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 New Delivery Available</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">₦'+Number(Math.round(s.riderFeeKobo/100)).toLocaleString()+' fee • '+s.items.length+' items</div></div></div>'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="font-size:26px;">🛵</span><div style="flex:1;"><div style="font-weight:800;font-size:15px;color:#F5A623;">🔔 New Delivery Available</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">You earn ₦'+Number(Math.round(_netPayoutKobo(s.riderFeeKobo,'RIDER')/100)).toLocaleString()+' • '+s.items.length+' items</div></div></div>'
       // Same two info blocks the full Deliveries-list card already shows
       // (loadRiderAvailableDeliveries) -- the popup used to only show a
       // bare "Pick up from" name, missing the market/address, distance/ETA,
@@ -10655,7 +10655,7 @@ async function showRiderRideHistory(){
       return '<div onclick="showRiderCakeDeliveryDetail(\''+b.id+'\')" style="background:#1C1C1C;border:1.5px solid rgba(233,30,140,.3);border-radius:14px;padding:13px 14px;margin-bottom:10px;cursor:pointer;"><div style="display:flex;justify-content:space-between;"><div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">🎂 Cake delivery &mdash; '+((b.customer&&b.customer.name)||'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px;">'+((b.vendor&&b.vendor.bizName)||'Baker')+' &#x2022; '+st+'</div></div><div style="font-size:10px;color:#9A9390;">'+new Date(b.deliveredAt||b.createdAt).toLocaleDateString()+'</div></div></div>';
     }).join('');
     listEl.innerHTML=cakeHtml+(past.length?past.map(function(s){
-      var earned=Math.round((s.riderFeeKobo||0)*0.8/100);
+      var earned=Math.round(_netPayoutKobo(s.riderFeeKobo,'RIDER')/100);
       return '<div onclick="showRiderRideDetail(\''+s.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:13px 14px;margin-bottom:10px;cursor:pointer;"><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+((s.customer&&s.customer.name)||'Customer')+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px;">'+s.status.replace(/_/g,' ')+'</div></div><div style="text-align:right;"><div style="font-weight:700;color:#2ECC71;font-size:13px;">'+N(earned)+'</div><div style="font-size:10px;color:#9A9390;margin-top:2px;">'+new Date(s.createdAt).toLocaleDateString()+'</div></div></div><div style="font-size:11px;color:#555;">Tap for details &#x203A;</div></div>';
     }).join('') : (cakeHtml?'':'<div style="text-align:center;padding:30px;color:#9A9390">No past deliveries yet.</div>'));
   }catch(err){
@@ -10683,7 +10683,7 @@ async function showRiderCakeDeliveryDetail(id){
     +row('Customer',(b.customer&&b.customer.name)||'—')
     +row('Delivered to',b.venue||'—')
     +row('Delivered',b.deliveredAt?new Date(b.deliveredAt).toLocaleString():'—')
-    +'<div style="display:flex;justify-content:space-between;padding:7px 0;"><span style="font-size:12px;color:#9A9390;">Your delivery fee</span><span style="font-size:13px;font-weight:700;color:#2ECC71;">'+N(Math.round((b.riderFeeKobo||0)/100))+'</span></div>'
+    +_payoutBreakdownHtml(b.riderFeeKobo,'RIDER','Delivery fee',b.status==='COMPLETED')
     +'</div>'
     +'<div style="display:flex;flex-direction:column;gap:8px;">'
     +_historyReportBtn('Report Baker',!!mine.VENDOR,'vendor',b.id,'rider')
@@ -10696,7 +10696,7 @@ async function showRiderRideDetail(id){
   var s,customerReportTicket,shopperReportTicket;
   try{ var res=await api('/shop-sessions/'+id); s=res.session; customerReportTicket=res.customerReportTicket; shopperReportTicket=res.shopperReportTicket; }
   catch(err){ body.innerHTML='<div style="padding:52px 16px 24px;"><div style="text-align:center;padding:30px;color:#E8392E">'+(err.message||'Could not load delivery')+'</div></div>'; return; }
-  var earned=Math.round((s.riderFeeKobo||0)*0.8/100);
+  var earned=Math.round(_netPayoutKobo(s.riderFeeKobo,'RIDER')/100);
   // Session/delivery details first, Report Customer + Report Shopper
   // together underneath -- was interleaved (a contact card + its own
   // report button, repeated per party, details last), not this order.
@@ -12574,18 +12574,17 @@ function cakeRiderDoneScreen(){
   var v=b.vendor||{},vu=v.user||{};
   var bakerName=v.bizName||vu.name||'Baker';
   var custName=(b.customer&&b.customer.name)||'Customer';
-  var fee=N(Math.round((b.riderFeeKobo||0)/100));
   var released=b.status==='COMPLETED';
   var h='<div style="padding:52px 16px 30px;">'
     +'<div style="text-align:center;margin-bottom:18px;"><div style="font-size:60px;margin-bottom:10px;">'+(released?'&#x1F389;':'&#x2705;')+'</div>'
     +'<div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:#2ECC71;margin-bottom:8px;">'+(released?'Delivery Complete!':'Cake Delivered!')+'</div>'
-    +'<div style="font-size:13px;color:#9A9390;">'+(released?'Escrow has released your delivery fee to your wallet.':'Your '+fee+' delivery fee is released the moment '+custName+' completes the order — or automatically when the countdown ends.')+'</div></div>'
+    +'<div style="font-size:13px;color:#9A9390;">'+(released?N(Math.round(_netPayoutKobo(b.riderFeeKobo,'RIDER')/100))+' has been paid to your wallet.':'Your '+N(Math.round(_netPayoutKobo(b.riderFeeKobo,'RIDER')/100))+' (after the 15% Handa fee) is paid to your wallet the moment '+custName+' completes the order — or automatically when the countdown ends.')+'</div></div>'
     +(released?'':_cakeReleaseCountdownHtml())
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:4px 14px;margin-bottom:16px;">'
     +'<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Order</span><span style="font-weight:700;font-size:13px;">#'+(b.bookingNumber||'')+'</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Baker</span><span style="font-weight:700;font-size:13px;">'+bakerName+'</span></div>'
     +'<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Customer</span><span style="font-weight:700;font-size:13px;">'+custName+'</span></div>'
-    +'<div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;font-size:13px;">Delivery fee</span><span style="font-weight:800;font-size:13px;color:'+(released?'#2ECC71':'#F5A623')+';">'+(released?'🔓 '+fee+' released':'🔒 '+fee+' in escrow')+'</span></div>'
+    +_payoutBreakdownHtml(b.riderFeeKobo,'RIDER','Delivery fee',released)
     +'</div>';
   if(released){
     h+='<div style="display:flex;gap:10px;margin-bottom:12px;">'
@@ -13985,7 +13984,11 @@ async function openVendorBookingDetail(id){
       // from its one selected cake item (see cookBkConfirmBooking) -- so
       // this row always just read "—", pure noise.
       ...(b.type==='CAKE'?[]:[['Package',b.servicePackage?b.servicePackage.label:(b.packageLabel||'—')]]),
-      ['Total',N(Math.round(b.totalKobo/100))],
+      ['Order Total',N(Math.round(b.totalKobo/100))],
+      // What the vendor actually receives once escrow releases (Handa's 10%
+      // comes off at release -- escrow.service creditPayeeWithCommission).
+      ['Handa Fee (10%)','− '+N(Math.round((b.totalKobo-_netPayoutKobo(b.totalKobo,'VENDOR'))/100))],
+      ['You Receive',N(Math.round(_netPayoutKobo(b.totalKobo,'VENDOR')/100))],
       ['Payment Method',b.paymentMethod||'—'],
     ];
     // Event type (Wedding, Birthday, etc.) sits with the rest of the real
@@ -15185,6 +15188,19 @@ function _cakeContactCard(emoji,name,role,callFn,chatFn,accent){
 // the customer's screens never look like one shared screen: a role banner
 // in that role's own colour (customer blue, baker pink; the rider's
 // screens are amber) and the step bar tinted to match.
+// ── What a provider actually receives ──
+// Mirrors escrow.service.js PLATFORM_COMMISSION_RATES: Handa's cut is taken
+// the moment a hold releases, so the wallet gets the net, never the gross.
+// Provider-facing only -- customers never see these rates.
+var _HANDA_FEE_RATE={VENDOR:0.10,RIDER:0.15,SHOPPER:0.20};
+function _netPayoutKobo(grossKobo,role){grossKobo=grossKobo||0;return grossKobo-Math.round(grossKobo*(_HANDA_FEE_RATE[role]||0));}
+function _payoutBreakdownHtml(grossKobo,role,grossLabel,released){
+  var net=_netPayoutKobo(grossKobo,role),fee=(grossKobo||0)-net,pct=Math.round((_HANDA_FEE_RATE[role]||0)*100);
+  var r=function(l,v,col,bold){return '<div style="display:flex;justify-content:space-between;padding:7px 0;'+(bold?'border-top:1px solid #2A2850;margin-top:2px;':'')+'"><span style="color:#9A9390;font-size:12px;">'+l+'</span><span style="font-weight:'+(bold?'900':'700')+';font-size:13px;color:'+(col||'#F2EDE8')+';">'+v+'</span></div>';};
+  return r(grossLabel,N(Math.round((grossKobo||0)/100)))
+    +r('Handa fee ('+pct+'%)','− '+N(Math.round(fee/100)),'#E8392E')
+    +r(released?'🔓 Paid to your wallet':'🔒 You receive (in escrow)',N(Math.round(net/100)),'#2ECC71',true);
+}
 function _cakeRoleBanner(icon,label,sub,color){
   return '<div style="display:flex;align-items:center;gap:10px;background:'+color+'1A;border:1.5px solid '+color+'55;border-radius:14px;padding:10px 12px;margin-bottom:14px;">'
     +'<div style="width:36px;height:36px;border-radius:10px;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">'+icon+'</div>'
@@ -15284,7 +15300,7 @@ async function renderCakeDeliveryTracking(){
         +'<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Order</span><span style="font-weight:700;font-size:13px;">#'+(b.bookingNumber||'')+'</span></div>'
         +'<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Customer</span><span style="font-weight:700;font-size:13px;">'+(c.name||'Customer')+'</span></div>'
         +(b.rider?'<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:13px;">Rider</span><span style="font-weight:700;font-size:13px;">'+riderNmDone+'</span></div>':'')
-        +'<div style="display:flex;justify-content:space-between;padding:10px 0;"><span style="color:#9A9390;font-size:13px;">Payment</span><span style="font-weight:800;font-size:13px;color:#2ECC71;">🔓 '+N(Math.round(((b.totalKobo||0)-(b.riderFeeKobo||0))/100))+' released</span></div>'
+        +_payoutBreakdownHtml(b.totalKobo,'VENDOR','Order amount',true)
         +'</div>'
         +(vr?'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:12px;margin-bottom:16px;"><div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Customer\'s rating</div><div style="color:#F5A623;font-size:20px;letter-spacing:2px;">'+'★'.repeat(vr.score)+'<span style="color:#3A3A3A">'+'★'.repeat(5-vr.score)+'</span></div>'+(vr.comment?'<div style="font-size:12px;color:#9A9390;margin-top:4px;">'+vr.comment+'</div>':'')+'</div>':'')
         +'<div style="display:flex;gap:10px;margin-bottom:12px;">'
@@ -15298,7 +15314,7 @@ async function renderCakeDeliveryTracking(){
       var riderNmDel=(b.rider&&b.rider.user&&b.rider.user.name)||'The rider';
       body.innerHTML=wrap('<div style="text-align:center;padding:20px 6px 6px;"><div style="font-size:60px;margin-bottom:10px;">&#x2705;</div>'
         +'<div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:#2ECC71;margin-bottom:8px;">Cake Delivered!</div>'
-        +'<div style="font-size:13px;color:#9A9390;margin-bottom:18px;">'+riderNmDel+' handed the cake to '+(c.name||'the customer')+'. Your '+N(Math.round(((b.totalKobo||0)-(b.riderFeeKobo||0))/100))+' is released the moment they complete the order — or automatically when the countdown ends.</div></div>'
+        +'<div style="font-size:13px;color:#9A9390;margin-bottom:18px;">'+riderNmDel+' handed the cake to '+(c.name||'the customer')+'. Your '+N(Math.round(_netPayoutKobo(b.totalKobo,'VENDOR')/100))+' (after the 10% Handa fee) is paid to your wallet the moment they complete the order — or automatically when the countdown ends.</div></div>'
         +_cakeReleaseCountdownHtml()
         +(b.rider?_cakeContactCard('🏍️',riderNmDel,'Your rider','openVendorCakeRiderCall()','openVendorCakeRiderChat()','rgba(245,166,35,.4)'):'')
         +_cakeContactCard('🏠',c.name||'Customer','Customer'+(b.venue?' &bull; '+b.venue:''),'openVendorBookingCall()','openVendorBookingChat()'));
@@ -15326,7 +15342,7 @@ async function renderCakeDeliveryTracking(){
       +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:14px;padding:4px 14px;margin-bottom:14px;">'
       +'<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:12px;">Cake</span><span style="font-weight:700;font-size:12px;color:#F2EDE8;text-align:right;">'+cName+'</span></div>'
       +'<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #2A2850;"><span style="color:#9A9390;font-size:12px;flex-shrink:0;">Deliver to</span><span style="font-weight:700;font-size:12px;color:#F2EDE8;text-align:right;">'+(c.name||'Customer')+(b.venue?' &bull; '+b.venue:'')+'</span></div>'
-      +'<div style="display:flex;justify-content:space-between;padding:9px 0;"><span style="color:#9A9390;font-size:12px;">Your payment</span><span style="font-weight:800;font-size:12px;color:#2ECC71;">'+N(Math.round(b.totalKobo/100))+' &bull; 🔒 in escrow</span></div></div>';
+      +_payoutBreakdownHtml(b.totalKobo,'VENDOR','Order amount',false)+'</div>';
     if(!b.riderSearchStartedAt){
       h+='<div style="background:#1C1C1C;border:1.5px solid rgba(233,30,140,.3);border-radius:16px;padding:22px 16px;text-align:center;margin-bottom:14px;">'
         +'<div style="font-size:44px;margin-bottom:8px;">&#x1F382;</div>'

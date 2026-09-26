@@ -1497,12 +1497,19 @@ async function completeCakeOrder(io, bookingId, { auto = false } = {}) {
     { description: auto ? "Cake order auto-released after delivery" : "Cake order completed by customer" }
   );
   const sumFor = (role) => released.filter((h) => h.payeeRole === role).reduce((s, h) => s + h.amountKobo, 0);
+  // What actually lands in the wallet: the released amount minus Handa's
+  // cut (escrow.service creditPayeeWithCommission) -- never the gross.
+  const netFor = (role) => {
+    const gross = sumFor(role);
+    return gross - Math.round(gross * (escrow.PLATFORM_COMMISSION_RATES[role] || 0));
+  };
+  const feeFor = (role) => sumFor(role) - netFor(role);
   const naira = (k) => `₦${Math.round(k / 100).toLocaleString()}`;
   if (booking.vendor) {
-    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment released", `Order #${booking.bookingNumber} is complete — ${naira(sumFor("VENDOR"))} has been released to your wallet.`, { bookingId }).catch(() => {});
+    await notify(io, booking.vendor.userId, "ORDER_UPDATE", "Payment released", `Order #${booking.bookingNumber} is complete — ${naira(netFor("VENDOR"))} has been paid to your wallet (${naira(sumFor("VENDOR"))} order, less ${naira(feeFor("VENDOR"))} Handa fee).`, { bookingId }).catch(() => {});
   }
   if (booking.rider) {
-    await notify(io, booking.rider.userId, "ORDER_UPDATE", "Payment released", `Your delivery fee for order #${booking.bookingNumber} (${naira(sumFor("RIDER"))}) has been released to your wallet.`, { bookingId }).catch(() => {});
+    await notify(io, booking.rider.userId, "ORDER_UPDATE", "Payment released", `${naira(netFor("RIDER"))} for delivering order #${booking.bookingNumber} has been paid to your wallet (${naira(sumFor("RIDER"))} fee, less ${naira(feeFor("RIDER"))} Handa fee).`, { bookingId }).catch(() => {});
   }
   if (auto) {
     await notify(io, booking.customerId, "ORDER_UPDATE", "Order completed", `Payment for order #${booking.bookingNumber} was released automatically. Rate your baker and rider!`, { bookingId }).catch(() => {});

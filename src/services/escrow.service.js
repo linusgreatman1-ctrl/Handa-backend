@@ -234,6 +234,7 @@ async function runAutoReleaseSweep() {
 }
 
 module.exports = {
+  PLATFORM_COMMISSION_RATES,
   createHold,
   releaseHold,
   partialReleaseHold,
