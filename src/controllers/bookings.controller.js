@@ -327,7 +327,18 @@ async function getBooking(req, res, next) {
     // never a negotiated booking or the hold's already fully drained.
     const vendorHold = await prisma.escrowHold.findFirst({ where: { bookingId: booking.id, payeeRole: "VENDOR", status: "HELD" } });
 
-    res.json({ booking: isRider ? stripRiderCodes(booking) : booking, disputeTicket, reportTicket, escrowHoldRemainingKobo: vendorHold ? vendorHold.amountKobo : 0 });
+    // Which parties THIS viewer has already reported on this order, so each
+    // per-party Report button (Report Baker / Report Rider / Report Customer)
+    // can show its own "reported" state. Ticket context names the party:
+    // BOOKING/VENDOR = the vendor, RIDER = the rider, CUSTOMER = the customer.
+    const mine = await prisma.supportTicket.findMany({
+      where: { userId: req.user.id, contextId: booking.id, context: { in: ["BOOKING", "VENDOR", "RIDER", "CUSTOMER"] } },
+      select: { context: true },
+    });
+    const myReports = {};
+    for (const t of mine) myReports[t.context === "BOOKING" ? "VENDOR" : t.context] = true;
+
+    res.json({ booking: isRider ? stripRiderCodes(booking) : booking, disputeTicket, reportTicket, myReports, escrowHoldRemainingKobo: vendorHold ? vendorHold.amountKobo : 0 });
   } catch (err) {
     next(err);
   }
