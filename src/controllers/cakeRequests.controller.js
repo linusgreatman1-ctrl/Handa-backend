@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { attachRequestOrders } = require("../utils/requestOrders");
 const { notify, notifyAllCakeVendors } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
@@ -60,19 +61,24 @@ async function listCakeRequests(req, res, next) {
         include: {
           customer: { select: { name: true } },
           _count: { select: { proposals: true } },
-          proposals: { where: { vendorId: req.user.vendorProfile.id }, select: { id: true, status: true } },
+          proposals: { where: { vendorId: req.user.vendorProfile.id }, select: { id: true, status: true, bookingId: true } },
         },
         orderBy: { createdAt: "desc" },
         take: 100,
       });
+      await attachRequestOrders(requests);
       return res.json({ requests });
     }
 
     const requests = await prisma.cakeRequest.findMany({
       where: { customerId: req.user.id, ...(status && { status }) },
-      include: { _count: { select: { proposals: { where: { status: { notIn: ["DECLINED", "WITHDRAWN"] } } } } } },
+      include: {
+        _count: { select: { proposals: { where: { status: { notIn: ["DECLINED", "WITHDRAWN"] } } } } },
+        proposals: { where: { status: "ACCEPTED" }, select: { bookingId: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
+    await attachRequestOrders(requests);
     res.json({ requests });
   } catch (err) {
     next(err);

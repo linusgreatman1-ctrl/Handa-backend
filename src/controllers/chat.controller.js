@@ -106,13 +106,12 @@ async function maybeSendAiReply(threadId, senderUserId, io) {
 // or a direct 1:1 pair, or creates one — the frontend's various chat
 // entry points (order chat, live-shopping chat, vendor messages, generic
 // support chat) all resolve to "get or create the thread for X".
-// Conversations tied to a live order/booking/Shop-For-Me session are one
-// continuous conversation for as long as that order exists. They used to
-// be "ended" by the header's End button (easily tapped to just close the
-// window) or a 3-minute idle timer -- after which the next Chat tap opened
-// a brand-new empty thread and the other person's messages were stranded
-// in the old one, so chat looked broken in every direction. These are
-// never treated as ended: opening, reading or sending into one reopens it.
+// Conversations tied to an order/booking/Shop-For-Me session keep ONE
+// thread per order. Ending a chat (End button / idle) still ends it, but
+// tapping Chat again later continues that same thread -- reopened, with its
+// history -- instead of starting a brand-new empty one while the other
+// person's messages sit stranded in the old thread (which made chat look
+// broken in every direction).
 const PERSISTENT_CONTEXTS = ["ORDER", "BOOKING", "SHOP_SESSION"];
 async function reopenIfPersistent(thread) {
   if (thread && thread.closedAt && PERSISTENT_CONTEXTS.includes(thread.contextType)) {
@@ -202,7 +201,6 @@ async function listMessages(req, res, next) {
       prisma.chatThread.findUnique({ where: { id: req.params.id } }),
       prisma.chatMessage.findMany({ where: { threadId: req.params.id }, orderBy: { createdAt: "asc" }, take: 200 }),
     ]);
-    await reopenIfPersistent(thread);
     await prisma.chatParticipant.update({
       where: { threadId_userId: { threadId: req.params.id, userId: req.user.id } },
       data: { lastReadAt: new Date() },
@@ -217,7 +215,6 @@ async function sendMessage(req, res, next) {
   try {
     await assertParticipant(req.params.id, req.user.id);
     const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id }, select: { id: true, closedAt: true, contextType: true } });
-    await reopenIfPersistent(thread);
     if (thread?.closedAt) return res.status(409).json({ error: "This chat has ended." });
     const { body, attachmentUrl } = req.body;
     if ((!body || !body.trim()) && !attachmentUrl) return res.status(400).json({ error: "Message body or attachment is required." });
@@ -279,9 +276,6 @@ async function closeThread(req, res, next) {
     const thread = await prisma.chatThread.findUnique({ where: { id: req.params.id } });
     if (!thread) return res.status(404).json({ error: "Thread not found." });
     if (thread.closedAt) return res.json({ thread });
-    // Order conversations can't be ended (see PERSISTENT_CONTEXTS) -- a
-    // close just leaves the thread as is for both sides.
-    if (PERSISTENT_CONTEXTS.includes(thread.contextType)) return res.json({ thread });
     const updated = await prisma.chatThread.update({
       where: { id: req.params.id },
       data: { closedAt: new Date(), closedBy: req.user.id },

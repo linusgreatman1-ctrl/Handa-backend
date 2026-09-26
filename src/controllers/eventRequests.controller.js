@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { attachRequestOrders } = require("../utils/requestOrders");
 const { notify, notifyAllEventPlanners } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
@@ -74,11 +75,12 @@ async function listEventRequests(req, res, next) {
           // The calling vendor's own proposal on this request, if any --
           // lets the frontend show "Proposal Submitted" instead of
           // re-offering "Submit Proposal" on a request they already bid on.
-          proposals: { where: { vendorId: req.user.vendorProfile.id }, select: { id: true, status: true } },
+          proposals: { where: { vendorId: req.user.vendorProfile.id }, select: { id: true, status: true, bookingId: true } },
         },
         orderBy: { createdAt: "desc" },
         take: 100,
       });
+      await attachRequestOrders(requests);
       return res.json({ requests });
     }
 
@@ -88,9 +90,13 @@ async function listEventRequests(req, res, next) {
       // one is no longer anything the customer needs to see or act on, so
       // it shouldn't inflate "N Proposal(s) Received" or make the card
       // look like there's something new to look at.
-      include: { _count: { select: { proposals: { where: { status: { notIn: ["DECLINED", "WITHDRAWN"] } } } } } },
+      include: {
+        _count: { select: { proposals: { where: { status: { notIn: ["DECLINED", "WITHDRAWN"] } } } } },
+        proposals: { where: { status: "ACCEPTED" }, select: { bookingId: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
+    await attachRequestOrders(requests);
     res.json({ requests });
   } catch (err) {
     next(err);

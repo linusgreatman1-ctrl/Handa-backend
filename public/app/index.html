@@ -2023,6 +2023,27 @@ async function submitEventRequest(){
   }
 }
 
+// The real state of a posted Event/Catering/Cake request, for the
+// customer's "My Requests" cards: an OPEN request keeps its proposal
+// readings; a cancelled one says so; an accepted one follows the order it
+// became (r.order, attached by the server -- utils/requestOrders.js) --
+// payment pending, in progress, completed or cancelled -- instead of
+// reading "waiting for your feedback" forever. null = keep the OPEN logic.
+function _customerRequestState(r,kind){
+  var noun=kind==='cake'?'Order':'Booking';
+  if(r.status==='CANCELLED')return {text:'You cancelled this request',color:'#9A9390',btn:'See My Request',action:null};
+  if(r.status!=='PROPOSAL_ACCEPTED')return null;
+  var o=r.order;
+  var view=o?("closeMy"+(kind==='cake'?'Cake':(kind==='catering'?'Catering':'Event'))+"RequestsModal();openCustomerHistoryDetail('booking','"+o.id+"')"):null;
+  var st=o&&o.status;
+  var text,color;
+  if(!o||st==='REQUESTED'){text='Proposal accepted — complete your payment';color='#F5A623';}
+  else if(st==='COMPLETED'){text=noun+' completed ✓';color='#2ECC71';}
+  else if(st==='CANCELLED'){text=noun+' cancelled';color='#9A9390';}
+  else if(st==='DECLINED'){text=noun+' declined';color='#9A9390';}
+  else{text=kind==='cake'?'Your order is in progress':'Your booking is confirmed';color='#2ECC71';}
+  return {text:text,color:color,btn:'View '+noun,action:view};
+}
 async function openMyEventRequestsModal(){
   var html = '<div id="my-requests-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
     + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:460px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
@@ -2068,9 +2089,11 @@ async function loadMyEventRequestsList(){
       // seen, now just waiting on the customer to actually decide.
       var writeupText=!hasProposals?'Waiting For Proposals':(isFreshProposal?(r._count.proposals+' Proposal'+(r._count.proposals===1?'':'s')+' Received'):'Vendors are waiting for your feedback');
       var writeupColor=(hasProposals&&isFreshProposal)?'#2ECC71':'#9A9390';
+      var _rs=_customerRequestState(r,'event');
+      if(_rs){writeupText=_rs.text;writeupColor=_rs.color;btnLabel=_rs.btn;isFreshProposal=false;}
       var openBtn=isFreshProposal
         ? '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>'
-        : '<button onclick="event.stopPropagation();openEventRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
+        : '<button onclick="event.stopPropagation();'+((_rs&&_rs.action)?_rs.action:'openEventRequestDetailModal(\''+r.id+'\')')+'" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
       return '<div onclick="openEventRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
@@ -2179,6 +2202,10 @@ async function openEventRequestDetailModal(id){
       ?'Waiting For Proposals'
       :(wasAlreadySeen?'Vendors are waiting for your feedback':(activeProposals.length+' Proposal'+(activeProposals.length===1?'':'s')+' Received'));
     var proposalsWriteupColor=(activeProposals.length&&!wasAlreadySeen)?'#2ECC71':'#9A9390';
+    // A finished request says what actually happened instead of "waiting
+    // for your feedback" forever.
+    if(r.status==='CANCELLED'){proposalsWriteup='You cancelled this request';proposalsWriteupColor='#9A9390';}
+    else if(r.status==='PROPOSAL_ACCEPTED'){proposalsWriteup='You accepted a proposal';proposalsWriteupColor='#2ECC71';}
     var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Proposals</div>'
       +'<div style="font-size:13px;color:'+proposalsWriteupColor+';font-weight:700;margin-bottom:8px;">'+proposalsWriteup+'</div>';
     if(!activeProposals.length){
@@ -2512,9 +2539,11 @@ async function loadMyCateringRequestsList(){
       var btnLabel=!hasProposals?'See My Request':(isFreshProposal?'Open Proposal':'View Proposal');
       var writeupText=!hasProposals?'Waiting For Proposals':(isFreshProposal?(r._count.proposals+' Proposal'+(r._count.proposals===1?'':'s')+' Received'):'Caterers are waiting for your feedback');
       var writeupColor=(hasProposals&&isFreshProposal)?'#2ECC71':'#9A9390';
+      var _rs=_customerRequestState(r,'catering');
+      if(_rs){writeupText=_rs.text;writeupColor=_rs.color;btnLabel=_rs.btn;isFreshProposal=false;}
       var openBtn=isFreshProposal
         ? '<button onclick="event.stopPropagation();openCateringRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>'
-        : '<button onclick="event.stopPropagation();openCateringRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
+        : '<button onclick="event.stopPropagation();'+((_rs&&_rs.action)?_rs.action:'openCateringRequestDetailModal(\''+r.id+'\')')+'" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
       return '<div onclick="openCateringRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.eventType+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
@@ -2580,6 +2609,10 @@ async function openCateringRequestDetailModal(id){
       ?'Waiting For Proposals'
       :(wasAlreadySeen?'Caterers are waiting for your feedback':(activeProposals.length+' Proposal'+(activeProposals.length===1?'':'s')+' Received'));
     var proposalsWriteupColor=(activeProposals.length&&!wasAlreadySeen)?'#2ECC71':'#9A9390';
+    // A finished request says what actually happened instead of "waiting
+    // for your feedback" forever.
+    if(r.status==='CANCELLED'){proposalsWriteup='You cancelled this request';proposalsWriteupColor='#9A9390';}
+    else if(r.status==='PROPOSAL_ACCEPTED'){proposalsWriteup='You accepted a proposal';proposalsWriteupColor='#2ECC71';}
     var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Proposals</div>'
       +'<div style="font-size:13px;color:'+proposalsWriteupColor+';font-weight:700;margin-bottom:8px;">'+proposalsWriteup+'</div>';
     if(!activeProposals.length){
@@ -2838,9 +2871,11 @@ async function loadMyCakeRequestsList(){
       var btnLabel=!hasProposals?'See My Request':(isFreshProposal?'Open Proposal':'View Proposal');
       var writeupText=!hasProposals?'Waiting For Proposals':(isFreshProposal?(r._count.proposals+' Proposal'+(r._count.proposals===1?'':'s')+' Received'):'Bakers are waiting for your feedback');
       var writeupColor=(hasProposals&&isFreshProposal)?'#2ECC71':'#9A9390';
+      var _rs=_customerRequestState(r,'cake');
+      if(_rs){writeupText=_rs.text;writeupColor=_rs.color;btnLabel=_rs.btn;isFreshProposal=false;}
       var openBtn=isFreshProposal
         ? '<button onclick="event.stopPropagation();openCakeRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>'
-        : '<button onclick="event.stopPropagation();openCakeRequestDetailModal(\''+r.id+'\')" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
+        : '<button onclick="event.stopPropagation();'+((_rs&&_rs.action)?_rs.action:'openCakeRequestDetailModal(\''+r.id+'\')')+'" style="margin-top:8px;width:100%;padding:8px;border-radius:9px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif;">'+btnLabel+'</button>';
       return '<div onclick="openCakeRequestDetailModal(\''+r.id+'\')" style="background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:14px;">'+r.occasion+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+r.status.replace('_',' ')+'</span></div>'
         + '<div style="font-size:12px;color:#9A9390;">📅 Needed by '+new Date(r.neededByDate).toLocaleDateString()+'</div>'
@@ -2906,6 +2941,10 @@ async function openCakeRequestDetailModal(id){
       ?'Waiting For Proposals'
       :(wasAlreadySeen?'Bakers are waiting for your feedback':(activeProposals.length+' Proposal'+(activeProposals.length===1?'':'s')+' Received'));
     var proposalsWriteupColor=(activeProposals.length&&!wasAlreadySeen)?'#2ECC71':'#9A9390';
+    // A finished request says what actually happened instead of "waiting
+    // for your feedback" forever.
+    if(r.status==='CANCELLED'){proposalsWriteup='You cancelled this request';proposalsWriteupColor='#9A9390';}
+    else if(r.status==='PROPOSAL_ACCEPTED'){proposalsWriteup='You accepted a proposal';proposalsWriteupColor='#2ECC71';}
     var proposalsHtml='<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Proposals</div>'
       +'<div style="font-size:13px;color:'+proposalsWriteupColor+';font-weight:700;margin-bottom:8px;">'+proposalsWriteup+'</div>';
     if(!activeProposals.length){
@@ -2926,7 +2965,7 @@ async function openCakeRequestDetailModal(id){
             +'<button onclick="declineCakeProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid rgba(232,57,46,.4);background:transparent;color:#E8392E;font-weight:700;font-size:12px;cursor:pointer;">✕ Decline</button>'
             +'</div>'
           ):(p.status==='ACCEPTED'&&p.bookingId?(
-            '<button onclick="closeCakeDetailModal();closeMyCakeRequestsModal();openCustomerHistoryDetail(\'booking\',\''+p.bookingId+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">📋 View Booking</button>'
+            '<button onclick="closeCakeDetailModal();closeMyCakeRequestsModal();openCustomerHistoryDetail(\'booking\',\''+p.bookingId+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:12px;cursor:pointer;">📋 View Order</button>'
           ):''))
           + '</div>';
       }).join('');
@@ -3117,10 +3156,8 @@ async function openAllCakeRequestsModal(){
     var stateLabels={PENDING:'⏳ Waiting for customer feedback',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
     list.innerHTML=res.requests.map(function(r){
       var mine=r.proposals&&r.proposals[0];
-      var badgeTxt,badgeCol;
-      if(r.status==='CANCELLED'){badgeTxt='Cancelled by customer';badgeCol='#9A9390';}
-      else if(!mine){badgeTxt='Open — not proposed yet';badgeCol='#3B9FE8';}
-      else{badgeTxt=stateLabels[mine.status]||mine.status;badgeCol=stateColors[mine.status]||'#9A9390';}
+      var _vb=_vendorRequestBadge(r,'cake');
+      var badgeTxt=_vb.text,badgeCol=_vb.color;
       var n=r._count&&r._count.proposals||0;
       return '<div onclick="closeProcedureModal();openCakeRequestForVendor(\''+r.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(mine&&mine.status==='ACCEPTED'?'rgba(46,204,113,.4)':'#2A2850')+';border-radius:13px;padding:12px 14px;margin-bottom:10px;cursor:pointer;">'
         +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;">'
@@ -4267,13 +4304,7 @@ async function openChatByThreadId(threadId,title,avatarEm){
     msgsEl.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:12px">'+(err.message||'Could not load chat')+'</div>';
   }
 }
-// Order/booking/Shop-For-Me conversations stay open for the whole order
-// (chat.controller.js PERSISTENT_CONTEXTS) -- no End button and no idle
-// auto-end for them; leaving the window (← back) never ends anything.
-function _isPersistentChat(){ return ['ORDER','BOOKING','SHOP_SESSION'].indexOf(window._activeChatContextType)>=0; }
 function _setChatComposerClosed(closed){
-  var endBtn=document.getElementById('chat-end-btn');
-  if(endBtn)endBtn.style.display=_isPersistentChat()?'none':'';
   var inp=document.getElementById('chat-inp');
   if(!inp)return;
   inp.disabled=!!closed;
@@ -4296,7 +4327,6 @@ function startChatIdleWatch(){
   // openChat/openSupportChat/openChatByThreadId opened the currently
   // active thread, straight from the real ChatThread.contextType.
   if(window._activeChatContextType==='SUPPORT'||window._activeChatContextType==='DISPUTE')return;
-  if(_isPersistentChat())return; // order conversations never auto-end
   chatBumpActivity();
   window._chatIdleIv=setInterval(function(){
     if(!window._activeChatThreadId)return;
@@ -9390,6 +9420,26 @@ function vendorTrackRider(orderId){toast('Tracking rider for '+orderId);showVend
 // Full history of every event request this planner has ever seen — every
 // currently-open one plus every one they've ever proposed on, regardless of
 // outcome (accepted/not-selected/declined/waiting), badged by outcome.
+// The vendor's reading of a request they may have proposed on, following
+// the real outcome: the customer's own cancellation, not being selected,
+// or -- once won -- the order it became (r.order, attached server-side).
+function _vendorRequestBadge(r,kind){
+  var noun=kind==='cake'?'order':'booking';
+  var mine=r.proposals&&r.proposals[0];
+  if(!mine)return r.status==='OPEN'?{text:'Open — not proposed yet',color:'#3B9FE8'}:(r.status==='CANCELLED'?{text:'Cancelled by customer',color:'#9A9390'}:{text:'Closed',color:'#9A9390'});
+  if(mine.status==='ACCEPTED'){
+    var st=r.order&&r.order.status;
+    if(!st||st==='REQUESTED')return {text:'✓ You got the '+noun+' — awaiting payment',color:'#F5A623'};
+    if(st==='COMPLETED')return {text:'✓ '+(kind==='cake'?'Order':'Booking')+' completed',color:'#2ECC71'};
+    if(st==='CANCELLED')return {text:(kind==='cake'?'Order':'Booking')+' cancelled',color:'#9A9390'};
+    if(st==='DECLINED')return {text:(kind==='cake'?'Order':'Booking')+' declined',color:'#9A9390'};
+    return {text:'✓ You got the '+noun+' — in progress',color:'#2ECC71'};
+  }
+  if(r.status==='CANCELLED')return {text:'Cancelled by customer',color:'#9A9390'};
+  if(mine.status==='DECLINED'||(mine.status==='PENDING'&&r.status==='PROPOSAL_ACCEPTED'))return {text:'Not selected',color:'#9A9390'};
+  if(mine.status==='WITHDRAWN')return {text:'Withdrawn',color:'#9A9390'};
+  return {text:'⏳ Waiting for customer feedback',color:'#F5A623'};
+}
 async function openAllEventRequestsModal(){
   showProcedureModal('<div style="padding:0 0 10px;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">📢 Event Requests</div></div><div id="all-evreq-list"><div style="text-align:center;padding:20px;color:#9A9390;">Loading…</div></div></div>');
   var list=document.getElementById('all-evreq-list');
@@ -9400,9 +9450,8 @@ async function openAllEventRequestsModal(){
     var stateLabels={PENDING:'⏳ Waiting for customer feedback',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
     list.innerHTML=res.requests.map(function(r){
       var mine=r.proposals&&r.proposals[0];
-      var badge=!mine
-        ? '<span style="color:#3B9FE8;font-weight:700;font-size:11px;">Open — Not Proposed Yet</span>'
-        : '<span style="color:'+(stateColors[mine.status]||'#9A9390')+';font-weight:700;font-size:11px;">'+(stateLabels[mine.status]||mine.status)+'</span>';
+      var _vb=_vendorRequestBadge(r,'event');
+      var badge='<span style="color:'+_vb.color+';font-weight:700;font-size:11px;text-align:right;">'+_vb.text+'</span>';
       return '<div onclick="closeProcedureModal();openEventRequestForVendor(\''+r.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         +'<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:13px;">'+r.eventType+'</b>'+badge+'</div>'
         +'<div style="font-size:11px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
@@ -9453,9 +9502,8 @@ async function openAllCateringRequestsModal(){
     var stateLabels={PENDING:'⏳ Waiting for customer feedback',ACCEPTED:'✓ Proposal Accepted',DECLINED:'Not Selected',WITHDRAWN:'Withdrawn'};
     list.innerHTML=res.requests.map(function(r){
       var mine=r.proposals&&r.proposals[0];
-      var badge=!mine
-        ? '<span style="color:#3B9FE8;font-weight:700;font-size:11px;">Open — Not Proposed Yet</span>'
-        : '<span style="color:'+(stateColors[mine.status]||'#9A9390')+';font-weight:700;font-size:11px;">'+(stateLabels[mine.status]||mine.status)+'</span>';
+      var _vb=_vendorRequestBadge(r,'catering');
+      var badge='<span style="color:'+_vb.color+';font-weight:700;font-size:11px;text-align:right;">'+_vb.text+'</span>';
       return '<div onclick="closeProcedureModal();openCateringRequestForVendor(\''+r.id+'\')" style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:12px 14px;margin-bottom:9px;cursor:pointer;">'
         +'<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#F2EDE8;font-size:13px;">'+r.eventType+'</b>'+badge+'</div>'
         +'<div style="font-size:11px;color:#9A9390;">📍 '+r.venue+' • 📅 '+new Date(r.eventDate).toLocaleDateString()+'</div>'
