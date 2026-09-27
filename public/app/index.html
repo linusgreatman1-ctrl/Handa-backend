@@ -16387,15 +16387,6 @@ function cookBkRender(phase){
         ):'')
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">'+(isCakeVendor?'Notes (optional)':'Special Requests (optional)')+'</label>'
         +'<textarea id="cb-notes" class="if" rows="3" placeholder="'+(isCakeVendor?'Any notes for the baker, e.g. inscription or delivery instructions...':'Any special instructions, dietary needs or preferences...')+'" style="margin-bottom:20px;width:100%;display:block"></textarea>'
-        // Catering: how the customer's money is protected, before they pay.
-        +(isCateringVendor?'<div style="background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.25);border-radius:12px;padding:12px 14px;margin-bottom:16px;">'
-          +'<div style="font-size:13px;font-weight:800;color:#F5A623;margin-bottom:8px;">🔒 How Your Payment Is Protected (Escrow)</div>'
-          +'<div style="font-size:12px;color:#9A9390;line-height:1.7;">'
-          +'1. Your payment goes into a secure Handa escrow account — <strong style="color:#F2EDE8">not</strong> to the caterer.<br>'
-          +'2. The caterer cannot withdraw or touch it until <strong style="color:#F2EDE8">you</strong> release it.<br>'
-          +'3. You can chat with the caterer and release the money in parts as the job progresses, or all at once when your event is done.<br>'
-          +'4. If something goes wrong, report it — your money stays locked while Handa looks into it, with a refund if you are right.'
-          +'</div></div>':'')
         +'<button id="cb-confirm-btn" onclick="cookBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:'+(isCakeVendor?'#E91E8C':'#9B59B6')+';color:#fff;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm &amp; Pay</button>'
       +'</div>';
 
@@ -16912,6 +16903,9 @@ async function cookBkConfirmBooking(){
       window._openBookingConfirmedOverlayId=res.booking.id;
       bindBookingLiveUpdateListener();
       if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
+    }, res.booking, function(){
+      // Escrow sheet cancelled: put the button back so the customer can try again.
+      if(cbBtn){cbBtn.disabled=false;cbBtn.style.opacity='1';cbBtn.style.cursor='pointer';cbBtn.innerHTML='&#x2705; Confirm &amp; Pay';}
     });
   }catch(err){
     _cb._submitting=false;
@@ -17423,6 +17417,9 @@ async function epBkConfirmBooking(){
       window._openBookingConfirmedOverlayId=res.booking.id;
       bindBookingLiveUpdateListener();
       if(_socket)_socket.emit('booking:join',{bookingId:res.booking.id});
+    }, res.booking, function(){
+      // Escrow sheet cancelled: put the button back so the customer can try again.
+      if(epbBtn){epbBtn.disabled=false;epbBtn.style.opacity='1';epbBtn.style.cursor='pointer';epbBtn.innerHTML='&#x2705; Confirm Booking';}
     });
   }catch(err){
     _epb._submitting=false;
@@ -17662,7 +17659,7 @@ function _cakeEscrowBreakdown(b){
     ['Note: Both stay locked in escrow and are only released once your cake is delivered and you complete the order.', null],
   ];
 }
-async function payForBooking(bookingId, totalKobo, onSuccess, booking){
+async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel){
   var breakdown=null;
   try{
     if(!booking)booking=(await api('/bookings/'+bookingId)).booking;
@@ -17723,6 +17720,7 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking){
         if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
       })
       .catch(function(){});
+    if(onCancel)onCancel();
   });
 }
 function filterEHistory(btn,cat){
