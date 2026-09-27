@@ -1397,6 +1397,7 @@ function connectSocket(){
         }
       }).catch(function(){});
     }
+    if(window._openBookingDetailId&&!document.getElementById('sfm-bottom-sheet')){window._openBookingDetailId=null;window._openBookingDetailViewer=null;}
     if(window._openBookingDetailId){
       if(window._openBookingDetailViewer==='vendor'&&typeof openVendorBookingDetail==='function')openVendorBookingDetail(window._openBookingDetailId);
       else if(window._openBookingDetailViewer==='customer'&&typeof openCustomerHistoryDetail==='function')openCustomerHistoryDetail('booking',window._openBookingDetailId);
@@ -3694,6 +3695,10 @@ function logout(){
   if(_socket){_socket.disconnect();_socket=null;}
   S.user=null;S.myAddr='';S.cart=[];
   S.role='customer';_eRole='customer';
+  // Nothing the previous account had open may reopen for the next one.
+  if(typeof closeBottomSheet==='function')closeBottomSheet();
+  window._openBookingConfirmedOverlayId=null;window._openEventRequestId=null;window._openCateringRequestId=null;window._openCakeRequestId=null;
+  var _vbp=document.getElementById('vendor-bk-popups');if(_vbp)_vbp.remove();
   try{sessionStorage.removeItem('handa_active_role');}catch(e){}
   document.getElementById('bnav').style.display='none';
   // The mandatory KYC modal (and its ID-type-picker follow-on) are appended
@@ -11462,7 +11467,7 @@ function showBottomSheet(title,content,restoreScrollTop){
   inner.insertAdjacentHTML('beforeend',content);
   el.appendChild(inner);
   document.body.appendChild(el);
-  el.onclick=function(ev){if(ev.target===el)el.remove();};
+  el.onclick=function(ev){if(ev.target===el)closeBottomSheet();};
   if(typeof restoreScrollTop==='number'&&restoreScrollTop>0)inner.scrollTop=restoreScrollTop;
 }
 function closeBottomSheet(){
@@ -14198,7 +14203,7 @@ function bindBookingLiveUpdateListener(){
   _socket._bookingLiveBound=true;
   _socket.on('booking:updated',function(p){
     if(!p||!p.bookingId)return;
-    if(window._openBookingDetailId===p.bookingId){
+    if(window._openBookingDetailId===p.bookingId&&document.getElementById('sfm-bottom-sheet')){
       if(window._openBookingDetailViewer==='vendor')openVendorBookingDetail(p.bookingId);
       else if(window._openBookingDetailViewer==='customer')openCustomerHistoryDetail('booking',p.bookingId);
     }
