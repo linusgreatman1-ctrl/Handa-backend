@@ -3443,7 +3443,7 @@ async function loadRealCatalog(){
       return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
     var newCooks = byType.HOME_COOK.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), rateMax:Math.round((v.maxRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags.length?v.tags.join(' · '):'Home cooking'), rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), rateMax:Math.round((v.maxRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         // Real menu items (id = actual backend MenuItem id) — cookBkRender's
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
@@ -3947,15 +3947,41 @@ function autoSuggestFoodEmoji(name){
   if(guess)el.value=guess;
 }
 var VENDOR_CUISINE_TAGS=['Nigerian','Continental','Pastry','Vegetarian'];
+// Speciality tick boxes per vendor type -- the same choices at registration,
+// in Edit Profile and on the profile's Specialities row. Customers find
+// vendors under these (cook cuisine buttons, cake categories).
+var SPECIALITY_OPTIONS={
+  cook:VENDOR_CUISINE_TAGS,
+  catering:['Nigerian','Continental','Small Chops','Grills','Buffet','Desserts'],
+  cake:['Birthday','Wedding','Anniversary','Cupcakes','Custom'],
+  event_planner:['Weddings','Corporate Events','Birthdays','Naming Ceremonies','Burials','Anniversaries']
+};
+function _specKey(vtype){return vtype==='home_cook'||vtype==='cook'||!vtype?'cook':vtype;}
+function _specOptions(vtype){return SPECIALITY_OPTIONS[_specKey(vtype)]||VENDOR_CUISINE_TAGS;}
+// Tick boxes (class cbClass) plus an "Other" text box (otherId), pre-ticked
+// from the vendor's current tags.
+function _specTicksHtml(vtype,cbClass,otherId,current){
+  var opts=_specOptions(vtype);current=current||[];
+  var has=function(t){return current.some(function(x){return String(x).toLowerCase().indexOf(t.toLowerCase())>=0;});};
+  var others=current.filter(function(x){return !opts.some(function(t){return String(x).toLowerCase().indexOf(t.toLowerCase())>=0;});});
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'+opts.map(function(t){return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1.5px solid #2A2850;border-radius:9px;padding:7px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="'+cbClass+'" value="'+t+'"'+(has(t)?' checked':'')+' style="margin:0;">'+t+'</label>';}).join('')+'</div>'
+    +'<input id="'+otherId+'" autocomplete="off" value="'+others.join(', ').replace(/"/g,'&quot;')+'" placeholder="Other, comma-separated (optional)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;margin-bottom:12px;">';
+}
+function _readSpecTicks(cbClass,otherId){
+  var out=[].slice.call(document.querySelectorAll('.'+cbClass+':checked')).map(function(c){return c.value;});
+  ((document.getElementById(otherId)||{}).value||'').split(',').map(function(t){return t.trim();}).filter(Boolean).forEach(function(t){if(out.indexOf(t)<0)out.push(t);});
+  return out;
+}
 function openEditVendorTagsModal(){
   var cur=(S.user&&S.user.tags)||[];
+  var VENDOR_CUISINE_TAGS=_specOptions(S.user&&S.user.vtype); // this vendor type's own choices
   var customTags=cur.filter(function(t){return VENDOR_CUISINE_TAGS.indexOf(t)===-1;});
   showProcedureModal(
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
-    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Cuisine Specialities</div></div>'
-    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Customers filter home cooks by these — pick everything that fits your menu.</p>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+((S.vtype==='catering'||S.vtype==='cake'||S.vtype==='event_planner')?'Specialities':'Cuisine Specialities')+'</div></div>'
+    +'<p style="color:#9A9390;font-size:12px;margin-bottom:14px;">Customers find you under these — tick everything that fits.</p>'
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">'
     +VENDOR_CUISINE_TAGS.map(function(t){
       var checked=cur.indexOf(t)>-1;
@@ -10219,7 +10245,7 @@ function renderVendorProfile(){
         +'</div>';}).join('')
     +'<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+((u.tags||[]).length?'8px':'0')+';">'
-    +'<div style="font-size:10px;color:#9A9390;">Cuisine Specialities</div>'
+    +'<div style="font-size:10px;color:#9A9390;">'+((S.vtype==='catering'||S.vtype==='cake'||S.vtype==='event_planner')?'Specialities':'Cuisine Specialities')+'</div>'
     +'<button onclick="openEditVendorTagsModal()" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
     +'</div>'
     +((u.tags||[]).length?'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+(u.tags||[]).map(function(t){return '<span style="background:#242424;border:1px solid #2A2850;border-radius:20px;padding:4px 10px;font-size:11px;color:#F2EDE8;">'+t+'</span>';}).join('')+'</div>':'<div style="font-weight:700;font-size:13px;color:#9A9390;">Not set — customers filter by this</div>')
@@ -12182,13 +12208,9 @@ async function openEditProfileModal(role){
   if(role==='vendor'){
     html+=f('Business Name','epf-bizname',u.bizName,'text','Business name')
       +f('Description','epf-desc',u.vendorDescription,'text','What you offer');
+    // Specialities (every vendor type) -- customers find you under these.
+    html+='<div style="margin-bottom:4px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">'+(u.vtype==='home_cook'?'Cooking Speciality':'Speciality')+' (customers find you under these)</label>'+_specTicksHtml(u.vtype,'epf-tag','epf-tag-other',u.tags||[])+'</div>';
     if(u.vtype==='home_cook'){
-      var curTags=u.tags||[];
-      var otherTags=curTags.filter(function(t){return VENDOR_CUISINE_TAGS.indexOf(t)===-1;});
-      html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Cooking Speciality (customers find you under these)</label>'
-        +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'+VENDOR_CUISINE_TAGS.map(function(t){var on=curTags.some(function(x){return String(x).toLowerCase().indexOf(t.toLowerCase())>=0;});return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1.5px solid #2A2850;border-radius:9px;padding:7px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="epf-tag" value="'+t+'"'+(on?' checked':'')+' style="margin:0;">'+t+'</label>';}).join('')+'</div>'
-        +'<input id="epf-tag-other" value="'+otherTags.filter(function(x){return !VENDOR_CUISINE_TAGS.some(function(t){return String(x).toLowerCase().indexOf(t.toLowerCase())>=0;});}).join(', ').replace(/"/g,'&quot;')+'" placeholder="Other, e.g. Swallow, Seafood (comma-separated)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'
-        +'</div>';
       html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Price per Cooking Session (₦) — a range, depending on the food</label>'
         +'<div style="display:flex;gap:8px;align-items:center;">'
         +'<input id="epf-rate-min" type="number" value="'+(u.rateMin||'')+'" placeholder="From e.g. 4000" style="flex:1;min-width:0;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'
@@ -12255,10 +12277,8 @@ async function saveEditProfile(role){
         var rMin=parseFloat(val('epf-rate-min')||'0'),rMax=parseFloat(val('epf-rate-max')||'0');
         if(rMin>0&&rMax>0&&rMax<rMin)throw new Error('The first price must be lower than the second');
         vBody.hourlyRateKobo=rMin>0?Math.round(rMin*100):null;vBody.maxRateKobo=rMax>0?Math.round(rMax*100):null;vBody.ratePeriod='per session';
-        var pickedTags=[].slice.call(document.querySelectorAll('.epf-tag:checked')).map(function(c){return c.value;});
-        (val('epf-tag-other')||'').split(',').map(function(t){return t.trim();}).filter(Boolean).forEach(function(t){if(pickedTags.indexOf(t)<0)pickedTags.push(t);});
-        vBody.tags=pickedTags;
       }
+      if(document.querySelector('.epf-tag'))vBody.tags=_readSpecTicks('epf-tag','epf-tag-other');
       var vRes=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify(vBody)});
       if(vRes.vendorProfile){S.user.bizName=vRes.vendorProfile.bizName;S.user.vendorDescription=vRes.vendorProfile.description||'';S.user.tags=vRes.vendorProfile.tags||S.user.tags;S.user.rateMin=vRes.vendorProfile.hourlyRateKobo?Math.round(vRes.vendorProfile.hourlyRateKobo/100):'';S.user.rateMax=vRes.vendorProfile.maxRateKobo?Math.round(vRes.vendorProfile.maxRateKobo/100):'';}
     }else if(role==='rider'){
@@ -13497,10 +13517,7 @@ async function doRegister(){
     var regBio=((document.getElementById('r-bio')||{}).value||'').trim();
     if(_eRole==='cook'){
       fd.append('role','VENDOR');fd.append('vtype','HOME_COOK');fd.append('bizName',nm.trim());
-      var cookSp=((document.getElementById('r-sp')||{}).value||'').trim();
-      // Each speciality typed (comma-separated) is its own tag, so the cook
-      // shows under every matching cuisine button.
-      if(cookSp)cookSp.split(',').map(function(t){return t.trim();}).filter(Boolean).forEach(function(t){fd.append('tags',t);});
+      _readSpecTicks('r-sp-cb','r-sp-other').forEach(function(t){fd.append('tags',t);});
       if(regBio)fd.append('description',regBio);
       var cookRate=parseFloat((document.getElementById('r-rate')||{}).value);
       var cookRateMax=parseFloat((document.getElementById('r-rate-max')||{}).value);
@@ -13510,8 +13527,7 @@ async function doRegister(){
     }
     else if(_eRole==='catering'){
       fd.append('role','VENDOR');fd.append('vtype','CATERING');fd.append('bizName',((document.getElementById('r-bizname')||{}).value||nm).trim());
-      var catSp=((document.getElementById('r-sp')||{}).value||'').trim();
-      if(catSp)fd.append('tags',catSp);
+      _readSpecTicks('r-sp-cb','r-sp-other').forEach(function(t){fd.append('tags',t);});
       if(regBio)fd.append('description',regBio);
       // "Starting Price per Head" -- previously collected but never sent
       // (matched a pre-existing gap in Home Cook's own Rate field). Now
@@ -13523,8 +13539,7 @@ async function doRegister(){
     }
     else if(_eRole==='cake'){
       fd.append('role','VENDOR');fd.append('vtype','CAKE');fd.append('bizName',((document.getElementById('r-bizname')||{}).value||nm).trim());
-      var cakeSp=((document.getElementById('r-sp')||{}).value||'').trim();
-      if(cakeSp)fd.append('tags',cakeSp);
+      _readSpecTicks('r-sp-cb','r-sp-other').forEach(function(t){fd.append('tags',t);});
       if(regBio)fd.append('description',regBio);
       var cakeRate=parseFloat((document.getElementById('r-rate')||{}).value);
       if(cakeRate>0){fd.append('hourlyRateKobo',String(Math.round(cakeRate*100)));fd.append('ratePeriod','starting price');}
@@ -13536,8 +13551,7 @@ async function doRegister(){
       // it -- whatever the planner actually typed there was silently
       // discarded and every EP's bizName was just their personal name.
       fd.append('bizName',((document.getElementById('r-bizname')||{}).value||nm).trim());
-      var evType=((document.getElementById('r-evtype')||{}).value||'').trim();
-      if(evType)fd.append('tags',evType);
+      _readSpecTicks('r-sp-cb','r-sp-other').forEach(function(t){fd.append('tags',t);});
       if(regBio)fd.append('description',regBio);
     }
     else if(_eRole==='rider'){fd.append('role','RIDER');}
@@ -17686,10 +17700,10 @@ function buildRegForm(){
   var switchRow='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">'+roleSwitchBar+'</div>';
   var h='';
   if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+stateLGA;}
-  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+'<label class="il">Price per Cooking Session (&#x20a6;) — a range, depending on the food</label>'+'<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;"><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate" type="number" placeholder="From e.g. 4000"></div><span style="color:#9A9390;">–</span><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate-max" type="number" placeholder="To e.g. 10000"></div></div>'+ta('Short Bio','r-bio','Describe your cooking experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
-  else if(role==='catering'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Elite Gourmet Catering','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Catering Speciality','&#x1F372;','r-sp','e.g. Continental, Small Chops, Grills','')+fld('Starting Price per Head (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 8000','number')+ta('Short Bio','r-bio','Describe your catering experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
-  else if(role==='cake'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Sweet Creations by Temi','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cake Speciality','&#x1F382;','r-sp','e.g. Birthday, Wedding, Custom Cakes','')+fld('Starting Price (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cake-making experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
-  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Event Speciality','r-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>')+ta('Short Bio','r-bio','Describe your event planning experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Cooking Speciality (tick all that apply)</label>'+_specTicksHtml('cook','r-sp-cb','r-sp-other',[])+'<label class="il">Price per Cooking Session (&#x20a6;) — a range, depending on the food</label>'+'<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;"><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate" type="number" placeholder="From e.g. 4000"></div><span style="color:#9A9390;">–</span><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate-max" type="number" placeholder="To e.g. 10000"></div></div>'+ta('Short Bio','r-bio','Describe your cooking experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='catering'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Elite Gourmet Catering','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Catering Speciality (tick all that apply)</label>'+_specTicksHtml('catering','r-sp-cb','r-sp-other',[])+fld('Starting Price per Head (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 8000','number')+ta('Short Bio','r-bio','Describe your catering experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='cake'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Sweet Creations by Temi','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Cake Speciality (tick all that apply)</label>'+_specTicksHtml('cake','r-sp-cb','r-sp-other',[])+fld('Starting Price (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cake-making experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Event Speciality (tick all that apply)</label>'+_specTicksHtml('event_planner','r-sp-cb','r-sp-other',[])+ta('Short Bio','r-bio','Describe your event planning experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='shopper'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Primary Market','&#x1F6D2;','r-market','e.g. Mile 12 Market, Lagos','')+ta('Short Bio','r-bio','e.g. I specialise in fresh produce at Mile 12 Market...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   var rf=document.getElementById('reg-form');if(rf)rf.innerHTML=switchRow+h;
