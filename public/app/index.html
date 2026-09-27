@@ -2249,7 +2249,7 @@ async function openEventRequestDetailModal(id){
         return '<div style="background:#242424;border:1.5px solid '+(p.status==='ACCEPTED'?'#2ECC71':'#2A2850')+';border-radius:13px;padding:14px;margin-bottom:10px;">'
           + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><b style="color:#F2EDE8;font-size:14px;">'+(p.vendor?p.vendor.bizName:'Planner')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+p.status+'</span></div>'
           + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">'+N(Math.round(p.priceKobo/100))+'</div>'
-          + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+p.servicesIncluded.join(', ')+'</div>':'')
+          + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(p.servicesIncluded)+'</div>':'')
           + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
           + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
           + (canAccept?(
@@ -2351,7 +2351,7 @@ async function openEventRequestForVendor(requestId){
         +'<div style="background:#242424;border:1.5px solid #2A2850;border-radius:13px;padding:14px;">'
         +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:8px;">Your Proposal</div>'
         +'<div style="font-weight:900;font-size:18px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(mine.priceKobo/100)).toLocaleString()+'</div>'
-        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+mine.servicesIncluded.join(', ')+'</div>':'')
+        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(mine.servicesIncluded)+'</div>':'')
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
         +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Note: '+mine.notes+'</div>':'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
@@ -2717,7 +2717,7 @@ async function openCateringRequestDetailModal(id){
         return '<div style="background:#242424;border:1.5px solid '+(p.status==='ACCEPTED'?'#2ECC71':'#2A2850')+';border-radius:13px;padding:14px;margin-bottom:10px;">'
           + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><b style="color:#F2EDE8;font-size:14px;">'+(p.vendor?p.vendor.bizName:'Caterer')+'</b><span style="background:'+sc+'26;color:'+sc+';font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;">'+p.status+'</span></div>'
           + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">'+N(Math.round(p.priceKobo/100))+'</div>'
-          + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+p.servicesIncluded.join(', ')+'</div>':'')
+          + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(p.servicesIncluded)+'</div>':'')
           + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
           + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
           + (canAccept?(
@@ -2798,7 +2798,7 @@ async function openCateringRequestForVendor(requestId){
         +'<div style="background:#242424;border:1.5px solid #2A2850;border-radius:13px;padding:14px;">'
         +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:8px;">Your Proposal</div>'
         +'<div style="font-weight:900;font-size:18px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(mine.priceKobo/100)).toLocaleString()+'</div>'
-        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Services To Render Include: '+mine.servicesIncluded.join(', ')+'</div>':'')
+        +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(mine.servicesIncluded)+'</div>':'')
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
         +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Note: '+mine.notes+'</div>':'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
