@@ -484,9 +484,9 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
     </div>
     <div id="login-form">
       <label class="il">Phone or Email</label>
-      <div class="ir"><span class="ii">✉️</span><input class="if ic" id="inp-identifier" type="text" placeholder="+234 800 000 0000 or you@example.com"></div>
+      <div class="ir"><span class="ii">✉️</span><input class="if ic" id="inp-identifier" name="username" autocomplete="username" type="text" placeholder="+234 800 000 0000 or you@example.com"></div>
       <label class="il">Password</label>
-      <div class="ir" style="margin-bottom:20px"><span class="ii">🔒</span><input class="if ic" id="inp-pass" type="password" placeholder="••••••••" style="padding-right:40px"><span onclick="togglePwVisibility('inp-pass',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:16px;cursor:pointer;user-select:none;">👁️</span></div>
+      <div class="ir" style="margin-bottom:20px"><span class="ii">🔒</span><input class="if ic" id="inp-pass" name="password" autocomplete="current-password" type="password" placeholder="••••••••" style="padding-right:40px"><span onclick="togglePwVisibility('inp-pass',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:16px;cursor:pointer;user-select:none;">👁️</span></div>
     </div>
     <div id="reg-form" style="display:none"></div>
     <button class="btn full" id="auth-btn" onclick="doAuth()" style="padding:15px;font-size:16px;margin-bottom:14px">Sign In →</button>
@@ -12116,7 +12116,7 @@ async function openEditProfileModal(role){
   }
   var f=function(label,id,val,type,ph){
     return '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">'+label+'</label>'
-      +'<input id="'+id+'" type="'+(type||'text')+'" value="'+(val||'').toString().replace(/"/g,'&quot;')+'" placeholder="'+(ph||'')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></div>';
+      +'<input id="'+id+'" autocomplete="off" type="'+(type||'text')+'" value="'+(val||'').toString().replace(/"/g,'&quot;')+'" placeholder="'+(ph||'')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></div>';
   };
   var stateSel='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">State</label>'
     +'<select id="epf-state" onchange="_epfLoadLgas()" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"><option value="">Select State</option>'
@@ -17609,7 +17609,8 @@ function buildRegForm(){
   var stateLGA='<label class="il">State</label><select class="if" id="r-state" onchange="loadLGAs(this.value)" style="margin-bottom:12px">'+stateOpts+'</select><label class="il">Local Government</label><select class="if" id="r-lga" style="margin-bottom:12px"><option value="">Select LGA\u2026</option></select>';
   var fld=function(lb,ii,id,ph,tp){
     var eye=tp==='password'?pwToggleBtn(id):'';
-    return '<label class="il">'+lb+'</label><div class="ir"><span class="ii">'+ii+'</span><input class="if ic" id="'+id+'" '+(tp?'type="'+tp+'" ':'')+' placeholder="'+ph+'"'+(eye?' style="padding-right:40px"':'')+'>'+eye+'</div>';
+    var ac={'r-name':'name','r-email':'username','r-pass':'new-password','r-phone':'tel','r-wa':'off','r-addr':'street-address','r-bizname':'organization'}[id]||'off';
+    return '<label class="il">'+lb+'</label><div class="ir"><span class="ii">'+ii+'</span><input class="if ic" id="'+id+'" name="'+id+'" autocomplete="'+ac+'" '+(tp?'type="'+tp+'" ':'')+' placeholder="'+ph+'"'+(eye?' style="padding-right:40px"':'')+'>'+eye+'</div>';
   };
   var sel=function(lb,id,opts){return '<label class="il">'+lb+'</label><select class="if" id="'+id+'" style="margin-bottom:12px">'+opts+'</select>';};
   var ta=function(lb,id,ph){return '<label class="il">'+lb+'</label><textarea class="if" id="'+id+'" rows="3" placeholder="'+ph+'" style="margin-bottom:12px"></textarea>';};
