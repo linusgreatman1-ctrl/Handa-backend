@@ -44,7 +44,7 @@ async function updateProfile(req, res, next) {
 async function updateVendorProfile(req, res, next) {
   try {
     if (!req.user.vendorProfile) return res.status(403).json({ error: "No vendor profile found." });
-    const { bizName, description, bio, emoji, bannerColor, tags, languages, minOrderKobo, baseDeliveryFeeKobo, prepTimeMinutes, hourlyRateKobo, ratePeriod } = req.body;
+    const { bizName, description, bio, emoji, bannerColor, tags, languages, minOrderKobo, baseDeliveryFeeKobo, prepTimeMinutes, hourlyRateKobo, maxRateKobo, ratePeriod } = req.body;
     const profile = await prisma.vendorProfile.update({
       where: { id: req.user.vendorProfile.id },
       data: {
@@ -59,6 +59,7 @@ async function updateVendorProfile(req, res, next) {
         ...(baseDeliveryFeeKobo !== undefined && { baseDeliveryFeeKobo }),
         ...(prepTimeMinutes !== undefined && { prepTimeMinutes }),
         ...(hourlyRateKobo !== undefined && { hourlyRateKobo }),
+        ...(maxRateKobo !== undefined && { maxRateKobo }),
         ...(ratePeriod !== undefined && { ratePeriod }),
       },
     });

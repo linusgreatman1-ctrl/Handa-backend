@@ -173,6 +173,7 @@ model VendorProfile {
   baseDeliveryFeeKobo Int     @default(40000) // ₦400 base, matches frontend
   prepTimeMinutes     Int? // typical prep/response time shown on cards
   hourlyRateKobo      Int? // home cooks: rate for a cooking session
+  maxRateKobo         Int? // home cooks: top of the per-session price range (hourlyRateKobo is the low end)
   ratePeriod          String? // e.g. "per hour", "per event" — home cook / event planner
 
   featuredUntil DateTime? // active "Get Featured" boost expiry

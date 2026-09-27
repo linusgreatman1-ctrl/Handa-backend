@@ -52,8 +52,8 @@ async function issueSession(res, user) {
 function baseCreateData({ name, email, phone, passwordHash, role, address, state, lga, bankName, bankAccountNumber, bankAccountName, isGuest }) {
   return {
     name,
-    email: email || null,
-    phone: phone || null,
+    email: email ? String(email).trim() : null,
+    phone: phone ? String(phone).trim() : null,
     passwordHash: passwordHash || null,
     isGuest: !!isGuest,
     role,
@@ -94,6 +94,7 @@ async function register(req, res, next) {
       // MenuItem/ServicePackage rows. hourlyRateKobo naming matches the
       // existing VendorProfile field this has always mapped to.
       hourlyRateKobo,
+      maxRateKobo,
       ratePeriod,
       // RIDER-only
       vehicleType,
@@ -142,11 +143,11 @@ async function register(req, res, next) {
     }
 
     if (email) {
-      const existing = await prisma.user.findUnique({ where: { email } });
+      const existing = await prisma.user.findFirst({ where: { email: { equals: String(email).trim(), mode: "insensitive" } } });
       if (existing) return res.status(409).json({ error: "An account with this email already exists." });
     }
     if (phone) {
-      const existing = await prisma.user.findUnique({ where: { phone } });
+      const existing = await prisma.user.findFirst({ where: { phone: { in: phoneVariants(phone) } } });
       if (existing) return res.status(409).json({ error: "An account with this phone number already exists." });
     }
 
@@ -166,6 +167,7 @@ async function register(req, res, next) {
           // alone silently dropped it to [] every time.
           tags: Array.isArray(tags) ? tags : typeof tags === "string" && tags.trim() ? [tags.trim()] : [],
           hourlyRateKobo: Number.isFinite(parsedRateKobo) && parsedRateKobo > 0 ? Math.round(parsedRateKobo) : null,
+          maxRateKobo: Number(maxRateKobo) > 0 ? Math.round(Number(maxRateKobo)) : null,
           ratePeriod: ratePeriod || null,
         },
       };
@@ -196,7 +198,9 @@ async function register(req, res, next) {
         });
       }
       return created;
-    });
+      // Room for a slow database moment -- Prisma's 5s default made a
+      // registration fail outright when the connection was sluggish.
+    }, { maxWait: 10000, timeout: 20000 });
 
     // Same admin visibility a document uploaded later from the profile
     // screen already gets (kyc.controller.js's uploadKycDocument) -- a
@@ -214,6 +218,20 @@ async function register(req, res, next) {
   }
 }
 
+// The same Nigerian number can be typed as 0803..., +234803... or 234803...
+// -- match whichever form the account was registered with.
+function phoneVariants(phone) {
+  const raw = String(phone || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  const out = new Set([raw, digits]);
+  let national = null;
+  if (digits.startsWith("234") && digits.length >= 13) national = digits.slice(3);
+  else if (digits.startsWith("0") && digits.length === 11) national = digits.slice(1);
+  else if (digits.length === 10) national = digits;
+  if (national) ["0" + national, "234" + national, "+234" + national].forEach((v) => out.add(v));
+  return [...out].filter(Boolean);
+}
+
 async function login(req, res, next) {
   try {
     const { email, phone, password } = req.body;
@@ -222,7 +240,9 @@ async function login(req, res, next) {
     }
 
     const user = await prisma.user.findFirst({
-      where: email ? { email } : { phone },
+      // Email is matched without caring about capital letters; a phone in
+      // any of its usual formats.
+      where: email ? { email: { equals: String(email).trim(), mode: "insensitive" } } : { phone: { in: phoneVariants(phone) } },
       include: { vendorProfile: true, riderProfile: true, shopperProfile: true, wallet: true },
     });
 

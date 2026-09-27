@@ -1599,7 +1599,7 @@ function mapApiUser(u){
     avatarUrl: u.avatarUrl || '',
     balance: u.wallet ? Math.round(u.wallet.balanceKobo/100) : 0,
   };
-  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; }
+  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; mapped.rateMin = u.vendorProfile.hourlyRateKobo ? Math.round(u.vendorProfile.hourlyRateKobo/100) : ''; mapped.rateMax = u.vendorProfile.maxRateKobo ? Math.round(u.vendorProfile.maxRateKobo/100) : ''; }
   if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
   if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; mapped.shopperIsOnline = !!u.shopperProfile.isOnline; }
   return mapped;
@@ -3442,7 +3442,7 @@ async function loadRealCatalog(){
       return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
     var newCooks = byType.HOME_COOK.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Nigerian', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), rateMax:Math.round((v.maxRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         // Real menu items (id = actual backend MenuItem id) — cookBkRender's
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
@@ -3463,13 +3463,19 @@ async function loadRealCatalog(){
     // (registration/dashboard identity, and the cake detail screen's own
     // "Designer" info card), same field names as newCatering above.
     var newCakeVendors = byType.CAKE.map(function(v){
-      return { id:v.id, vtype:'CAKE', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Custom Cakes', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'🎂', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', tags:v.tags||[],
+      return { id:v.id, vtype:'CAKE', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Custom Cakes', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'🎂', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', tags:v.tags||[], startPr:Math.round((v.hourlyRateKobo||0)/100),
         menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🎂', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'', leadTime:m.leadTimeNote||'', cat:m.category||'custom' }; }) };
     });
     var newCakes=[];
     newCakeVendors.forEach(function(v){
+      // A baker who hasn't listed any cakes yet still shows, as a baker card
+      // (tapping it opens their profile) -- otherwise a newly registered
+      // baker is invisible to customers.
+      if(!v.menu.length){
+        newCakes.push({ isBaker:true, vendorTags:(v.tags||[]).join(' ').toLowerCase(), id:'baker::'+v.id, vendorId:v.id, vendorUserId:v.userId, nm:v.nm, designer:v.nm, pr:v.startPr||0, em:v.em||'🎂', img:v.avatarUrl||null, cat:'custom', desc:v.bio||'', rating:v.rt, promo:v.promo, vendorAddr:v.addr, vendorState:v.state, vendorLga:v.lga });
+      }
       v.menu.forEach(function(m){
-        newCakes.push({ id:v.id+'::'+m.id, vendorId:v.id, vendorUserId:v.userId, itemId:m.id, nm:m.nm, designer:v.nm, pr:m.pr, em:m.img?null:m.em, img:m.img, cat:m.cat, desc:m.desc, delivTime:m.leadTime||'Ask baker for lead time', rating:v.rt, promo:v.promo, vendorAddr:v.addr, vendorState:v.state, vendorLga:v.lga });
+        newCakes.push({ vendorTags:(v.tags||[]).join(' ').toLowerCase(), id:v.id+'::'+m.id, vendorId:v.id, vendorUserId:v.userId, itemId:m.id, nm:m.nm, designer:v.nm, pr:m.pr, em:m.img?null:m.em, img:m.img, cat:m.cat, desc:m.desc, delivTime:m.leadTime||'Ask baker for lead time', rating:v.rt, promo:v.promo, vendorAddr:v.addr, vendorState:v.state, vendorLga:v.lga });
       });
     });
 
@@ -3810,12 +3816,12 @@ function openAddMenu(itemId){
     '<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">'
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
-    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(editing?'Edit':'Add')+(S.vtype==='cake'?' Cake':' Menu Item')+'</div></div>'
+    +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(S.vtype==='cake'?((editing?'Edit':'Add')+' Cake'):(editing?'Edit Food Menu':'Add Food Menu'))+'</div></div>'
     +'<div style="margin-bottom:10px;">'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Item Name *</label>'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='cake'?'Item Name *':'Food Name *')+'</label>'
     +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='catering'?'Price per Head (&#x20a6;) *':'Price (&#x20a6;) *')+'</label>'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='catering'?'Price per Head (&#x20a6;) *':(S.vtype==='cake'?'Price (&#x20a6;) *':'Price Per Cooking Session (&#x20a6;) *'))+'</label>'
     +'<input id="new-item-price" type="number" oninput="checkNewItemPackageRange()" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="'+(S.vtype==='catering'?'e.g. 3000':'e.g. 2500')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
     +'<div style="font-size:11px;color:#F5A623;margin-top:6px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.'+(S.vtype==='catering'?' This is charged per guest when a customer books you for their event.':'')+'</div>'
     +'</div>'
@@ -3839,7 +3845,7 @@ function openAddMenu(itemId){
       +'<div id="new-item-package-hint" style="font-size:11px;color:#9A9390;margin-top:6px;">'+((window._myPackages||[]).length?'':'Add a package first (Basic, Standard, Premium or your own) so you can place this meal under it.')+'</div>'
       +'</div>'
     ):'')
-    +((S.vtype==='catering'||S.vtype==='home_cook'||S.vtype==='cook'||!S.vtype)?(
+    +((S.vtype==='catering')?(
       '<div style="margin-bottom:16px;">'
       +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">What\'s in this meal'+(S.vtype==='catering'?' per head':'')+' (one per line)</label>'
       +'<textarea id="new-item-contents" rows="4" placeholder="Rice&#10;2 pieces of meat&#10;Moi-moi&#10;Drink: Chapman" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'+((item&&item.contents)||[]).join('\n')+'</textarea>'
@@ -9762,7 +9768,7 @@ async function renderVendorMenu(){
   body.innerHTML='<div style="padding:52px 16px 16px;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<h2 style="font-family:\'Playfair Display\',serif;font-size:20px;font-weight:900;margin:0;color:#F2EDE8;">'+(isCake?'My Cakes':'My Menu')+'</h2>'
-    +'<button onclick="openAddMenu()" style="background:#E8392E;border:none;border-radius:10px;color:#fff;padding:8px 14px;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">+ Add '+(isCake?'Cake':'Item')+'</button></div>'
+    +'<button onclick="openAddMenu()" style="background:#E8392E;border:none;border-radius:10px;color:#fff;padding:8px 14px;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:12px;cursor:pointer;">+ Add '+(isCake?'Cake':'Meal')+'</button></div>'
     +'<div id="vendor-menu-list"><div style="text-align:center;padding:30px;color:#9A9390">Loading…</div></div>'
     +(isCake?'':(
       '<div style="display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px;">'
@@ -9802,7 +9808,7 @@ async function renderVendorMenu(){
         +'<button onclick="openAddMenu(\''+item.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
         +'<button onclick="deleteMenuItemReal(\''+item.id+'\')" style="background:rgba(232,57,46,.1);border:1px solid rgba(232,57,46,.2);border-radius:8px;padding:6px 10px;color:#E8392E;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">&#x2715;</button>'
         +'</div></div>';
-    }).join('') : '<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">'+(isCake?'&#x1F382;':'&#x1F37D;&#xFE0F;')+'</p><p>No '+(isCake?'cakes':'menu items')+' yet — tap + Add '+(isCake?'Cake':'Item')+' to create your first '+(isCake?'design':'dish')+'.</p></div>';
+    }).join('') : '<div style="text-align:center;padding:30px;color:#9A9390"><p style="font-size:36px;margin:0 0 8px">'+(isCake?'&#x1F382;':'&#x1F37D;&#xFE0F;')+'</p><p>No '+(isCake?'cakes':'meals')+' yet — tap + Add '+(isCake?'Cake':'Meal')+' to create your first '+(isCake?'design':'dish')+'.</p></div>';
   }catch(err){
     var listEl2=document.getElementById('vendor-menu-list');
     if(listEl2)listEl2.innerHTML='<div style="text-align:center;padding:20px;color:#E8392E;font-size:13px">'+(err.message||'Could not load menu')+'</div>';
@@ -9833,14 +9839,17 @@ function _pkgPriceLineHtml(mp){
 }
 function renderVendorPackagesInto(containerId, mine){
   var listEl=document.getElementById(containerId);if(!listEl)return;
+  // Home cook packages are priced by the meals the customer picks, so no
+  // price (or price/guests Edit form) is shown for them.
+  var isCookPk=S.vtype!=='catering'&&S.vtype!=='event_planner';
   var custom=(mine||[]).filter(function(p){return p.key==='CUSTOM';});
   var customHtml=custom.length?('<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px;">Custom Packages</p>'+custom.map(function(mp){
     return '<div style="background:#242424;border-radius:13px;padding:13px 14px;border:1.5px solid rgba(232,57,46,.35);display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;">'
       +'<div style="display:flex;gap:10px;align-items:center;"><span style="font-size:24px;">✨</span>'
       +'<div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+mp.label+'</div>'
-      +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+_pkgPriceLineHtml(mp)+'</div></div></div>'
+      +(isCookPk?'':'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+_pkgPriceLineHtml(mp)+'</div>')+'</div></div>'
       +'<div style="display:flex;gap:6px;">'
-      +'<button onclick="openEditPackage(\''+mp.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;">Edit</button>'
+      +(isCookPk?'':'<button onclick="openEditPackage(\''+mp.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;">Edit</button>')
       +'<button onclick="deletePackageReal(\''+mp.id+'\')" style="background:rgba(232,57,46,.1);border:1px solid rgba(232,57,46,.2);border-radius:8px;padding:6px 10px;color:#E8392E;font-size:11px;cursor:pointer;">&#x2715;</button>'
       +'</div></div>';
   }).join('')):'';
@@ -9851,9 +9860,9 @@ function renderVendorPackagesInto(containerId, mine){
       return '<div style="background:#242424;border-radius:13px;padding:13px 14px;border:1.5px solid rgba(46,204,113,.35);display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;">'
         +'<div style="display:flex;gap:10px;align-items:center;"><span style="font-size:24px;">'+tpl.em+'</span>'
         +'<div><div style="font-weight:700;font-size:13px;color:#F2EDE8;">'+mp.label+'</div>'
-        +'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+_pkgPriceLineHtml(mp)+'</div></div></div>'
+        +(isCookPk?'':'<div style="color:#2ECC71;font-weight:700;font-size:12px;">'+_pkgPriceLineHtml(mp)+'</div>')+'</div></div>'
         +'<div style="display:flex;gap:6px;">'
-        +'<button onclick="openEditPackage(\''+mp.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;">Edit</button>'
+        +(isCookPk?'':'<button onclick="openEditPackage(\''+mp.id+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:8px;padding:6px 10px;color:#9A9390;font-size:11px;cursor:pointer;">Edit</button>')
         +'<button onclick="deletePackageReal(\''+mp.id+'\')" style="background:rgba(232,57,46,.1);border:1px solid rgba(232,57,46,.2);border-radius:8px;padding:6px 10px;color:#E8392E;font-size:11px;cursor:pointer;">&#x2715;</button>'
         +'</div></div>';
     }
@@ -9867,15 +9876,16 @@ function renderVendorPackagesInto(containerId, mine){
 }
 function openAddCustomPackage(){
   if(S.vtype==='catering'){openAddCateringPackageForm('CUSTOM');return;}
+  var isEP=S.vtype==='event_planner';
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Add a Package</div></div>'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Package Name *</label>'
     +'<input id="acp-label" type="text" placeholder="e.g. Small Garden Wedding" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;) *</label>'
-    +'<input id="acp-price" type="number" placeholder="e.g. 250000" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">'
-    +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
-    +'<input id="acp-guests" type="number" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
+    +(isEP?'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;) *</label>':'')
+    +(!isEP?'':'<input id="acp-price" type="number" placeholder="e.g. 250000" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">')
+    +(isEP?'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>':'')
+    +(isEP?'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>':'')
+    +(!isEP?'':'<input id="acp-guests" type="number" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">')
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">What\'s Included (one per line)</label>'
     +'<textarea id="acp-includes" rows="4" placeholder="Full event coordination&#10;Decor setup&#10;..." style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;"></textarea>'
     +'<button onclick="submitAddCustomPackage()" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;">Add Package</button>'
@@ -9887,7 +9897,9 @@ async function submitAddCustomPackage(){
   var guests=(document.getElementById('acp-guests')||{}).value||'';
   var includes=((document.getElementById('acp-includes')||{}).value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
   if(!label.trim()){showToast&&showToast('Enter a package name','warning');return;}
-  if(!price||price<=0){showToast&&showToast('Enter a valid price','warning');return;}
+  var needsPrice=S.vtype==='event_planner';
+  if(needsPrice&&(!price||price<=0)){showToast&&showToast('Enter a valid price','warning');return;}
+  if(!needsPrice){price=0;guests='';}
   try{
     await api('/vendors/me/packages',{method:'POST',body:JSON.stringify({key:'CUSTOM',label:label.trim(),priceKobo:Math.round(price*100),includes:includes,guestCount:guests||undefined})});
     closeProcedureModal();showToast&&showToast('Package added!','success');refreshVendorPackagesScreen();
@@ -9992,11 +10004,15 @@ function openEditPackage(pkgId){
   }
   showProcedureModal('<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;"><button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button><div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit '+pkg.label+'</div></div>'
-    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;)</label>'
+    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Package Name *</label>'
+    +'<input id="pk-label" type="text" value="'+String(pkg.label||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
+    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Price (&#x20a6;) *</label>'
     +'<input id="pk-price" type="number" value="'+Math.round(pkg.priceKobo/100)+'" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:6px;outline:none;box-sizing:border-box;">'
     +'<div style="font-size:11px;color:#F5A623;margin-bottom:12px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.</div>'
     +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">Number of Guests</label>'
-    +'<input id="pk-guests" type="number" value="'+(pkg.guestCount||'')+'" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'
+    +'<input id="pk-guests" type="number" value="'+(pkg.guestCount||'')+'" placeholder="e.g. 100" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box;">'
+    +'<label style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;display:block;margin-bottom:5px;">What\'s Included (one per line)</label>'
+    +'<textarea id="pk-includes" rows="5" style="width:100%;padding:12px;border-radius:10px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-size:14px;margin-bottom:14px;outline:none;box-sizing:border-box;">'+(pkg.includes||[]).join('\n').replace(/</g,'&lt;')+'</textarea>'
     +'<button onclick="submitEditPackage(\''+pkgId+'\')" style="width:100%;padding:13px;border-radius:12px;border:none;background:linear-gradient(135deg,#2ECC71,#1A8C50);color:#111;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px;">Save</button>'
     +'<button onclick="closeProcedureModal()" style="width:100%;padding:10px;border-radius:12px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
     +'</div>');
@@ -10019,7 +10035,11 @@ async function submitEditPackage(pkgId){
   var guests=(document.getElementById('pk-guests')||{}).value||'';
   if(!price||price<=0){showToast&&showToast('Enter a valid price','warning');return;}
   try{
-    await api('/vendors/me/packages/'+pkgId,{method:'PUT',body:JSON.stringify({priceKobo:Math.round(price*100),guestCount:guests?parseInt(guests):null})});
+    var pkLabel=((document.getElementById('pk-label')||{}).value||'').trim();
+    var pkIncEl=document.getElementById('pk-includes');
+    var pkIncludes=pkIncEl?pkIncEl.value.split('\n').map(function(s){return s.trim();}).filter(Boolean):undefined;
+    if(document.getElementById('pk-label')&&!pkLabel){showToast&&showToast('Enter a package name','warning');return;}
+    await api('/vendors/me/packages/'+pkgId,{method:'PUT',body:JSON.stringify({priceKobo:Math.round(price*100),guestCount:guests?parseInt(guests):null,label:pkLabel||undefined,includes:pkIncludes})});
     closeProcedureModal();showToast&&showToast('Package updated!','success');refreshVendorPackagesScreen();
   }catch(err){showToast&&showToast(err.message||'Could not update package','warning');}
 }
@@ -12112,6 +12132,14 @@ async function openEditProfileModal(role){
   if(role==='vendor'){
     html+=f('Business Name','epf-bizname',u.bizName,'text','Business name')
       +f('Description','epf-desc',u.vendorDescription,'text','What you offer');
+    if(u.vtype==='home_cook'){
+      html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Price per Cooking Session (₦) — a range, depending on the food</label>'
+        +'<div style="display:flex;gap:8px;align-items:center;">'
+        +'<input id="epf-rate-min" type="number" value="'+(u.rateMin||'')+'" placeholder="From e.g. 4000" style="flex:1;min-width:0;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'
+        +'<span style="color:#9A9390;">–</span>'
+        +'<input id="epf-rate-max" type="number" value="'+(u.rateMax||'')+'" placeholder="To e.g. 10000" style="flex:1;min-width:0;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'
+        +'</div></div>';
+    }
   }
   if(role==='rider'){
     html+=f('Vehicle Type','epf-vehicle',u.vehicleType,'text','e.g. Motorcycle')
@@ -12166,7 +12194,13 @@ async function saveEditProfile(role){
     S.user=Object.assign(S.user||{},mapApiUser(res.user));
 
     if(role==='vendor'){
-      var vRes=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify({bizName:val('epf-bizname')||undefined,description:val('epf-desc')||undefined})});
+      var vBody={bizName:val('epf-bizname')||undefined,description:val('epf-desc')||undefined};
+      if(document.getElementById('epf-rate-min')){
+        var rMin=parseFloat(val('epf-rate-min')||'0'),rMax=parseFloat(val('epf-rate-max')||'0');
+        if(rMin>0&&rMax>0&&rMax<rMin)throw new Error('The first price must be lower than the second');
+        vBody.hourlyRateKobo=rMin>0?Math.round(rMin*100):null;vBody.maxRateKobo=rMax>0?Math.round(rMax*100):null;vBody.ratePeriod='per session';
+      }
+      var vRes=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify(vBody)});
       if(vRes.vendorProfile){S.user.bizName=vRes.vendorProfile.bizName;S.user.vendorDescription=vRes.vendorProfile.description||'';}
     }else if(role==='rider'){
       var rRes=await api('/users/me/rider-profile',{method:'PATCH',body:JSON.stringify({vehicleType:val('epf-vehicle')||undefined,plateNumber:val('epf-plate')||undefined})});
@@ -13388,6 +13422,13 @@ async function doRegister(){
     fd.append('password',pw);
     if(phone.trim())fd.append('phone',phone.trim());
     if(addr.trim())fd.append('address',addr.trim());
+    // The State / Local Government picked on the form -- previously never
+    // sent, so every new account had no location (and never saw requests
+    // posted to their state).
+    var regState=((document.getElementById('r-state')||{}).value||'').trim();
+    var regLga=((document.getElementById('r-lga')||{}).value||'').trim();
+    if(regState)fd.append('state',regState);
+    if(regState&&regLga)fd.append('lga',regLga);
     if(bankName.trim())fd.append('bankName',bankName.trim());
     if(bankAcct.trim())fd.append('bankAccountNumber',bankAcct.trim());
     // Speciality/Rate/Bio were all collected on every vendor registration
@@ -13401,7 +13442,10 @@ async function doRegister(){
       if(cookSp)fd.append('tags',cookSp);
       if(regBio)fd.append('description',regBio);
       var cookRate=parseFloat((document.getElementById('r-rate')||{}).value);
+      var cookRateMax=parseFloat((document.getElementById('r-rate-max')||{}).value);
+      if(cookRate>0&&cookRateMax>0&&cookRateMax<cookRate){showToast&&showToast('The first price must be lower than the second','warning');if(btn)btn.disabled=false;return;}
       if(cookRate>0){fd.append('hourlyRateKobo',String(Math.round(cookRate*100)));fd.append('ratePeriod','per session');}
+      if(cookRateMax>0)fd.append('maxRateKobo',String(Math.round(cookRateMax*100)));
     }
     else if(_eRole==='catering'){
       fd.append('role','VENDOR');fd.append('vtype','CATERING');fd.append('bizName',((document.getElementById('r-bizname')||{}).value||nm).trim());
@@ -13646,11 +13690,11 @@ function setLTab(t){
   if(rh)rh.style.display=t==='reg'?'flex':'none';
   var btn=document.getElementById('auth-btn');if(!btn)return;
   var r=_eRole;
-  var labels={customer:'Sign In →',cook:'Sign In as Home Cook →',catering:'Sign In as Caterer →',event_planner:'Sign In as Event Planner →',rider:'Sign In as Rider →',shopper:'Sign In as Shopper →'};
-  var regLabels={customer:'Register as Customer →',cook:'Register as Home Cook →',catering:'Register as Caterer →',event_planner:'Register as Event Planner →',rider:'Register as Rider →',shopper:'Register as Shopper →'};
+  var labels={customer:'Sign In →',cook:'Sign In as Home Cook →',catering:'Sign In as Caterer →',cake:'Sign In as Cake Baker →',event_planner:'Sign In as Event Planner →',rider:'Sign In as Rider →',shopper:'Sign In as Shopper →'};
+  var regLabels={customer:'Register as Customer →',cook:'Register as Home Cook →',catering:'Register as Caterer →',cake:'Register as Cake Baker →',event_planner:'Register as Event Planner →',rider:'Register as Rider →',shopper:'Register as Shopper →'};
   btn.textContent=(t==='reg'?regLabels:labels)[r]||'Sign In →';
   var rht=document.getElementById('reg-header-title');
-  var titles={customer:'Register as Customer',cook:'Register as Home Cook',catering:'Register as Caterer',event_planner:'Register as Event Planner',rider:'Register as Rider',shopper:'Register as Shopper'};
+  var titles={customer:'Register as Customer',cook:'Register as Home Cook',catering:'Register as Caterer',cake:'Register as Cake Baker',event_planner:'Register as Event Planner',rider:'Register as Rider',shopper:'Register as Shopper'};
   if(rht)rht.textContent=titles[r]||'Register';
 }
 
@@ -13710,33 +13754,55 @@ function selectHomeSearchResult(type,id){
 function filterByState(state,lga,screen){
   if(!state){showToast&&showToast('Please select a state first','warning');return;}
   var s=screen||S.curScreen||'';
+  var eq=function(a,b){return a&&b&&String(a).toLowerCase()===String(b).toLowerCase();};
+  var cfg;
   if(s==='cooks'||document.getElementById('screen-ecooks')&&document.getElementById('screen-ecooks').style.display!=='none'){
-    var list=(D.cooks||[]).filter(function(c){var m=c.state&&c.state.toLowerCase()===state.toLowerCase();if(m&&lga)m=c.lga&&c.lga.toLowerCase()===lga.toLowerCase();return m;});
-    renderCooks(list.length?list:D.cooks);
-    if(!list.length)showToast&&showToast('No cooks in '+state+'. Showing all.','info');
+    cfg={all:D.cooks||[],render:renderCooks,st:'state',lg:'lga',noun:'cooks',el:function(){return document.getElementById('cook-list')||document.getElementById('e-cook-list');}};
   }else if(s==='caterers'){
-    var list3=(D.catering||[]).filter(function(c){var m=c.state&&c.state.toLowerCase()===state.toLowerCase();if(m&&lga)m=c.lga&&c.lga.toLowerCase()===lga.toLowerCase();return m;});
-    renderCatering(list3.length?list3:D.catering);
-    if(!list3.length)showToast&&showToast('No caterers in '+state+'. Showing all.','info');
+    cfg={all:D.catering||[],render:renderCatering,st:'state',lg:'lga',noun:'caterers',el:function(){return document.getElementById('e-catering-list')||document.getElementById('catering-list');}};
   }else if(s==='cakes'){
-    // D.cakes is item-level (each entry is one cake design, not a vendor --
-    // see loadRealCatalog's newCakes) -- its own state/lga fields live under
-    // vendorState/vendorLga (the baker's registered location), not
-    // state/lga directly.
-    var list4=(D.cakes||[]).filter(function(c){var m=c.vendorState&&c.vendorState.toLowerCase()===state.toLowerCase();if(m&&lga)m=c.vendorLga&&c.vendorLga.toLowerCase()===lga.toLowerCase();return m;});
-    renderCakes(list4.length?list4:D.cakes);
-    if(!list4.length)showToast&&showToast('No cakes in '+state+'. Showing all.','info');
+    // D.cakes is item-level -- the baker's location lives on vendorState/vendorLga.
+    cfg={all:D.cakes||[],render:renderCakes,st:'vendorState',lg:'vendorLga',noun:'cakes',grid:true,el:function(){return document.getElementById('cake-list');}};
   }else{
-    var list2=(D.ep||[]).filter(function(e){var m=e.state&&e.state.toLowerCase()===state.toLowerCase();if(m&&lga)m=e.lga&&e.lga.toLowerCase()===lga.toLowerCase();return m;});
-    renderEP(list2.length?list2:D.ep);
-    if(!list2.length)showToast&&showToast('No planners in '+state+'. Showing all.','info');
+    cfg={all:D.ep||[],render:renderEP,st:'state',lg:'lga',noun:'planners',el:function(){return document.getElementById('e-ep-list')||document.getElementById('ep-list');}};
   }
+  var inState=cfg.all.filter(function(v){return eq(v[cfg.st],state);});
+  var exact=lga?inState.filter(function(v){return eq(v[cfg.lg],lga);}):inState;
+  // Searching by LGA: after the vendors in that LGA, show the rest of the
+  // state's vendors as "Similar vendors".
+  var similar=lga?inState.filter(function(v){return !eq(v[cfg.lg],lga);}):[];
+  if(!exact.length&&!similar.length){
+    cfg.render(cfg.all);
+    showToast&&showToast('No '+cfg.noun+' in '+(lga?lga+', ':'')+state+'. Showing all.','info');
+    return;
+  }
+  var el=cfg.el();
+  var simHtml='';
+  if(similar.length&&el){
+    cfg.render(similar);
+    var tmp=document.createElement('div');tmp.innerHTML=el.innerHTML;
+    [].slice.call(tmp.children).forEach(function(card){
+      card.insertAdjacentHTML('afterbegin','<div style="display:inline-block;margin:8px 0 0 8px;background:rgba(59,159,232,.15);color:#3B9FE8;font-size:10px;font-weight:800;padding:3px 8px;border-radius:8px;">SIMILAR VENDOR</div>');
+    });
+    simHtml='<div style="'+(cfg.grid?'grid-column:1/-1;':'')+'margin:14px 0 10px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">Similar vendors</div><div style="font-size:12px;color:#9A9390;">Other local governments in '+state+'</div></div>'+tmp.innerHTML;
+  }
+  if(exact.length){cfg.render(exact);}
+  else if(el){el.innerHTML='<div style="'+(cfg.grid?'grid-column:1/-1;':'')+'text-align:center;padding:16px;color:#9A9390;font-size:13px;">No '+cfg.noun+' in '+lga+' yet.</div>';}
+  if(el&&simHtml)el.insertAdjacentHTML('beforeend',simHtml);
 }
 
 // ── RENDER FUNCTIONS ──────────────────────────────────────────────────────────
+// A home cook's price per cooking session: a range (e.g. ₦4,000 – ₦10,000)
+// when they set one, a single price otherwise.
+function _cookRateText(c){
+  if(!c||!c.rate)return 'Price on request';
+  return '₦'+Number(c.rate).toLocaleString()+(c.rateMax&&c.rateMax>c.rate?' – ₦'+Number(c.rateMax).toLocaleString():'');
+}
 function vendorHeaderMedia(v,bgGrad,h,fs){
   return v.avatarUrl
-    ? '<div style="height:'+h+'px;overflow:hidden;"><img src="'+v.avatarUrl+'" style="width:100%;height:100%;object-fit:cover;"></div>'
+    // Framed square photo on the banner (like the vendor's own profile card)
+    // rather than a stretched, cropped cover image.
+    ? '<div style="background:'+bgGrad+';height:'+(h+30)+'px;display:flex;align-items:center;justify-content:center;"><div style="width:'+(h)+'px;height:'+(h)+'px;border-radius:18px;overflow:hidden;border:2.5px solid rgba(245,166,35,.7);box-shadow:0 4px 14px rgba(0,0,0,.4);"><img src="'+v.avatarUrl+'" style="width:100%;height:100%;object-fit:cover;"></div></div>'
     : '<div style="background:'+bgGrad+';height:'+h+'px;display:flex;align-items:center;justify-content:center;font-size:'+fs+'px">'+v.em+'</div>';
 }
 function vendorAvatarCircle(v,size,fs,bgGrad){
@@ -13755,7 +13821,7 @@ function renderCooks(list){
       +'<div style="padding:16px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div><b style="color:#F2EDE8">'+c.nm+'</b><p style="color:#9B59B6;font-size:12px;margin:0">'+c.sp+'</p></div><span onclick="openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
       +'<p style="color:#9A9390;font-size:12px;margin:0 0 6px">📍 '+c.dist+' • '+c.addr+'</p>'
       +'<p style="color:#ccc;font-size:12px;margin:0 0 12px">'+c.bio+'</p>'
-      +'<div style="background:#242424;border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between"><div><b style="color:#9B59B6">₦'+Number(c.rate).toLocaleString()+'</b><p style="color:#9A9390;font-size:11px;margin:0">'+c.period+'</p></div><div><p style="color:#9A9390;font-size:11px;margin:0">Availability</p><b style="font-size:12px">'+c.avail+'</b></div></div>'
+      +'<div style="background:#242424;border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between"><div><b style="color:#9B59B6">'+_cookRateText(c)+'</b><p style="color:#9A9390;font-size:11px;margin:0">per cooking session</p></div><div><p style="color:#9A9390;font-size:11px;margin:0">Availability</p><b style="font-size:12px">'+c.avail+'</b></div></div>'
       +'<button onclick="openCookBooking(this.dataset.id)" data-id="'+c.id+'" style="width:100%;padding:12px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer">📜 Book Cook</button>'
       +'</div></div>';
   }).join('');
@@ -13839,6 +13905,13 @@ function renderCakes(list){
   // where the rest of a featured baker's own cakes still surface first.
   var sorted=list.slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
   el.innerHTML=sorted.map(function(c){
+    if(c.isBaker){
+      return '<div onclick="openBakerProfile(\''+c.vendorId+'\')" style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:1.5px dashed #E91E8C;cursor:pointer;position:relative">'
+        +(c.img?'<div style="height:110px;background-image:url(\''+c.img+'\');background-size:cover;background-position:center;"></div>':'<div style="height:110px;background:linear-gradient(135deg,#2d0d18,#111);display:flex;align-items:center;justify-content:center;font-size:46px;">'+(c.em||'🎂')+'</div>')
+        +'<div style="padding:10px 12px;"><div style="font-weight:800;font-size:13px;color:#F2EDE8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+c.nm+'</div>'
+        +'<div style="color:#E91E8C;font-weight:700;font-size:11px;margin-bottom:4px;">New baker · custom cakes</div>'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;">'+_cakeRatingLink(c,'color:#F5A623;font-size:11px;')+(c.pr?'<span style="font-weight:900;font-size:12px;color:#F2EDE8;">From ₦'+Number(c.pr).toLocaleString()+'</span>':'')+'</div></div></div>';
+    }
     return '<div onclick="openCake(\''+c.id+'\')" style="background:#1C1C1C;border-radius:16px;overflow:hidden;border:1.5px solid '+(c.promo?'#F5A623':'#2a2a2a')+';cursor:pointer;position:relative'+(c.promo?';box-shadow:0 0 14px rgba(245,166,35,.15)':'')+'">'
       +(c.promo?'<div class="promo-tag">⭐ FEATURED</div>':'')
       +(c.img?'<div style="height:110px;background-image:url(\''+c.img+'\');background-size:cover;background-position:center;"></div>':'<div style="height:110px;background:linear-gradient(135deg,#2d0d18,#111);display:flex;align-items:center;justify-content:center;font-size:46px;">'+(c.em||'🎂')+'</div>')
@@ -13851,11 +13924,29 @@ function renderCakes(list){
       +'</div></div></div>';
   }).join('');
 }
+// A baker's profile (used for a baker who has no cakes listed yet): who they
+// are, their specialities, and a way to ask them for a custom cake.
+function openBakerProfile(vendorId){
+  var v=(D.cakeVendors||[]).find(function(x){return x.id===vendorId;});if(!v)return;
+  var photo=v.avatarUrl?'<img src="'+v.avatarUrl+'" style="width:72px;height:72px;border-radius:16px;object-fit:cover;border:2px solid #E91E8C;">':'<div style="width:72px;height:72px;border-radius:16px;background:linear-gradient(135deg,#2d0d18,#111);display:flex;align-items:center;justify-content:center;font-size:36px;">'+(v.em||'🎂')+'</div>';
+  showBottomSheet(v.nm,
+    '<div style="display:flex;gap:14px;align-items:center;margin-bottom:12px;">'+photo+'<div><div style="font-weight:800;font-size:16px;color:#F2EDE8;">'+v.nm+'</div><div style="font-size:12px;color:#E91E8C;">Cake Baker'+(v.state?' · '+[v.lga,v.state].filter(Boolean).join(', '):'')+'</div><div style="font-size:12px;margin-top:2px;">'+_cakeRatingLink({vendorUserId:v.userId,vendorId:v.id,rating:v.rt},'color:#F5A623;')+'</div></div></div>'
+    +(v.bio?'<div style="font-size:13px;color:#ccc;line-height:1.55;margin-bottom:12px;">'+v.bio+'</div>':'')
+    +((v.tags||[]).length?'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Specialities</div><div style="font-size:13px;color:#F2EDE8;margin-bottom:12px;">'+v.tags.join(', ')+'</div>':'')
+    +(v.startPr?'<div style="font-size:13px;color:#F2EDE8;margin-bottom:12px;">Cakes from <b style="color:#E91E8C;">₦'+Number(v.startPr).toLocaleString()+'</b></div>':'')
+    +'<div style="background:#242424;border-radius:12px;padding:12px;font-size:12px;color:#9A9390;margin-bottom:12px;">This baker has not listed any cakes yet. Post a cake request describing the cake you want — bakers in your area, including '+v.nm+', can send you a price.</div>'
+    +'<button onclick="closeBottomSheet();openPostCakeRequestModal();" style="width:100%;padding:13px;border-radius:12px;border:none;background:#E91E8C;color:#fff;font-weight:800;font-size:14px;cursor:pointer;">🎂 Post a Cake Request</button>');
+}
 function filterCakesCat(cat,btn){
   document.querySelectorAll('#cake-pills .pill').forEach(function(p){p.classList.remove('pkon');});
   btn.classList.add('pkon');
   var list=window._CAKE_DATA||D.cakes||[];
-  renderCakes(cat==='all'?list:list.filter(function(c){return c.cat===cat;}));
+  var words={birthday:['birthday'],wedding:['wedding'],cupcake:['cupcake','cup cake'],custom:['custom']}[cat]||[cat];
+  renderCakes(cat==='all'?list:list.filter(function(c){
+    if(c.cat===cat)return true;
+    var t=c.vendorTags||'';
+    return words.some(function(w){return t.indexOf(w)>=0;});
+  }));
 }
 function openCake(id){
   var c=(window._CAKE_DATA||D.cakes||[]).find(function(x){return String(x.id)===String(id);});
@@ -13921,7 +14012,7 @@ function renderFeaturedCooks(){
       +vendorAvatarCircle(c,52,30,'linear-gradient(135deg,#2d0d2d,#111)')
       +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(c.promo?'⭐ ':'')+c.nm+'</div>'
       +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+c.sp+' · <span onclick="event.stopPropagation();openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
-      +'<div style="font-size:11px;color:#9B59B6;margin-top:2px;font-weight:700">₦'+Number(c.rate).toLocaleString()+' '+c.period+'</div></div>'
+      +'<div style="font-size:11px;color:#9B59B6;margin-top:2px;font-weight:700">'+_cookRateText(c)+(c.rate?' per session':'')+'</div></div>'
       +'<span style="background:#9B59B6;color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px">Book</span></div>';
   }).join('');
 }
@@ -13970,7 +14061,7 @@ function _cakeRatingLink(c,style){
 }
 function renderFeaturedCakes(){
   var el=document.getElementById('e-featured-cakes');if(!el||!D.cakes)return;
-  var sorted=(D.cakes||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
+  var sorted=(D.cakes||[]).filter(function(c){return !c.isBaker;}).sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
   el.innerHTML=sorted.slice(0,3).map(function(c){
     return '<div onclick="openCake(\''+c.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(c.promo?'#F5A623':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
       +(c.img?'<img src="'+c.img+'" style="width:52px;height:52px;border-radius:30px;object-fit:cover;flex-shrink:0">':'<div style="width:52px;height:52px;border-radius:30px;background:linear-gradient(135deg,#2d0d18,#111);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">'+(c.em||'🎂')+'</div>')
@@ -17493,16 +17584,17 @@ function buildRegForm(){
     +'<label class="il">Bank Name</label><select class="if" id="r-bankcode" onchange="var cw=document.getElementById(\'r-bank-custom-wrap\');if(cw)cw.style.display=(this.value===\'CUSTOM\'?\'block\':\'none\');" style="margin-bottom:12px">'+bankSelOpts+'</select>'
     +'<div id="r-bank-custom-wrap" style="display:none">'+fld('Bank Name (type manually)','&#x1F3E6;','r-bankname2-other','e.g. a bank not listed above','')+'</div>'
     +fld('Account Number','&#x1F4B3;','r-bankacct','10-digit account number','');
-  var addr=fld('Home Address','&#x1F4CD;','r-addr','Your home address','');
+  var isVendorRole=['cook','catering','cake','event_planner'].indexOf(role)>-1;
+  var addr=isVendorRole?fld('Business Address','&#x1F4CD;','r-addr','Your business address',''):fld('Home Address','&#x1F4CD;','r-addr','Your home address','');
   var roleSwitchBar=['customer','cook','catering','cake','event_planner','rider','shopper'].map(function(r){
     var labels={customer:'🛍️ Customer',cook:'🧑‍🍳 Home Cook',catering:'👨‍🍳 Catering',cake:'🎂 Cake Baker',event_planner:'🎊 Event Planner',rider:'🏍️ Rider',shopper:'🛒 Shopper'};
     var active=r===role;
-    return '<button type="button" onclick="pickRole(\''+r+'\')" style="flex:1;min-width:0;padding:8px 4px;border-radius:10px;border:1.5px solid '+(active?'#E8392E':'#2A2850')+';background:'+(active?'rgba(232,57,46,.1)':'transparent')+';color:'+(active?'#F2EDE8':'#9A9390')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+labels[r]+'</button>';
+    return '<button type="button" onclick="pickRole(\''+r+'\')" style="flex:0 0 auto;padding:8px 10px;border-radius:10px;border:1.5px solid '+(active?'#E8392E':'#2A2850')+';background:'+(active?'rgba(232,57,46,.1)':'transparent')+';color:'+(active?'#F2EDE8':'#9A9390')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap;">'+labels[r]+'</button>';
   }).join('');
-  var switchRow='<div style="display:flex;gap:6px;margin-bottom:16px;">'+roleSwitchBar+'</div>';
+  var switchRow='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">'+roleSwitchBar+'</div>';
   var h='';
   if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+stateLGA;}
-  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+fld('Rate per Session (&#x20a6;) (Your charge for cooking)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cooking experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cooking Speciality','&#x1F372;','r-sp','e.g. Nigerian, Continental','')+'<label class="il">Price per Cooking Session (&#x20a6;) — a range, depending on the food</label>'+'<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;"><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate" type="number" placeholder="From e.g. 4000"></div><span style="color:#9A9390;">–</span><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate-max" type="number" placeholder="To e.g. 10000"></div></div>'+ta('Short Bio','r-bio','Describe your cooking experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='catering'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Elite Gourmet Catering','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Catering Speciality','&#x1F372;','r-sp','e.g. Continental, Small Chops, Grills','')+fld('Starting Price per Head (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 8000','number')+ta('Short Bio','r-bio','Describe your catering experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='cake'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Sweet Creations by Temi','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Cake Speciality','&#x1F382;','r-sp','e.g. Birthday, Wedding, Custom Cakes','')+fld('Starting Price (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cake-making experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Event Speciality','r-evtype','<option>Weddings</option><option>Corporate Events</option><option>Birthdays</option><option>All Events</option>')+ta('Short Bio','r-bio','Describe your event planning experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}

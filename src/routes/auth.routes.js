@@ -29,8 +29,8 @@ router.post(
   [
     body("name").trim().isLength({ min: 2 }).withMessage("Name is required."),
     body("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters."),
-    body("email").optional().isEmail().withMessage("A valid email is required."),
-    body("phone").optional().isString().isLength({ min: 10 }).withMessage("A valid phone number is required."),
+    body("email").optional().trim().isEmail().withMessage("A valid email is required."),
+    body("phone").optional().trim().isString().isLength({ min: 10 }).withMessage("A valid phone number is required."),
     body("role").optional().isIn(["CUSTOMER", "VENDOR", "RIDER", "SHOPPER"]),
   ],
   validate,
@@ -41,8 +41,8 @@ router.post(
   "/login",
   authLimiter,
   [
-    body("email").optional().isEmail(),
-    body("phone").optional().isString(),
+    body("email").optional().trim().isEmail().withMessage("Enter a valid email address."),
+    body("phone").optional().trim().isString(),
     body("password").notEmpty().withMessage("Password is required."),
   ],
   validate,
