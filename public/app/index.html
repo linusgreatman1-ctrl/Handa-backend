@@ -3291,7 +3291,7 @@ async function loadRealCatalog(){
     var newCakes=[];
     newCakeVendors.forEach(function(v){
       v.menu.forEach(function(m){
-        newCakes.push({ id:v.id+'::'+m.id, vendorId:v.id, itemId:m.id, nm:m.nm, designer:v.nm, pr:m.pr, em:m.img?null:m.em, img:m.img, cat:m.cat, desc:m.desc, delivTime:m.leadTime||'Ask baker for lead time', rating:v.rt, promo:v.promo, vendorAddr:v.addr, vendorState:v.state, vendorLga:v.lga });
+        newCakes.push({ id:v.id+'::'+m.id, vendorId:v.id, vendorUserId:v.userId, itemId:m.id, nm:m.nm, designer:v.nm, pr:m.pr, em:m.img?null:m.em, img:m.img, cat:m.cat, desc:m.desc, delivTime:m.leadTime||'Ask baker for lead time', rating:v.rt, promo:v.promo, vendorAddr:v.addr, vendorState:v.state, vendorLga:v.lga });
       });
     });
 
@@ -13649,7 +13649,7 @@ function renderCakes(list){
       +'<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+c.nm+'</div>'
       +'<div style="color:#E91E8C;font-weight:800;font-size:12px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+c.designer+'</div>'
       +'<div style="display:flex;justify-content:space-between;align-items:center;">'
-      +'<span style="color:#F5A623;font-size:11px;">★'+c.rating+'</span>'
+      +_cakeRatingLink(c,'color:#F5A623;font-size:11px;')
       +'<span style="font-weight:900;font-size:13px;color:#F2EDE8;">₦'+Number(c.pr).toLocaleString()+'</span>'
       +'</div></div></div>';
   }).join('');
@@ -13677,7 +13677,7 @@ function openCake(id){
       +'</div>'
       +_vendorBioHtml(((D.cakeVendors||[]).find(function(v){return v.id===c.vendorId;})||{}).bio,'#9A9390').replace('margin:6px 0 0','margin:0 0 10px')
       +'<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #2a2a2a">'
-        +'<div style="text-align:center"><p style="font-size:18px;font-weight:900;margin:0;color:#F2EDE8">'+c.rating+'</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Rating</p></div>'
+        +'<div style="text-align:center">'+_cakeRatingLink(c,'display:block;font-size:18px;font-weight:900;color:#F5A623;')+'<p style="font-size:10px;color:#9A9390;margin:2px 0 0">Rating · tap for reviews</p></div>'
         +'<div style="text-align:center"><p style="font-size:13px;font-weight:800;margin:0;color:#F5A623">⏱ '+(c.delivTime||'Ask baker')+'</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Lead Time</p></div>'
         +'<div style="text-align:center"><p style="font-size:13px;font-weight:800;margin:0;color:#2ECC71">✓ Verified</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Baker</p></div>'
       +'</div>'
@@ -13768,6 +13768,9 @@ function renderFeaturedCatering(){
 
 // D.cakes is item-level (see loadRealCatalog's newCakes) -- opens straight
 // into the cake's own detail/order screen (openCake), not a vendor picker.
+function _cakeRatingLink(c,style){
+  return '<span onclick="event.stopPropagation();openRatingsModal(\''+c.vendorUserId+'\',\'VENDOR\',\''+c.vendorId+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;'+(style||'')+'">★'+c.rating+'</span>';
+}
 function renderFeaturedCakes(){
   var el=document.getElementById('e-featured-cakes');if(!el||!D.cakes)return;
   var sorted=(D.cakes||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
@@ -13775,7 +13778,7 @@ function renderFeaturedCakes(){
     return '<div onclick="openCake(\''+c.id+'\')" style="background:#1C1C1C;border:1.5px solid '+(c.promo?'#F5A623':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer">'
       +(c.img?'<img src="'+c.img+'" style="width:52px;height:52px;border-radius:30px;object-fit:cover;flex-shrink:0">':'<div style="width:52px;height:52px;border-radius:30px;background:linear-gradient(135deg,#2d0d18,#111);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">'+(c.em||'🎂')+'</div>')
       +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(c.promo?'⭐ ':'')+c.nm+'</div>'
-      +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+c.designer+' · ★'+c.rating+'</div>'
+      +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+c.designer+' · '+_cakeRatingLink(c)+'</div>'
       +'<div style="font-size:11px;color:#E91E8C;margin-top:2px;font-weight:700">₦'+Number(c.pr).toLocaleString()+'</div></div>'
       +'<span style="background:#E91E8C;color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px">Order</span></div>';
   }).join('');
