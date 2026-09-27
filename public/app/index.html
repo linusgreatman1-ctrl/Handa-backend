@@ -2333,9 +2333,11 @@ function _negCustomerHtml(kind,r,p){
   var box='neg-box-'+p.id;
   return _negHistoryHtml(p,'customer')+status
     +'<button onclick="var b=document.getElementById(\''+box+'\');b.style.display=b.style.display===\'none\'?\'block\':\'none\';" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;border:1.5px solid #F5A623;background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;">💬 Negotiate Price</button>'
-    +'<div id="'+box+'" style="display:none;">'
+    +'<div id="'+box+'" style="display:none;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.25);border-radius:10px;padding:10px;margin-top:8px;">'
+    +'<div style="font-size:11px;color:#9A9390;">Enter your price and send it to the vendor:</div>'
     +_negBoxHtml('neg-in-'+p.id,'Your price (₦)','Send',"negSendPrice('"+kind+"','customer','"+r.id+"','"+p.id+"')",'#F5A623')
-    +'</div>';
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin:18px 0 14px;"><div style="flex:1;height:1px;background:#3A3860;"></div><span style="font-size:11px;color:#9A9390;font-weight:700;">OR</span><div style="flex:1;height:1px;background:#3A3860;"></div></div>';
 }
 function _negVendorHtml(kind,r,mine){
   var html=_negHistoryHtml(mine,'vendor');
@@ -2344,7 +2346,8 @@ function _negVendorHtml(kind,r,mine){
     html+='<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px;margin:8px 0;">'
       +'<div style="font-size:13px;color:#F5A623;font-weight:800;">💬 The customer offered '+offer+'</div>'
       +'<button onclick="negAcceptOffer(\''+kind+'\',\''+r.id+'\',\''+mine.id+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">✓ Accept '+offer+'</button>'
-      +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Or send your own price:</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin:18px 0 14px;"><div style="flex:1;height:1px;background:#3A3860;"></div><span style="font-size:11px;color:#9A9390;font-weight:700;">OR</span><div style="flex:1;height:1px;background:#3A3860;"></div></div>'
+      +'<div style="font-size:11px;color:#9A9390;margin-bottom:2px;">Send your own price instead:</div>'
       +_negBoxHtml('neg-in-'+mine.id,'Your new price (₦)','Send',"negSendPrice('"+kind+"','vendor','"+r.id+"','"+mine.id+"')",'#F5A623')
       +'</div>';
   }else{
