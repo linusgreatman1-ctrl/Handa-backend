@@ -3818,7 +3818,7 @@ function openAddMenu(itemId){
     +'<button onclick="closeProcedureModal()" class="ibtn" style="background:#242424;">&#x2190;</button>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(S.vtype==='cake'?((editing?'Edit':'Add')+' Cake'):(editing?'Edit Food Menu':'Add Food Menu'))+'</div></div>'
     +'<div style="margin-bottom:10px;">'
-    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='cake'?'Item Name *':'Food Name *')+'</label>'
+    +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='cake'?'Cake Name *':'Food Name *')+'</label>'
     +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='catering'?'Price per Head (&#x20a6;) *':(S.vtype==='cake'?'Price (&#x20a6;) *':'Price Per Cooking Session (&#x20a6;) *'))+'</label>'
