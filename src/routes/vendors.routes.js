@@ -2,6 +2,7 @@ const express = require("express");
 const { requireAuth, requireVendorProfile } = require("../middleware/auth");
 const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/vendors.controller");
+const { broadcastCatalogChange } = require("../middleware/catalogBroadcast");
 
 const router = express.Router();
 
@@ -12,7 +13,7 @@ router.get("/me/stats", requireAuth, requireVendorProfile, ctrl.getMyVendorStats
 router.get("/:id", ctrl.getVendor);
 router.get("/:id/menu", ctrl.listMenuItems);
 
-router.use(requireAuth, requireVendorProfile);
+router.use(requireAuth, requireVendorProfile, broadcastCatalogChange);
 router.post("/me/menu", ctrl.createMenuItem);
 router.put("/me/menu/:itemId", ctrl.updateMenuItem);
 router.post("/me/menu/:itemId/photo", upload.single("photo"), ctrl.uploadMenuItemPhoto);

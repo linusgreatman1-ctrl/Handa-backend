@@ -1221,6 +1221,7 @@ function connectSocket(){
     },400);
   });
   _socket.on('connect', function(){ setTimeout(showPendingVendorBookingPopups,1500); });
+  _socket.on('catalog:updated', onLiveCatalogUpdate);
   _socket.on('notification:new', function(n){
     if(typeof toast==='function') toast(n.title + ': ' + n.body);
     bumpNotifBadge();
@@ -3498,6 +3499,51 @@ async function loadRealCatalog(){
 // featured cards kept their stale demo ids forever and "Book" 404'd
 // against the now-real D.cooks/D.ep. Re-render whatever's on screen once
 // real data actually arrives.
+// A vendor changed their menu / packages / profile (catalog:updated from the
+// server): reload the catalog and re-draw whatever the customer is looking
+// at -- lists keep their search/filters, an open booking page shows the new
+// meals right away. Screens past the picking stage are left alone.
+var _liveCatalogT=null;
+function onLiveCatalogUpdate(p){
+  clearTimeout(_liveCatalogT);
+  _liveCatalogT=setTimeout(async function(){
+    if(S.role==='vendor'||S.role==='rider'||S.role==='shopper')return; // only customer screens show the catalog
+    try{await loadRealCatalog();}catch(e){return;}
+    var vid=p&&p.vendorId;
+    // lists: re-apply the page's location search / cuisine / cake category
+    var loc=window._locSearch||{};
+    var scr=S.curScreen;
+    if(scr==='cooks'){ if(loc.cooks&&loc.cooks.state)filterByState(loc.cooks.state,loc.cooks.lga,'cooks'); else if(window._cookCuisine&&window._cookCuisine!=='all'){var cb=document.querySelector('#cook-pills .pill.pon');filterCooks(window._cookCuisine,cb);} }
+    if(scr==='events'&&loc.events&&loc.events.state)filterByState(loc.events.state,loc.events.lga,'events');
+    if(scr==='caterers'&&loc.caterers&&loc.caterers.state)filterByState(loc.caterers.state,loc.caterers.lga,'caterers');
+    if(scr==='cakes'){ if(loc.cakes&&loc.cakes.state)filterByState(loc.cakes.state,loc.cakes.lga,'cakes'); else if(window._cakeCatFilter)renderCakes(window._cakeCatFilter(D.cakes||[])); }
+    // an open cook / caterer / baker booking page for this vendor
+    var ov=document.getElementById('__cook_bk_ov');
+    if(ov&&_cb&&_cb.cookId&&(!vid||String(_cb.cookId)===String(vid))){
+      var fresh=[].concat(D.cooks||[],D.catering||[],D.cakeVendors||[]).find(function(x){return String(x.id)===String(_cb.cookId);});
+      if(fresh){
+        _cb.cook=fresh;
+        var view=window._cbView||'';
+        if(view==='meal'&&_mealPicker)renderMealPicker();
+        else if(view==='catering'&&_eventCatering){
+          if(_eventCatering.pkg){var np=(_cateringPkgList(fresh)||[]).find(function(x){return x.id===_eventCatering.pkg.id;});_eventCatering.pkg=np||null;}
+          renderEventCateringPicker();
+        }
+        else if(view==='bk:packages')cookBkRender('packages');
+      }
+    }
+    // an open event planner booking page
+    if(typeof _epb!=='undefined'&&_epb&&_epb.epId&&(!vid||String(_epb.epId)===String(vid))&&_epb.phase==='packages'&&document.getElementById('__ep_bk_ov')){
+      var freshEp=(D.ep||[]).find(function(x){return String(x.id)===String(_epb.epId);});
+      if(freshEp){_epb.ep=freshEp;epBkRender('packages');}
+    }
+    // an open cake page
+    if(window._openCakeId&&scr==='cakedetail'){
+      var still=(D.cakes||[]).some(function(c){return String(c.id)===String(window._openCakeId);});
+      if(still)openCake(window._openCakeId);
+    }
+  },500);
+}
 function onCatalogLoaded(){
   if(S.curScreen==='home'){window._HC_DATA=D.cooks||[];window._EP_DATA=D.ep||[];window._CATERING_DATA=D.catering||[];window._CAKE_DATA=D.cakes||[];renderFeaturedCooks();renderFeaturedEP();renderFeaturedCatering();renderFeaturedCakes();}
   if(S.curScreen==='cooks'){window._HC_DATA=D.cooks||[];renderCooks(D.cooks);}
@@ -13980,6 +14026,7 @@ function filterCakesCat(cat,btn){
   renderCakes(window._cakeCatFilter?window._cakeCatFilter(list):list);
 }
 function openCake(id){
+  window._openCakeId=id;
   var c=(window._CAKE_DATA||D.cakes||[]).find(function(x){return String(x.id)===String(id);});
   if(!c){showToast&&showToast('Cake not found','warning');return;}
   var hero=document.getElementById('caked-hero');
@@ -16642,6 +16689,7 @@ function closeCookBooking(){
 function cookBkRender(phase){
   var _cbPhaseChanged=_cb.phase!==phase;
   _cb.phase=phase;
+  window._cbView='bk:'+phase;
   var ov=document.getElementById('__cook_bk_ov');
   if(!ov)return;
   var c=_cb.cook;
@@ -16896,6 +16944,7 @@ function mealPickerCount(){ return _mealPicker.selections.length; }
 function mealPickerRequired(){ return _mealPicker.tpl.mealCount===Infinity?null:_mealPicker.tpl.mealCount; }
 function renderMealPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
+  window._cbView='meal';
   var c=_cb.cook,menu=c.menu||[];
   var tpl=_mealPicker.tpl,required=mealPickerRequired(),count=mealPickerCount();
   var total=_mealPicker.selections.reduce(function(s,x){return s+x.priceKobo;},0);
@@ -17031,6 +17080,7 @@ function backToCateringPackages(){
 }
 function renderEventCateringPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
+  window._cbView='catering';
   var c=_cb.cook,allMenu=c.menu||[];
   var ec=_eventCatering;
   var isCatering=c&&c.vtype==='CATERING';

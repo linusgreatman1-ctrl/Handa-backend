@@ -2,13 +2,14 @@ const express = require("express");
 const { requireAuth } = require("../middleware/auth");
 const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/users.controller");
+const { broadcastCatalogChange } = require("../middleware/catalogBroadcast");
 
 const router = express.Router();
 
 router.use(requireAuth);
 
-router.patch("/me", ctrl.updateProfile);
-router.patch("/me/vendor-profile", ctrl.updateVendorProfile);
+router.patch("/me", broadcastCatalogChange, ctrl.updateProfile);
+router.patch("/me/vendor-profile", broadcastCatalogChange, ctrl.updateVendorProfile);
 router.patch("/me/rider-profile", ctrl.updateRiderProfile);
 router.patch("/me/shopper-profile", ctrl.updateShopperProfile);
 router.post("/me/vendor-profile", ctrl.createVendorProfile);
@@ -16,7 +17,7 @@ router.post("/me/rider-profile", ctrl.createRiderProfile);
 router.post("/me/shopper-profile", ctrl.createShopperProfile);
 router.patch("/me/availability", ctrl.setAvailability);
 router.get("/me/stats", ctrl.getMyStats);
-router.post("/me/avatar", upload.single("avatar"), ctrl.uploadAvatar);
+router.post("/me/avatar", broadcastCatalogChange, upload.single("avatar"), ctrl.uploadAvatar);
 
 router.get("/banks", ctrl.listBanks);
 router.post("/me/bank-account", ctrl.linkBankAccount);
