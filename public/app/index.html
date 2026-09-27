@@ -2479,7 +2479,7 @@ function openPostCateringRequestModal(){
     // Not on the list? Add it -- it becomes a chip like the others.
     + '<div style="display:flex;gap:6px;margin-bottom:8px;"><input id="cr-meal-other" placeholder="Other meal not listed…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_crAddOtherMeal();}" style="flex:1;min-width:0;box-sizing:border-box;padding:8px 10px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"><button type="button" onclick="_crAddOtherMeal()" style="padding:8px 12px;border-radius:10px;border:1.5px solid #F5A623;background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;">+ Add</button></div>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:6px 0 4px;">Meal preferences (what each meal should contain per head)</label>'
-    + '<textarea id="cr-meals" rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;" placeholder="Tap meals above or type, e.g. Jollof Rice — 2 pieces of chicken, moi-moi, plantain"></textarea>'
+    + '<textarea id="cr-meals" rows="5" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;" placeholder="Tap meals above to see what each includes, then edit as you like"></textarea>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">Drinks per head?</label>'
     + '<select id="cr-drinks" onchange="document.getElementById(\'cr-drinks-kind-wrap\').style.display=this.value===\'Yes\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;"><option>No</option><option>Yes</option></select>'
     + '<div id="cr-drinks-kind-wrap" style="display:none;"><label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">What drinks, per head?</label><input id="cr-drinks-kind" placeholder="e.g. 1 Chapman + 1 bottle of water per head" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"></div>'
@@ -2499,9 +2499,27 @@ function openPostCateringRequestModal(){
   var existing=document.getElementById('catering-request-modal'); if(existing) existing.remove();
   document.body.insertAdjacentHTML('beforeend', html);
 }
-// Adds a picked meal to the "Meal preferences" box as its own line, ready
-// for the customer to say what it should contain (e.g. "Jollof Rice — 2
-// pieces of chicken, moi-moi"). Tapping again doesn't duplicate it.
+// What each listed meal usually includes per head -- filled in after the
+// meal's name when it's picked, so the customer sees it and can edit it,
+// and the caterer gets the full description on their side.
+var CR_MEAL_INCLUDES={
+  'Jollof Rice':'1 plate of jollof rice, 2 pieces of chicken, fried plantain',
+  'Fried Rice':'1 plate of fried rice, 2 pieces of chicken, coleslaw',
+  'White Rice & Stew':'1 plate of white rice, tomato stew, 2 pieces of beef',
+  'Ofada Rice & Ayamase':'1 wrap of ofada rice, ayamase sauce, assorted meat, boiled egg',
+  'Pounded Yam & Egusi':'1 wrap of pounded yam, egusi soup, assorted meat, stockfish',
+  'Amala & Ewedu':'1 wrap of amala, ewedu and gbegiri, 2 pieces of beef',
+  'Eba & Okro':'1 wrap of eba, okro soup, assorted meat, fish',
+  'Small Chops':'2 samosas, 2 spring rolls, puff-puff, peppered gizzard',
+  'Asun':'1 portion of peppered goat meat',
+  'Peppered Chicken':'2 pieces of peppered chicken',
+  'Pasta':'1 plate of pasta in tomato sauce, 1 piece of chicken',
+  'Moi-moi':'1 wrap of moi-moi with egg and fish',
+  'Salad':'1 portion of vegetable salad',
+  'Dessert':'1 portion of dessert (cake slice or ice cream)'
+};
+// Adds a picked meal to the "Meal preferences" box as its own line with
+// what it includes (editable). Tapping it again removes it.
 function _crAddMeal(btn,meal){
   var ta=document.getElementById('cr-meals');if(!ta)return;
   var lines=ta.value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
@@ -2512,7 +2530,7 @@ function _crAddMeal(btn,meal){
     if(btn){btn.style.borderColor='#2A2850';btn.style.color='#F2EDE8';btn.textContent='+ '+meal;}
     return;
   }
-  lines.push(meal+' — ');
+  lines.push(meal+' — '+(CR_MEAL_INCLUDES[meal]||''));
   ta.value=lines.join('\n');
   if(btn){btn.style.borderColor='#F5A623';btn.style.color='#F5A623';btn.textContent='✓ '+meal;}
   ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
