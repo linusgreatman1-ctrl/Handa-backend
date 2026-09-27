@@ -2226,7 +2226,7 @@ async function openEventRequestDetailModal(id){
     if(r.timeframe)rows.push(['Timeframe', r.timeframe]);
     var infoCard='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(x){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+x[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+x[1]+'</span></div>';}).join('')
-      +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;">'+r.servicesRequested.join(', ')+'</div></div>':'')
+      +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;line-height:1.6;">'+_numberedListHtml(r.servicesRequested)+'</div></div>':'')
       +(r.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+r.notes+'</div></div>':'')
       +'</div>';
     var proposalsWriteup=!activeProposals.length
@@ -2336,7 +2336,7 @@ async function openEventRequestForVendor(requestId){
       +(r.guestCount?'<br>👥 '+r.guestCount+' guests':'')
       +(r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
       +'</div>'
-      +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
+      +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.6;"><div>Services needed:</div>'+_numberedListHtml(r.servicesRequested)+'</div>':'')
       +(r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
       +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">Note: '+r.notes+'</div>':'')
       +'<div style="border-top:1px solid #2A2850;margin-top:10px;padding-top:10px;font-size:12px;color:#9A9390;">Posted by <span style="color:#F2EDE8;font-weight:700;">'+(r.posterName||(r.customer&&r.customer.name)||'Customer')+'</span>'+((r.posterPhone||(r.customer&&r.customer.phone))?' • '+(r.posterPhone||r.customer.phone):'')+'</div>'
@@ -2521,6 +2521,8 @@ var CR_MEAL_INCLUDES={
 // Adds a picked meal to the "Meal preferences" box as its own line with
 // what it includes (editable). Tapping it again removes it.
 // Meal lines are numbered (1. 2. 3.) on both the customer and caterer sides.
+// A request's list (services needed) as 1. 2. 3. lines.
+function _numberedListHtml(arr){return (arr||[]).map(function(s,i){return '<div style="padding-left:4px;">'+(i+1)+'. '+s+'</div>';}).join('');}
 function _crStripNum(l){return String(l).replace(/^\s*\d+[.)]\s*/,'').trim();}
 function _crNumberLines(lines){return lines.map(function(l,i){return (i+1)+'. '+_crStripNum(l);});}
 // Shows a request's Meals & Drinks with every meal numbered -- works for
@@ -2691,7 +2693,7 @@ async function openCateringRequestDetailModal(id){
     if(r.timeframe)rows.push(['Timeframe', r.timeframe]);
     var infoCard='<div style="background:#242424;border-radius:13px;padding:14px;margin-bottom:14px;">'
       +rows.map(function(x){return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2A2850;"><span style="font-size:12px;color:#9A9390;">'+x[0]+'</span><span style="font-size:13px;font-weight:700;color:#F2EDE8;text-align:right;">'+x[1]+'</span></div>';}).join('')
-      +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;">'+r.servicesRequested.join(', ')+'</div></div>':'')
+      +(r.servicesRequested&&r.servicesRequested.length?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Services Needed</div><div style="font-size:13px;color:#F2EDE8;line-height:1.6;">'+_numberedListHtml(r.servicesRequested)+'</div></div>':'')
       +(r.mealPreferences?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Meals &amp; Drinks</div><div style="font-size:13px;color:#F2EDE8;line-height:1.6;">'+_crMealPrefsHtml(r.mealPreferences)+'</div></div>':'')
       +(r.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">Note: '+r.notes+'</div></div>':'')
       +'</div>';
@@ -2780,7 +2782,7 @@ async function openCateringRequestForVendor(requestId){
       +(r.guestCount?'<br>👥 '+r.guestCount+' guests':'')
       +(r.budgetKobo?'<br>💰 Budget ₦'+Number(Math.round(r.budgetKobo/100)).toLocaleString():'')
       +'</div>'
-      +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;">Services needed: '+r.servicesRequested.join(', ')+'</div>':'')
+      +(r.servicesRequested&&r.servicesRequested.length?'<div style="font-size:12px;color:#9A9390;margin-top:8px;line-height:1.6;"><div>Services needed:</div>'+_numberedListHtml(r.servicesRequested)+'</div>':'')
       +(r.timeframe?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">⏱ '+r.timeframe+'</div>':'')
       +(r.mealPreferences?'<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#242424;"><div style="font-size:11px;color:#F5A623;font-weight:800;margin-bottom:4px;">🍽️ MEALS &amp; DRINKS</div><div style="font-size:12px;color:#F2EDE8;line-height:1.6;">'+_crMealPrefsHtml(r.mealPreferences)+'</div></div>':'')
       +(r.notes?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">Note: '+r.notes+'</div>':'')
