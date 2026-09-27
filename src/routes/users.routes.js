@@ -2,11 +2,11 @@ const express = require("express");
 const { requireAuth } = require("../middleware/auth");
 const { upload } = require("../middleware/upload");
 const ctrl = require("../controllers/users.controller");
-const { broadcastCatalogChange } = require("../middleware/catalogBroadcast");
+const { broadcastCatalogChange, broadcastUserChange } = require("../middleware/catalogBroadcast");
 
 const router = express.Router();
 
-router.use(requireAuth);
+router.use(requireAuth, broadcastUserChange);
 
 router.patch("/me", broadcastCatalogChange, ctrl.updateProfile);
 router.patch("/me/vendor-profile", broadcastCatalogChange, ctrl.updateVendorProfile);

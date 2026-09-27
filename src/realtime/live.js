@@ -77,6 +77,9 @@ function attachLiveSocket(httpServer) {
     // a push the moment the AI replies to a user, not just when the
     // user's own message lands.
     if (user.role === "ADMIN" && (user.isSuperAdmin || user.isContentAdmin)) socket.join("admins");
+    // Every admin (any tier) -- live refresh of user/vendor details in the
+    // admin dashboard when someone edits their profile or registers.
+    if (user.role === "ADMIN") socket.join("admins-all");
 
     // ── Explicit room joins, each gated by an actual access check so a
     // socket can't eavesdrop on someone else's booking/session/chat by

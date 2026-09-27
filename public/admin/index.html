@@ -150,9 +150,36 @@ let chatUnreadCount = 0;
 // super/content tiers, unlike the chat-specific listeners below) gets
 // these, since every admin can act on KYC/Tickets/Manual Bank Transfers.
 let sysNotifUnread = 0;
+// Remember the list/detail view currently open (re-run on a live update).
+let _adminView = null;
+let _adminLiveT = null;
+function _trackAdminView(name) {
+  const orig = window[name];
+  if (typeof orig !== 'function' || orig._tracked) return;
+  const wrapped = function () { _adminView = { name, args: [].slice.call(arguments) }; return orig.apply(this, arguments); };
+  wrapped._tracked = true;
+  window[name] = wrapped;
+}
+function _adminLiveRefresh(p) {
+  clearTimeout(_adminLiveT);
+  _adminLiveT = setTimeout(() => {
+    if (!_adminView) return;
+    // Don't yank a form an admin is typing into.
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && ae.type !== 'button'))) return;
+    const lists = ['renderUsers', 'renderVendors', 'renderRiders', 'renderShoppers', 'renderKycDocuments', 'renderDashboard'];
+    const details = ['renderCustomerDetail', 'renderVendorDetail', 'renderRiderDetail', 'renderShopperDetail'];
+    if (lists.indexOf(_adminView.name) >= 0 || details.indexOf(_adminView.name) >= 0) {
+      window[_adminView.name].apply(null, _adminView.args);
+    }
+  }, 600);
+}
 function connectAdminNotifSocket() {
   if (adminChatSocket || typeof io === 'undefined' || !accessToken) return;
   adminChatSocket = io({ path: '/socket.io', auth: { token: accessToken }, transports: ['websocket', 'polling'] });
+  // A user edited their details (or registered): reload whichever list /
+  // detail page is open so the dashboard never shows stale info.
+  adminChatSocket.on('admin:user-updated', (p) => { _adminLiveRefresh(p); });
   adminChatSocket.on('chat:ai-replied', (p) => {
     bumpChatBadge();
     showAdminToast('🤖 AI replied to ' + (p.userName || 'a user') + ': "' + (p.preview || '').slice(0, 90) + '"', p.threadId);
@@ -2481,5 +2508,7 @@ async function renderShopSessionDetail(id) {
 
 document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 </script>
+<script>['renderUsers','renderVendors','renderRiders','renderShoppers','renderKycDocuments','renderDashboard','renderCustomerDetail','renderVendorDetail','renderRiderDetail','renderShopperDetail','renderReports','renderTickets','renderBookings'].forEach(_trackAdminView);
+(function(){const st=window.switchTab;if(typeof st==='function'){window.switchTab=function(){_adminView=null;return st.apply(this,arguments);};}})();</script>
 </body>
 </html>

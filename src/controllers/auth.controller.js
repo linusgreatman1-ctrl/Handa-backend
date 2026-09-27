@@ -211,6 +211,7 @@ async function register(req, res, next) {
       notifyAllAdmins(req.app.get("io"), "🪪 New KYC document", `${user.name || "A user"} submitted a ${idTypeLabels[idType]} for review.`, { userId: user.id }).catch(() => {});
     }
 
+    req.app.get("io")?.to("admins-all").emit("admin:user-updated", { userId: user.id, created: true });
     const { accessToken, refreshToken } = await issueSession(res, user);
     res.status(201).json({ user: publicUser(user), accessToken, refreshToken });
   } catch (err) {
