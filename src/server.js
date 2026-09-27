@@ -63,7 +63,7 @@ app.use(
         // itself loaded with zero visible errors unless you opened devtools.
         "script-src-attr": ["'self'", "'unsafe-inline'"],
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
+        "font-src": ["'self'", "https://fonts.gstatic.com"],
         "frame-src": ["'self'", "https://*.paystack.co", "https://*.paystack.com", "https://*.flutterwave.com"],
         "connect-src": ["'self'", "https://*.paystack.co", "https://*.paystack.com", "ws:", "wss:"],
         "img-src": ["'self'", "data:", "blob:"],
@@ -103,9 +103,6 @@ app.use("/api", globalLimiter);
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 app.use("/admin", express.static(path.join(__dirname, "..", "public", "admin")));
 app.use("/app", express.static(path.join(__dirname, "..", "public", "app")));
-// FixMi — artisan-booking web app (single static HTML file, embedded
-// base64 fonts, hence "data:" on font-src above).
-app.use("/fixmi", express.static(path.join(__dirname, "..", "public", "fixmi")));
 // Dev-staging copies of the two live files — a safe place for the admin
 // Code Editor to test edits (or preview the Live Preview tab) before an
 // admin manually applies the same change to the real live file.
@@ -115,7 +112,7 @@ app.use("/admin-dev", express.static(path.join(__dirname, "..", "public", "admin
 app.get("/health", (req, res) => res.json({ status: "ok", service: "handa-backend" }));
 app.use("/internal-seed", require("./routes/internalSeed.routes"));
 app.use("/internal-cleanup", require("./routes/internalCleanup.routes"));
-app.get("/", (req, res) => res.json({ service: "handa-backend", status: "ok", app: "/app", fixmi: "/fixmi", admin: "/admin", health: "/health", api: "/api" }));
+app.get("/", (req, res) => res.json({ service: "handa-backend", status: "ok", app: "/app", admin: "/admin", health: "/health", api: "/api" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
