@@ -378,6 +378,7 @@ enum PackageKey {
   BIRTHDAY
   BURIAL
   NAMING
+  MULTI // home cook: pick any number of meals
   CUSTOM // a vendor-defined package outside the fixed template set
 }
 
