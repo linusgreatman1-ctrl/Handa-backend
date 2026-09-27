@@ -11914,7 +11914,7 @@ async function openEditProfileModal(role){
       +'<input id="'+id+'" type="'+(type||'text')+'" value="'+(val||'').toString().replace(/"/g,'&quot;')+'" placeholder="'+(ph||'')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></div>';
   };
   var stateSel='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">State</label>'
-    +'<select id="epf-state" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"><option value="">Select State</option>'
+    +'<select id="epf-state" onchange="_epfLoadLgas()" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"><option value="">Select State</option>'
     +NG_STATES.map(function(s){return '<option'+(u.state===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>';
   var html='<div style="padding:0 0 20px;">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">'
@@ -11925,7 +11925,9 @@ async function openEditProfileModal(role){
     +f('Email','epf-email',u.email,'email','you@example.com')
     +f('Address','epf-address',u.address,'text','Street address')
     +stateSel
-    +f('LGA','epf-lga',u.lga,'text','Local government area');
+    // LGA is picked from the chosen state's own list (same data as registration).
+    +'<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">LGA</label>'
+    +'<select id="epf-lga" data-current="'+(u.lga||'').replace(/"/g,'&quot;')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></select></div>';
   if(role==='vendor'){
     html+=f('Business Name','epf-bizname',u.bizName,'text','Business name')
       +f('Description','epf-desc',u.vendorDescription,'text','What you offer');
@@ -11959,6 +11961,15 @@ async function openEditProfileModal(role){
   html+='<button id="epf-save-btn" onclick="saveEditProfile(\''+role+'\')" style="width:100%;background:#E8392E;border:none;border-radius:13px;padding:13px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;margin-top:6px;">Save Changes</button>'
     +'</div>';
   showProcedureModal(html);
+  _epfLoadLgas();
+}
+function _epfLoadLgas(){
+  var st=(document.getElementById('epf-state')||{}).value||'';
+  var lg=document.getElementById('epf-lga');if(!lg)return;
+  if(!st){lg.innerHTML='<option value="">Select a state first</option>';lg.disabled=true;return;}
+  lg.disabled=false;loadLGAs(st,'epf-lga');
+  var cur=lg.getAttribute('data-current');
+  if(cur){for(var i=0;i<lg.options.length;i++){if(lg.options[i].value===cur){lg.selectedIndex=i;break;}}}
 }
 async function saveEditProfile(role){
   var btn=document.getElementById('epf-save-btn');if(btn){btn.disabled=true;btn.textContent='Saving…';}
@@ -11966,7 +11977,9 @@ async function saveEditProfile(role){
   try{
     var profileBody={
       name:val('epf-name')||undefined, phone:val('epf-phone')||undefined, email:val('epf-email')||undefined,
-      address:val('epf-address')||undefined, state:val('epf-state')||undefined, lga:val('epf-lga')||undefined,
+      address:val('epf-address')||undefined, state:val('epf-state')||undefined,
+      // A state change clears an LGA that belonged to the old state.
+      lga:val('epf-state')?(val('epf-lga')||null):undefined,
     };
     var res=await api('/users/me',{method:'PATCH',body:JSON.stringify(profileBody)});
     S.user=Object.assign(S.user||{},mapApiUser(res.user));
