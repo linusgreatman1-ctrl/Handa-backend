@@ -2617,6 +2617,34 @@ function _crStripNum(l){return String(l).replace(/^\s*\d+[.)]\s*/,'').trim();}
 function _crNumberLines(lines){return lines.map(function(l,i){return (i+1)+'. '+_crStripNum(l);});}
 // Shows a request's Meals & Drinks with every meal numbered -- works for
 // requests posted before numbering too ("Meals: A\nB\nDrinks...").
+// A booking's notes. A catering booking made from a request carries the
+// request's Meals & Drinks plus the customer's and caterer's notes -- shown
+// as their own sections (meals numbered) instead of one run-on paragraph.
+// Handles both the sectioned format and older " — "-joined bookings.
+function _bookingNotesHtml(b){
+  if(!b||!b.notes)return '';
+  var label=function(t){return '<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+t+'</div>';};
+  var plain=function(lines){return '<div style="margin-top:10px;">'+label('Notes')+lines.map(function(l){return '<div style="font-size:13px;color:#F2EDE8;margin-bottom:4px;">'+l+'</div>';}).join('')+'</div>';};
+  var text=String(b.notes);
+  if(b.type!=='CATERING'||!/(^|\n)(Meals:|Drinks)/i.test(text))return plain([text]);
+  var meals='',notes=[];
+  if(text.indexOf('\n\n')>=0){
+    text.split('\n\n').forEach(function(block){
+      if(/^(Meals:|Drinks)/i.test(block.trim()))meals+=(meals?'\n':'')+block.trim();
+      else if(block.trim())notes.push(block.trim());
+    });
+  }else{
+    // Older format: "Meals: ...\n...\nDrinks...: x — customer note — caterer note"
+    var lines=text.split('\n'),di=-1;
+    lines.forEach(function(l,i){if(di<0&&/^Drinks/i.test(l.trim()))di=i;});
+    if(di<0)return plain([text]);
+    var parts=lines[di].split(' — ');
+    meals=lines.slice(0,di).concat([parts[0]]).join('\n');
+    notes=parts.slice(1).concat(lines.slice(di+1)).map(function(s){return s.trim();}).filter(Boolean);
+  }
+  return '<div style="margin-top:10px;background:#1C1C1C;border-radius:10px;padding:10px 12px;">'+label('🍽️ Meals &amp; Drinks')+'<div style="font-size:13px;color:#F2EDE8;line-height:1.6;">'+_crMealPrefsHtml(meals)+'</div></div>'
+    +(notes.length?plain(notes):'');
+}
 function _crMealPrefsHtml(text){
   var lines=String(text||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
   var meals=[],rest=[];
@@ -14529,7 +14557,7 @@ async function openVendorBookingDetail(id){
       // what's actually booked now.
       +((b.selectedItems&&b.selectedItems.length&&b.type!=='CATERING')?'':_packageIncludesHtml(b))
       +itemsHtml
-      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
+      +_bookingNotesHtml(b)
       +'</div>'
       +'<div style="background:#242424;border-radius:13px;padding:14px;">'
       +'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:8px;">Booked By</div>'
@@ -15275,7 +15303,7 @@ async function openCustomerHistoryDetail(kind,id){
       // what's actually booked now.
       +((b.selectedItems&&b.selectedItems.length&&b.type!=='CATERING')?'':_packageIncludesHtml(b))
       +itemsHtml
-      +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
+      +_bookingNotesHtml(b)
       +'</div>'
       +terminalBanner
       +(awaitingVendorDecision?(

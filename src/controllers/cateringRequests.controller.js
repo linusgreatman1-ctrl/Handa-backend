@@ -200,7 +200,9 @@ async function acceptProposal(req, res, next) {
           guestCount: request.guestCount,
           eventType: request.eventType,
           selectedItems: selectedItemsSnapshot,
-          notes: [request.mealPreferences || null, request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
+          // Separate sections (blank line between) so the booking screen can show
+          // Meals & Drinks apart from the notes.
+          notes: [request.mealPreferences || null, request.notes ? "Customer note: " + request.notes : null, proposal.notes ? "Caterer's note: " + proposal.notes : null].filter(Boolean).join("\n\n") || null,
           paymentMethod: "CARD",
           totalKobo: proposal.priceKobo,
         },
