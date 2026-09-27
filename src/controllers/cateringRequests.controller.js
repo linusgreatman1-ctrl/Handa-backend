@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { attachRequestOrders } = require("../utils/requestOrders");
+const { cleanLocation, visibleToVendorWhere, vendorCanSee } = require("../utils/requestLocation");
 const { notify, notifyAllCaterers } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
@@ -15,12 +16,15 @@ const { generateReference } = require("../utils/reference");
 async function createCateringRequest(req, res, next) {
   try {
     const { eventType, eventDate, eventTime, venue, guestCount, budgetKobo, servicesRequested, mealPreferences, notes, posterName, posterPhone, timeframe } = req.body;
+    const loc = cleanLocation(req.body);
     if (!eventType || !eventDate || !venue) {
       return res.status(400).json({ error: "eventType, eventDate, and venue are required." });
     }
     const request = await prisma.cateringRequest.create({
       data: {
         customerId: req.user.id,
+        state: loc.state,
+        lga: loc.lga,
         posterName: posterName || req.user.name || null,
         posterPhone: posterPhone || req.user.phone || null,
         eventType,
@@ -37,7 +41,7 @@ async function createCateringRequest(req, res, next) {
     });
     const io = req.app.get("io");
     io?.to("dispatch:caterers").emit("catering-request:updated", { requestId: request.id, reason: "created" });
-    notifyAllCaterers(io, "New catering request", `A customer posted a new ${eventType} catering request${venue ? " in " + venue : ""} — submit a proposal.`, { cateringRequestId: request.id }).catch(() => {});
+    notifyAllCaterers(io, "New catering request", `A customer posted a new ${eventType} catering request${venue ? " in " + venue : ""} — submit a proposal.`, { cateringRequestId: request.id }, loc).catch(() => {});
     res.status(201).json({ request });
   } catch (err) {
     next(err);
@@ -53,8 +57,8 @@ async function listCateringRequests(req, res, next) {
         return res.status(403).json({ error: "Only catering accounts can browse catering requests." });
       }
       const requestsWhere = status
-        ? { status }
-        : { OR: [{ status: "OPEN" }, { proposals: { some: { vendorId: req.user.vendorProfile.id } } }] };
+        ? { status, ...(status === "OPEN" ? visibleToVendorWhere(req.user) : {}) }
+        : { OR: [{ status: "OPEN", ...visibleToVendorWhere(req.user) }, { proposals: { some: { vendorId: req.user.vendorProfile.id } } }] };
       const requests = await prisma.cateringRequest.findMany({
         where: requestsWhere,
         include: {
@@ -119,6 +123,7 @@ async function submitProposal(req, res, next) {
     const request = await prisma.cateringRequest.findUnique({ where: { id: req.params.id } });
     if (!request) return res.status(404).json({ error: "Catering request not found." });
     if (request.status !== "OPEN") return res.status(400).json({ error: "This catering request is no longer open." });
+    if (!vendorCanSee(request, req.user)) return res.status(403).json({ error: "This catering request is for vendors in another area." });
 
     const existing = await prisma.cateringProposal.findFirst({
       where: { cateringRequestId: request.id, vendorId: req.user.vendorProfile.id, status: "PENDING" },

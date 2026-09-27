@@ -41,7 +41,9 @@ async function resolveBookingItems(items, vendorId) {
       const menuItem = menuItems.find((m) => m.id === reqItem.menuItemId);
       if (!menuItem) throw Object.assign(new Error("One or more items do not belong to this vendor."), { status: 400 });
       itemsTotalKobo += menuItem.priceKobo * qty;
-      return { menuItemId: menuItem.id, name: menuItem.name, priceKobo: menuItem.priceKobo, qty };
+      // contents = what's in the plate per head, frozen onto the order so both
+      // sides' order details keep showing it even if the menu changes later.
+      return { menuItemId: menuItem.id, name: menuItem.name, priceKobo: menuItem.priceKobo, qty, ...(menuItem.contents && menuItem.contents.length ? { contents: menuItem.contents } : {}) };
     }
     const name = (reqItem.customName || "").trim();
     const priceKobo = Math.max(0, Math.round(Number(reqItem.customPriceKobo) || 0));
@@ -165,7 +167,10 @@ async function createBooking(req, res, next) {
     if (servicePackageId) {
       servicePackage = await prisma.servicePackage.findUnique({ where: { id: servicePackageId } });
       if (!servicePackage || servicePackage.vendorId !== vendorId) return res.status(400).json({ error: "Invalid service package for this vendor." });
-      totalKobo += servicePackage.priceKobo;
+      // A catering package is priced per head through the meals picked under
+      // it -- linking it records the package (and its included services) on
+      // the order without charging its own price on top.
+      if (type !== "CATERING") totalKobo += servicePackage.priceKobo;
     }
 
     const { selectedItemsSnapshot, itemsTotalKobo } = await resolveBookingItems(items, vendorId);

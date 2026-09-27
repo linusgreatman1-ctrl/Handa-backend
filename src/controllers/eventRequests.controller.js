@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { attachRequestOrders } = require("../utils/requestOrders");
+const { cleanLocation, visibleToVendorWhere, vendorCanSee } = require("../utils/requestLocation");
 const { notify, notifyAllEventPlanners } = require("../services/notifications.service");
 const { generateReference } = require("../utils/reference");
 
@@ -14,6 +15,7 @@ const { generateReference } = require("../utils/reference");
 async function createEventRequest(req, res, next) {
   try {
     const { eventType, eventDate, venue, guestCount, budgetKobo, servicesRequested, notes, posterName, posterPhone, timeframe } = req.body;
+    const loc = cleanLocation(req.body);
     if (!eventType || !eventDate || !venue) {
       return res.status(400).json({ error: "eventType, eventDate, and venue are required." });
     }
@@ -24,6 +26,8 @@ async function createEventRequest(req, res, next) {
     const request = await prisma.eventRequest.create({
       data: {
         customerId: req.user.id,
+        state: loc.state,
+        lga: loc.lga,
         posterName: posterName || req.user.name || null,
         posterPhone: posterPhone || req.user.phone || null,
         eventType,
@@ -45,7 +49,7 @@ async function createEventRequest(req, res, next) {
     // they're currently connected -- the socket broadcast above only ever
     // helped a planner already sitting on their dashboard's request list
     // at the exact moment this fires.
-    notifyAllEventPlanners(io, "New event request", `A customer posted a new ${eventType} request${venue ? " in " + venue : ""} — submit a proposal.`, { eventRequestId: request.id }).catch(() => {});
+    notifyAllEventPlanners(io, "New event request", `A customer posted a new ${eventType} request${venue ? " in " + venue : ""} — submit a proposal.`, { eventRequestId: request.id }, loc).catch(() => {});
     res.status(201).json({ request });
   } catch (err) {
     next(err);
@@ -65,8 +69,8 @@ async function listEventRequests(req, res, next) {
       // (the "Event Requests" full-history view). An explicit status=OPEN
       // keeps the original dashboard-only behavior unchanged.
       const requestsWhere = status
-        ? { status }
-        : { OR: [{ status: "OPEN" }, { proposals: { some: { vendorId: req.user.vendorProfile.id } } }] };
+        ? { status, ...(status === "OPEN" ? visibleToVendorWhere(req.user) : {}) }
+        : { OR: [{ status: "OPEN", ...visibleToVendorWhere(req.user) }, { proposals: { some: { vendorId: req.user.vendorProfile.id } } }] };
       const requests = await prisma.eventRequest.findMany({
         where: requestsWhere,
         include: {
@@ -140,6 +144,7 @@ async function submitProposal(req, res, next) {
     const request = await prisma.eventRequest.findUnique({ where: { id: req.params.id } });
     if (!request) return res.status(404).json({ error: "Event request not found." });
     if (request.status !== "OPEN") return res.status(400).json({ error: "This event request is no longer open." });
+    if (!vendorCanSee(request, req.user)) return res.status(403).json({ error: "This event request is for vendors in another area." });
 
     const existing = await prisma.eventProposal.findFirst({
       where: { eventRequestId: request.id, vendorId: req.user.vendorProfile.id, status: "PENDING" },

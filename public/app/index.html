@@ -94,6 +94,7 @@ body{font-family:'DM Sans',Arial,sans-serif;background:#111;color:#F2EDE8;max-wi
      reading column. Scale them up here. */
   #notif-bell{width:52px !important;height:52px !important;font-size:22px !important;top:20px !important;right:24px !important}
   #notif-bell-badge{min-width:20px !important;height:20px !important;font-size:11px !important;line-height:20px !important}
+  #back-to-dash-btn{top:25px !important;right:88px !important}
   #notif-modal>div{max-width:600px !important;padding:26px !important;margin-top:80px !important}
   #notif-modal .notif-row-title{font-size:15px !important}
   #notif-modal .notif-row-body{font-size:13.5px !important}
@@ -1635,7 +1636,7 @@ function _updateBackToDashBtn(scr){
   if(!btn){
     btn=document.createElement('button');
     btn.id='back-to-dash-btn';
-    btn.style.cssText='position:fixed;right:14px;bottom:86px;z-index:950;display:flex;align-items:center;gap:6px;padding:10px 14px;border-radius:24px;border:1.5px solid rgba(232,57,46,.5);background:#1C1C1C;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:12px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.45);';
+    btn.style.cssText='position:fixed;top:16px;right:64px;z-index:1005;display:flex;align-items:center;gap:6px;padding:9px 13px;border-radius:24px;border:1.5px solid rgba(232,57,46,.5);background:#1C1C1C;color:#F2EDE8;font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:12px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.45);';
     document.body.appendChild(btn);
   }
   btn.innerHTML='&#x21A9; Back to '+(_DASH_LABELS[target]||'')+' Dashboard';
@@ -1666,6 +1667,34 @@ function renderRoleSwitcher(){
 
 // Kept for the (unrelated) event-request / proposal modals, which reuse
 // this same small field-builder pair.
+// Who sees a posted request: a state (prefilled with the customer's own)
+// and optionally one LGA. Only vendors registered there see it and are
+// notified (server: utils/requestLocation.js). "All states" = everyone.
+function _reqLocationHtml(pfx){
+  var st=(S.user&&S.user.state)||'';
+  setTimeout(function(){
+    var lg=document.getElementById(pfx+'-lga');if(!lg)return;
+    _reqLocationLgas(pfx);
+  },0);
+  var sel='width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;';
+  return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">State (who should see this request)</label>'
+    +'<select id="'+pfx+'-state" onchange="_reqLocationLgas(\''+pfx+'\')" style="'+sel+'"><option value="">All states (every vendor)</option>'+NG_STATES.map(function(s){return '<option'+(s===st?' selected':'')+'>'+s+'</option>';}).join('')+'</select>'
+    +'<label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">Local Government (optional)</label>'
+    +'<select id="'+pfx+'-lga" style="'+sel+'"></select>'
+    +'<div style="font-size:11px;color:#9A9390;margin-top:6px;">Only vendors in this state (and local government, if you pick one) will see your request.</div>';
+}
+function _reqLocationLgas(pfx){
+  var st=(document.getElementById(pfx+'-state')||{}).value||'';
+  var lg=document.getElementById(pfx+'-lga');if(!lg)return;
+  if(!st){lg.innerHTML='<option value="">— pick a state first —</option>';lg.disabled=true;return;}
+  lg.disabled=false;loadLGAs(st,pfx+'-lga');
+  if(lg.options[0])lg.options[0].textContent='All local governments in '+st;
+}
+function _reqLocationValue(pfx){
+  var st=(document.getElementById(pfx+'-state')||{}).value||'';
+  var lga=(document.getElementById(pfx+'-lga')||{}).value||'';
+  return {state:st||undefined,lga:(st&&lga)?lga:undefined};
+}
 function _arField(lb,id,ph,tp,val){ return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">'+lb+'</label><input class="if" id="'+id+'" '+(tp?'type="'+tp+'" ':'')+'value="'+((val||'').replace(/"/g,'&quot;'))+'" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'; }
 function _arSelect(lb,id,opts){ return '<label style="display:block;font-size:12px;color:#9A9390;margin:12px 0 4px;">'+lb+'</label><select class="if" id="'+id+'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#242424;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;">'+opts+'</select>'; }
 
@@ -1975,6 +2004,7 @@ function openPostEventRequestModal(){
     + _arSelect('Event Type','er-type','<option>Wedding</option><option>Birthday</option><option>Corporate Event</option><option>Conference</option><option>Party</option><option>Naming Ceremony</option><option>Other</option>')
     + _arField('Event Date','er-date','','date')
     + _arField('Venue / Location','er-venue','e.g. Eko Hotel, Lagos','',(S.user&&S.user.address)||'')
+    + _reqLocationHtml('er-loc')
     + _arField('Expected Guests','er-guests','e.g. 200','number')
     + _arField('Budget (₦)','er-budget','e.g. 1500000','number')
     + _arField('Timeframe','er-timeframe','e.g. Need this within 2 weeks','')
@@ -2014,7 +2044,7 @@ async function submitEventRequest(){
       posterName:posterName.trim()||undefined, posterPhone:posterPhone.trim()||undefined,
       eventType:eventType, eventDate:eventDate, venue:venue.trim(),
       guestCount: guests?parseInt(guests):null, budgetKobo: budget?Math.round(parseFloat(budget)*100):null,
-      servicesRequested: services, notes: notes.trim()||null, timeframe: timeframe.trim()||null,
+      servicesRequested: services, notes: notes.trim()||null, timeframe: timeframe.trim()||null, state: _reqLocationValue('er-loc').state, lga: _reqLocationValue('er-loc').lga,
     })});
     closeEventRequestModal();
     showToast&&showToast('Event request posted — planners can now send proposals','success');
@@ -2420,7 +2450,8 @@ async function submitProposalForRequest(requestId){
 // parameterized version of the Event one) so neither flow risks breaking
 // the other while they evolve independently.
 function openPostCateringRequestModal(){
-  var svcOpts = ['Delivery','Setup & Decoration','Serving Staff','Drinks/Beverages','Cutlery & Plates','Cake'];
+  // Same services a caterer's packages offer (CATERING_PACKAGE_INCLUDE_OPTIONS).
+  var svcOpts = CATERING_PACKAGE_INCLUDE_OPTIONS.slice();
   var html = '<div id="catering-request-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
     + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:440px;width:100%;padding:20px;max-height:88vh;overflow-y:auto;font-family:\'DM Sans\',sans-serif;">'
     + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:4px;">📢 Post a Catering Request</div>'
@@ -2431,6 +2462,7 @@ function openPostCateringRequestModal(){
     + _arField('Event Date','cr-date','','date')
     + _arField('Event Time','cr-time','','time')
     + _arField('Venue / Location','cr-venue','e.g. Eko Hotel, Lagos','',(S.user&&S.user.address)||'')
+    + _reqLocationHtml('cr-loc')
     + _arField('Expected Guests','cr-guests','e.g. 200','number')
     // What each plate should hold per head, and drinks -- the caterer
     // prices their proposal off this.
@@ -2440,14 +2472,16 @@ function openPostCateringRequestModal(){
     // Tap-to-add common meals (the customer can also just type) -- each
     // adds a starter line to describe what that meal should contain.
     + '<div style="font-size:12px;color:#9A9390;margin:6px 0 6px;">Select meals you want</div>'
-    + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'
+    + '<div id="cr-meal-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'
     + ['Jollof Rice','Fried Rice','White Rice & Stew','Ofada Rice & Ayamase','Pounded Yam & Egusi','Amala & Ewedu','Eba & Okro','Small Chops','Asun','Peppered Chicken','Pasta','Moi-moi','Salad','Dessert'].map(function(m){return '<button type="button" onclick="_crAddMeal(this,\''+m.replace(/'/g,"\\'")+'\')" style="background:#1C1C1C;border:1px solid #2A2850;border-radius:16px;padding:5px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;font-family:\'DM Sans\',sans-serif;">+ '+m+'</button>';}).join('')
     + '</div>'
+    // Not on the list? Add it -- it becomes a chip like the others.
+    + '<div style="display:flex;gap:6px;margin-bottom:8px;"><input id="cr-meal-other" placeholder="Other meal not listed…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_crAddOtherMeal();}" style="flex:1;min-width:0;box-sizing:border-box;padding:8px 10px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"><button type="button" onclick="_crAddOtherMeal()" style="padding:8px 12px;border-radius:10px;border:1.5px solid #F5A623;background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;">+ Add</button></div>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:6px 0 4px;">Meal preferences (what each meal should contain per head)</label>'
     + '<textarea id="cr-meals" rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;" placeholder="Tap meals above or type, e.g. Jollof Rice — 2 pieces of chicken, moi-moi, plantain"></textarea>'
     + '<label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">Drinks per head?</label>'
     + '<select id="cr-drinks" onchange="document.getElementById(\'cr-drinks-kind-wrap\').style.display=this.value===\'Yes\'?\'block\':\'none\'" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:14px;"><option>No</option><option>Yes</option></select>'
-    + '<div id="cr-drinks-kind-wrap" style="display:none;"><label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">What kind of drinks?</label><input id="cr-drinks-kind" placeholder="e.g. Chapman, Zobo, soft drinks, bottled water" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"></div>'
+    + '<div id="cr-drinks-kind-wrap" style="display:none;"><label style="display:block;font-size:12px;color:#9A9390;margin:10px 0 4px;">What drinks, per head?</label><input id="cr-drinks-kind" placeholder="e.g. 1 Chapman + 1 bottle of water per head" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:10px;color:#F2EDE8;font-size:13px;"></div>'
     + '</div>'
     + _arField('Budget (₦)','cr-budget','e.g. 800000','number')
     + _arField('Timeframe','cr-timeframe','e.g. Need this within 2 weeks','')
@@ -2470,11 +2504,30 @@ function openPostCateringRequestModal(){
 function _crAddMeal(btn,meal){
   var ta=document.getElementById('cr-meals');if(!ta)return;
   var lines=ta.value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
-  if(lines.some(function(l){return l.toLowerCase().indexOf(meal.toLowerCase())===0;}))return;
+  var has=function(l){return l.toLowerCase().indexOf(meal.toLowerCase())===0;};
+  if(lines.some(has)){
+    // Tapping a selected meal deselects it -- its line comes out of the box.
+    ta.value=lines.filter(function(l){return !has(l);}).join('\n');
+    if(btn){btn.style.borderColor='#2A2850';btn.style.color='#F2EDE8';btn.textContent='+ '+meal;}
+    return;
+  }
   lines.push(meal+' — ');
   ta.value=lines.join('\n');
   if(btn){btn.style.borderColor='#F5A623';btn.style.color='#F5A623';btn.textContent='✓ '+meal;}
   ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+}
+// Adds a meal that isn't on the list as its own chip (selected), so it can
+// be tapped off again like the rest.
+function _crAddOtherMeal(){
+  var inp=document.getElementById('cr-meal-other');var wrap=document.getElementById('cr-meal-chips');
+  if(!inp||!wrap)return;
+  var meal=inp.value.trim();if(!meal)return;
+  inp.value='';
+  var b=document.createElement('button');b.type='button';
+  b.style.cssText='background:#1C1C1C;border:1px solid #2A2850;border-radius:16px;padding:5px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  b.onclick=function(){_crAddMeal(b,meal);};
+  wrap.appendChild(b);
+  _crAddMeal(b,meal);
 }
 function closeCateringRequestModal(){
   var el=document.getElementById('catering-request-modal'); if(el) el.remove();
@@ -2496,7 +2549,7 @@ async function submitCateringRequest(){
   var meals=((document.getElementById('cr-meals')||{}).value||'').trim();
   var drinks=(document.getElementById('cr-drinks')||{}).value||'No';
   var drinksKind=((document.getElementById('cr-drinks-kind')||{}).value||'').trim();
-  var mealPreferences=[meals?'Meals: '+meals:'',drinks==='Yes'?('Drinks: Yes'+(drinksKind?' — '+drinksKind:'')):'Drinks: No'].filter(Boolean).join('\n');
+  var mealPreferences=[meals?'Meals: '+meals:'',drinks==='Yes'?('Drinks per head: '+(drinksKind||'Yes')):'Drinks: No'].filter(Boolean).join('\n');
   if(!eventDate){showToast&&showToast('Please select an event date','warning');return;}
   if(!venue.trim()){showToast&&showToast('Please enter a venue','warning');return;}
   try{
@@ -2505,7 +2558,7 @@ async function submitCateringRequest(){
       eventType:eventType, eventDate:eventDate, eventTime:eventTime||undefined, venue:venue.trim(),
       mealPreferences:mealPreferences||undefined,
       guestCount: guests?parseInt(guests):null, budgetKobo: budget?Math.round(parseFloat(budget)*100):null,
-      servicesRequested: services, notes: notes.trim()||null, timeframe: timeframe.trim()||null,
+      servicesRequested: services, notes: notes.trim()||null, timeframe: timeframe.trim()||null, state: _reqLocationValue('cr-loc').state, lga: _reqLocationValue('cr-loc').lga,
     })});
     closeCateringRequestModal();
     showToast&&showToast('Catering request posted — caterers can now send proposals','success');
@@ -2714,7 +2767,7 @@ async function openCateringRequestForVendor(requestId){
         +'</div>';
       if(mine.status==='ACCEPTED'&&mine.bookingId)_loadCateringRequestJobAction(mine.bookingId);
     }else{
-      var svcOpts = ['Delivery','Setup & Decoration','Serving Staff','Drinks/Beverages','Cutlery & Plates','Cake'];
+      var svcOpts = CATERING_PACKAGE_INCLUDE_OPTIONS.slice(); // same list as catering packages
       body.innerHTML=header+details
         +'<div style="font-weight:800;font-size:14px;color:#F2EDE8;margin-bottom:8px;">Submit a Proposal</div>'
         + _arField('Your Price (₦)','csp-price','e.g. 800000','number')
@@ -2789,6 +2842,7 @@ function openPostCakeRequestModal(){
     + _arField('Needed By Date','kr-date','','date')
     + _arField('Delivery Time','kr-time','','time')
     + _arField('Delivery Address','kr-address','Where should the cake be delivered?','',(S.user&&S.user.address)||'')
+    + _reqLocationHtml('kr-loc')
     + _arField('Servings','kr-servings','e.g. 20','number')
     + _arField('Flavour Preference','kr-flavour','e.g. Red velvet, Chocolate, Vanilla','')
     + _arField('Budget (₦)','kr-budget','e.g. 25000','number')
@@ -2827,6 +2881,7 @@ async function submitCakeRequest(){
     fd.append('neededByDate',neededByDate);
     if(neededByTime)fd.append('neededByTime',neededByTime);
     fd.append('deliveryAddress',deliveryAddress.trim());
+    var _kl=_reqLocationValue('kr-loc');if(_kl.state)fd.append('state',_kl.state);if(_kl.lga)fd.append('lga',_kl.lga);
     if(posterName.trim())fd.append('posterName',posterName.trim());
     if(posterPhone.trim())fd.append('posterPhone',posterPhone.trim());
     if(servings)fd.append('servings',servings);
@@ -13563,6 +13618,7 @@ function renderCatering(list){
       +vendorHeaderMedia(c,'linear-gradient(135deg,#2d1a0d,#111)',90,60)
       +'<div style="padding:16px"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><div><b style="color:#F2EDE8">'+c.nm+'</b><p style="color:#F5A623;font-size:12px;margin:0">'+c.sp+'</p></div><span onclick="openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="color:#F5A623;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
       +'<p style="color:#9A9390;font-size:12px;margin:0 0 6px">📍 '+c.dist+' • '+c.addr+'</p>'
+      +(c.bio?_vendorBioHtml(c.bio).replace('margin:6px 0 0','margin:0 0 10px'):'')
       +tagsHtml
       +tiersHtml
       +'<button onclick="openCateringBooking(this.dataset.id)" data-id="'+c.id+'" style="width:100%;padding:12px;border-radius:12px;border:none;background:#F5A623;color:#111;font-weight:800;font-size:14px;cursor:pointer">🍽️ Book Caterer</button>'
@@ -13619,6 +13675,7 @@ function openCake(id){
         +'<div style="width:46px;height:46px;border-radius:13px;background:rgba(233,30,140,.12);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">🎂</div>'
         +'<div><p style="font-weight:800;font-size:15px;margin:0 0 2px;color:#F2EDE8">'+c.designer+'</p><p style="font-size:12px;color:#9A9390;margin:0">Cake Designer'+(c.vendorState?' · '+c.vendorState:'')+'</p></div>'
       +'</div>'
+      +_vendorBioHtml(((D.cakeVendors||[]).find(function(v){return v.id===c.vendorId;})||{}).bio,'#9A9390').replace('margin:6px 0 0','margin:0 0 10px')
       +'<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid #2a2a2a">'
         +'<div style="text-align:center"><p style="font-size:18px;font-weight:900;margin:0;color:#F2EDE8">'+c.rating+'</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Rating</p></div>'
         +'<div style="text-align:center"><p style="font-size:13px;font-weight:800;margin:0;color:#F5A623">⏱ '+(c.delivTime||'Ask baker')+'</p><p style="font-size:10px;color:#9A9390;margin:2px 0 0">Lead Time</p></div>'
@@ -13688,6 +13745,14 @@ function renderFeaturedEP(){
 // window._epBookings client-only arrays (which nothing writes to anymore
 // now that cookBkConfirmBooking/epBkConfirmBooking create real Booking
 // rows via the API instead).
+// A caterer's real price line: the per-head range across all its packages
+// (caterers never set an hourly rate, which read "₦0 per head").
+function _catererPriceLine(c){
+  var ps=_cateringPkgList(c).filter(function(p){return p.minPriceKobo!=null&&p.maxPriceKobo!=null;});
+  if(!ps.length)return (c.rate?'₦'+Number(c.rate).toLocaleString()+' '+c.period:'Packages priced per head');
+  var lo=Math.min.apply(null,ps.map(function(p){return p.minPriceKobo;})),hi=Math.max.apply(null,ps.map(function(p){return p.maxPriceKobo;}));
+  return '₦'+Number(Math.round(lo/100)).toLocaleString()+'–₦'+Number(Math.round(hi/100)).toLocaleString()+' per head &bull; '+ps.length+' package'+(ps.length===1?'':'s');
+}
 function renderFeaturedCatering(){
   var el=document.getElementById('e-featured-catering');if(!el||!D.catering)return;
   var sorted=(D.catering||[]).slice().sort(function(a,b){return (b.promo?1:0)-(a.promo?1:0);});
@@ -13696,7 +13761,7 @@ function renderFeaturedCatering(){
       +vendorAvatarCircle(c,52,30,'linear-gradient(135deg,#2d1a0d,#111)')
       +'<div style="flex:1"><div style="font-weight:700;font-size:14px;color:#F2EDE8">'+(c.promo?'⭐ ':'')+c.nm+'</div>'
       +'<div style="font-size:12px;color:#9A9390;margin-top:2px">'+c.sp+' · <span onclick="event.stopPropagation();openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">★'+c.rt+'</span></div>'
-      +'<div style="font-size:11px;color:#F5A623;margin-top:2px;font-weight:700">₦'+Number(c.rate).toLocaleString()+' '+c.period+'</div></div>'
+      +'<div style="font-size:11px;color:#F5A623;margin-top:2px;font-weight:700">'+_catererPriceLine(c)+'</div></div>'
       +'<span style="background:#F5A623;color:#111;font-size:11px;font-weight:700;padding:5px 10px;border-radius:8px">Book</span></div>';
   }).join('');
 }
@@ -13984,6 +14049,8 @@ function _itemRowHtml(it,isEP){
   // A customer's own "Other" dish carries their note on what it should
   // contain (drinks or not, which kind) -- shown under it on both sides.
   var notesHtml=it.notes?('<div style="font-size:11px;color:#9A9390;padding:1px 0 3px 12px;font-style:italic;">'+it.notes+'</div>'):'';
+  // What's in the plate per head -- frozen onto the order at booking time.
+  if(it.contents&&it.contents.length)notesHtml='<div style="font-size:11px;color:#9A9390;padding:1px 0 4px 12px;line-height:1.5;">'+it.contents.join(' &bull; ')+'</div>'+notesHtml;
   if(isEP)return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+it.name+'</div>'+notesHtml;
   var lineTotal=Math.round((it.priceKobo||0)*(it.qty||1)/100);
   return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;display:flex;justify-content:space-between;gap:10px;"><span>• '+it.name+' x'+it.qty+'</span><span style="color:#9A9390;white-space:nowrap;">'+N(lineTotal)+'</span></div>'+notesHtml;
@@ -13991,7 +14058,7 @@ function _itemRowHtml(it,isEP){
 function _packageIncludesHtml(b){
   var inc=b.servicePackage&&b.servicePackage.includes;
   if(!inc||!inc.length)return '';
-  return '<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Package Includes</div>'
+  return '<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">'+(b.type==='CATERING'?'Package Includes (besides the food)':'Package Includes')+'</div>'
     +inc.map(function(i){return '<div style="font-size:13px;color:#F2EDE8;padding:3px 0;">• '+i+'</div>';}).join('')
     +'</div>';
 }
@@ -14162,7 +14229,10 @@ async function openVendorBookingDetail(id){
       var _vMine=res.myReports||{};
       vendorStatusBlock='<div style="margin-top:14px;padding:14px;border-radius:13px;background:rgba(46,204,113,.08);border:1.5px solid rgba(46,204,113,.3);text-align:center;">'
         +'<div style="font-weight:800;font-size:14px;color:#2ECC71;">&#x2705; This '+(b.type==='CAKE'?'Order':'Booking')+' Is Completed</div>'
-        +((b.type==='EVENT_PLANNING'||b.type==='CATERING')?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">10% of the booking (&#x20a6;'+Number(Math.round(b.totalKobo*0.1/100)).toLocaleString()+') has been recorded as platform commission.</div>':'')
+        // Handa's 10% comes off automatically at every release (each part-
+        // payment and the final one -- escrow.service creditPayeeWithCommission),
+        // it's never a separate recorded commission.
+        +'<div style="font-size:12px;color:#9A9390;margin-top:6px;line-height:1.5;">The 10% Handa fee was deducted automatically from each payment released to you — you received &#x20a6;'+Number(Math.round(_netPayoutKobo(b.totalKobo,'VENDOR')/100)).toLocaleString()+' of &#x20a6;'+Number(Math.round(b.totalKobo/100)).toLocaleString()+'.</div>'
         +'<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">'
         +_historyReportBtn('Report Customer',!!_vMine.CUSTOMER,'customer',b.id,'vendor')
         +(b.rider?_historyReportBtn('Report Rider',!!_vMine.RIDER,'rider',b.id,'vendor'):'')
@@ -14306,7 +14376,7 @@ async function openVendorBookingDetail(id){
       // package's own raw, unedited "What's Included" template alongside
       // it duplicates stale info (the original, pre-edit list) next to
       // what's actually booked now.
-      +(b.selectedItems&&b.selectedItems.length?'':_packageIncludesHtml(b))
+      +((b.selectedItems&&b.selectedItems.length&&b.type!=='CATERING')?'':_packageIncludesHtml(b))
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
@@ -14659,6 +14729,13 @@ var _customerBookingDetailReqSeq=0;
 window._bkTypeById=window._bkTypeById||{};
 function _bkN(b){ return (b&&b.type==='CAKE')?'Order':'Booking'; }
 function _rememberBkTypes(list){ (list||[]).forEach(function(b){ if(b&&b.id&&b.type)window._bkTypeById[b.id]=b.type; }); }
+// A vendor's own short description from registration, shown on the pages
+// a customer opens (Cook, Event Planner, Caterer, Cake baker) -- kept to a
+// few lines so it reads as a quick intro, not a wall of text.
+function _vendorBioHtml(bio,color){
+  if(!bio||!String(bio).trim())return '';
+  return '<p style="color:'+(color||'#ccc')+';font-size:12px;line-height:1.55;margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">'+String(bio).trim()+'</p>';
+}
 function _vendorRoleLabel(type){
   return type==='CAKE'?'Baker':(type==='CATERING'?'Caterer':(type==='EVENT_PLANNING'?'Event Planner':'Cook'));
 }
@@ -15045,7 +15122,7 @@ async function openCustomerHistoryDetail(kind,id){
       // package's own raw, unedited "What's Included" template alongside
       // it duplicates stale info (the original, pre-edit list) next to
       // what's actually booked now.
-      +(b.selectedItems&&b.selectedItems.length?'':_packageIncludesHtml(b))
+      +((b.selectedItems&&b.selectedItems.length&&b.type!=='CATERING')?'':_packageIncludesHtml(b))
       +itemsHtml
       +(b.notes?'<div style="margin-top:10px;"><div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#F2EDE8;">'+b.notes+'</div></div>':'')
       +'</div>'
@@ -16238,6 +16315,7 @@ function cookBkRender(phase){
         +(c.avatarUrl?'<div style="width:60px;height:60px;border-radius:16px;overflow:hidden;flex-shrink:0;border:2px solid rgba(155,89,182,.3)"><img src="'+c.avatarUrl+'" style="width:100%;height:100%;object-fit:cover"></div>':'<div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,#2d0d2d,#111);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;border:2px solid rgba(155,89,182,.3)">'+c.em+'</div>')
         +'<div><h2 style="font-size:18px;font-weight:900;margin:0 0 4px">'+c.nm+'</h2>'
         +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">'+c.sp+' &bull; <span onclick="openRatingsModal(\''+c.userId+'\',\'VENDOR\',\''+c.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">&#x2605;'+c.rt+'</span></p></div>'
+        +_vendorBioHtml(c.bio)
       +'</div></div>'
       +'<div style="padding:16px 16px 0">'
         +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Packages</p>'
@@ -16309,6 +16387,15 @@ function cookBkRender(phase){
         ):'')
         +'<label style="display:block;color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">'+(isCakeVendor?'Notes (optional)':'Special Requests (optional)')+'</label>'
         +'<textarea id="cb-notes" class="if" rows="3" placeholder="'+(isCakeVendor?'Any notes for the baker, e.g. inscription or delivery instructions...':'Any special instructions, dietary needs or preferences...')+'" style="margin-bottom:20px;width:100%;display:block"></textarea>'
+        // Catering: how the customer's money is protected, before they pay.
+        +(isCateringVendor?'<div style="background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.25);border-radius:12px;padding:12px 14px;margin-bottom:16px;">'
+          +'<div style="font-size:13px;font-weight:800;color:#F5A623;margin-bottom:8px;">🔒 How Your Payment Is Protected (Escrow)</div>'
+          +'<div style="font-size:12px;color:#9A9390;line-height:1.7;">'
+          +'1. Your payment goes into a secure Handa escrow account — <strong style="color:#F2EDE8">not</strong> to the caterer.<br>'
+          +'2. The caterer cannot withdraw or touch it until <strong style="color:#F2EDE8">you</strong> release it.<br>'
+          +'3. You can chat with the caterer and release the money in parts as the job progresses, or all at once when your event is done.<br>'
+          +'4. If something goes wrong, report it — your money stays locked while Handa looks into it, with a refund if you are right.'
+          +'</div></div>':'')
         +'<button id="cb-confirm-btn" onclick="cookBkConfirmBooking()" style="width:100%;padding:14px;border-radius:12px;border:none;background:'+(isCakeVendor?'#E91E8C':'#9B59B6')+';color:#fff;font-weight:800;font-size:14px;cursor:pointer">&#x2705; Confirm &amp; Pay</button>'
       +'</div>';
 
@@ -16578,64 +16665,81 @@ function selectEventCateringPackage(pkgId){
   if(!ec.pkg||ec.pkg.id!==p.id)ec.selections=[];
   ec.pkg=p;
   renderEventCateringPicker();
+  var ov=document.getElementById('__cook_bk_ov');if(ov)ov.scrollTop=0;
+}
+// Back from a package's meals to the package list.
+function backToCateringPackages(){
+  _eventCatering.pkg=null;_eventCatering.selections=[];
+  renderEventCateringPicker();
+  var ov=document.getElementById('__cook_bk_ov');if(ov)ov.scrollTop=0;
 }
 function renderEventCateringPicker(){
   var ov=document.getElementById('__cook_bk_ov');if(!ov)return;
   var c=_cb.cook,allMenu=c.menu||[];
   var ec=_eventCatering;
   var isCatering=c&&c.vtype==='CATERING';
-  // Catering: Event Type -> Choose a Package -> that package's meals.
+  // Catering is two screens: (1) Event Type + the caterer's packages;
+  // (2) tapping a package opens THAT package's own meals to pick from.
   // (Home Cook's own event-catering template has no packages step.)
   var pkgs=isCatering?_cateringPkgList(c):[];
-  var pkg=ec.pkg;
+  var pkg=isCatering?ec.pkg:null;
+  var onMeals=!isCatering||!!pkg;
   var menu=isCatering?(pkg?allMenu.filter(function(m){return _mealInCateringPkg(m,pkg);}):[]):allMenu;
-  // Catering has no other "packages" phase to fall back to (see
-  // bookCatering) -- this picker IS the whole booking flow, so its own
-  // back button closes the overlay instead of surfacing Home Cook's
-  // unrelated meal-prep package list.
-  var backAction=isCatering?'closeCookBooking()':"cookBkRender('packages')";
+  var backAction=isCatering?(pkg?'backToCateringPackages()':'closeCookBooking()'):"cookBkRender('packages')";
   var sec=function(t){return '<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:4px 0 12px">'+t+'</p>';};
   var h='<div style="background:linear-gradient(160deg,#2d0d2d,#111);padding:44px 20px 20px">'
     +'<button onclick="'+backAction+'" class="ibtn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);margin-bottom:14px">&#x2190;</button>'
-    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+(isCatering?c.nm:ec.tpl.nm)+'</h2>'
-    +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">Tell us about your event</p>'
+    +'<h2 style="font-size:19px;font-weight:900;margin:0 0 4px">'+(isCatering?(pkg?pkg.em+' '+pkg.label:c.nm):ec.tpl.nm)+'</h2>'
+    +'<p style="color:#9B59B6;font-size:12px;font-weight:700;margin:0">'+(pkg?(c.nm+' &bull; '+_cateringPkgRange(pkg)):'Tell us about your event')+'</p>'
+    +(isCatering&&!pkg?_vendorBioHtml(c.bio):'')
     +'</div>'
-    +'<div style="padding:16px 16px 100px">'
-    +sec(isCatering?'1. Event Type':'Event Type')
-    +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:18px;">'
-    +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
-    +'</select>';
-  if(isCatering){
-    h+=sec('2. Choose a Package');
+    +'<div style="padding:16px 16px 100px">';
+  if(!onMeals){
+    // Screen 1: event type + packages
+    h+=sec('1. Event Type')
+      +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:18px;">'
+      +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
+      +'</select>'
+      +sec('2. Choose a Package');
     if(!pkgs.length)h+='<div style="text-align:center;padding:20px 10px;color:#9A9390;font-size:13px;">This caterer hasn\'t set up any packages yet.</div>';
     h+=pkgs.map(function(p){
-      var on=pkg&&pkg.id===p.id;
       var count=allMenu.filter(function(m){return _mealInCateringPkg(m,p);}).length;
-      return '<div onclick="selectEventCateringPackage(\''+p.id+'\')" style="background:'+(on?'rgba(155,89,182,.12)':'#1C1C1C')+';border:2px solid '+(on?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
+      return '<div onclick="selectEventCateringPackage(\''+p.id+'\')" style="background:#1C1C1C;border:2px solid #2A2850;border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer">'
         +'<div style="display:flex;align-items:center;gap:12px;">'
         +'<span style="font-size:26px;flex-shrink:0">'+p.em+'</span>'
-        +'<div style="flex:1;min-width:0"><div style="font-weight:800;color:#F2EDE8;font-size:14px">'+p.label+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px">'+count+' meal'+(count===1?'':'s')+' to choose from</div></div>'
+        +'<div style="flex:1;min-width:0"><div style="font-weight:800;color:#F2EDE8;font-size:14px">'+p.label+'</div><div style="font-size:11px;color:#9A9390;margin-top:2px">'+count+' meal'+(count===1?'':'s')+'</div></div>'
         +'<div style="font-weight:800;color:#9B59B6;font-size:13px;text-align:right;flex-shrink:0">'+_cateringPkgRange(p)+'</div></div>'
         +(p.inc.length?'<div style="margin-top:10px;padding-top:10px;border-top:1px solid #2A2850;"><div style="font-size:11px;color:#9A9390;font-weight:700;margin-bottom:6px;">Included besides the food</div>'
           +p.inc.map(function(i){return '<div style="font-size:12px;color:#F2EDE8;margin-bottom:3px;"><span style="color:#2ECC71;">&#x2713;</span> '+i+'</div>';}).join('')+'</div>':'')
+        +'<div style="margin-top:10px;text-align:right;color:#9B59B6;font-size:12px;font-weight:800;">View meals &#x203A;</div>'
         +'</div>';
     }).join('');
-    h+=pkg?sec('3. Choose Your Meals — tap a meal to see what\'s in it'):'<div style="text-align:center;padding:10px;color:#9A9390;font-size:12px;">Pick a package to see its meals.</div>';
   }else{
-    h+=sec('Select Foods — tap a dish to see what\'s in it');
-  }
-  if(!isCatering||pkg){
+    // Screen 2 (or Home Cook's single screen): this package's meals
+    if(isCatering){
+      h+='<div style="background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.3);border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+        +'<div style="font-size:12px;color:#9A9390;margin-bottom:6px;">Event: <b style="color:#F2EDE8;">'+ec.eventType+'</b></div>'
+        +(pkg.inc.length?'<div style="font-weight:700;color:#9B59B6;font-size:12px;margin-bottom:4px;">This package also includes:</div><div style="color:#F2EDE8;font-size:12px;line-height:1.6;">'+pkg.inc.join(' &bull; ')+'</div>':'')
+        +'</div>'
+        +sec('Choose your meals — tap a meal to select it');
+    }else{
+      h+=sec('Event Type')
+        +'<select id="ec-type" onchange="_eventCatering.eventType=this.value" style="width:100%;box-sizing:border-box;padding:12px;background:#242424;border:1.5px solid #2A2850;border-radius:12px;color:#F2EDE8;font-size:14px;margin-bottom:18px;">'
+        +['Wedding','Birthday','Corporate Event','Naming Ceremony','Burial/Memorial','Anniversary','Other'].map(function(t){return '<option'+(t===ec.eventType?' selected':'')+'>'+t+'</option>';}).join('')
+        +'</select>'
+        +sec('Select Foods — tap a dish to select it');
+    }
     if(!menu.length)h+='<div style="text-align:center;padding:16px 10px;color:#9A9390;font-size:13px;">'+(isCatering?'No meals have been added to this package yet.':'No menu items yet.')+'</div>';
+    // Tapping anywhere on a meal just selects/unselects it -- what it
+    // contains is already written out in full on the card.
     h+=menu.map(function(m){
       var picked=ec.selections.some(function(x){return x.menuItemId===m.id;});
-      return '<div style="display:flex;align-items:center;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;">'
-        +'<input type="checkbox" '+(picked?'checked':'')+' onclick="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="width:18px;height:18px;accent-color:#9B59B6;flex-shrink:0;cursor:pointer;">'
-        +'<div onclick="showMealContentsModal(\''+m.id+'\')" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer;">'
-        +(m.img?'<img src="'+m.img+'" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
-        +'<div style="flex:1;min-width:0"><div style="font-weight:700;color:#F2EDE8;font-size:14px">'+m.nm+'</div>'
-        +'<div style="font-size:11px;color:#9A9390;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+((m.contents&&m.contents.length)?m.contents.join(' &bull; '):'Tap to see what\'s included')+'</div></div>'
+      return '<div onclick="toggleEventCateringItem(\''+m.id+'\','+m.pr+',\''+m.nm.replace(/'/g,"\\'")+'\')" style="display:flex;align-items:flex-start;gap:12px;background:'+(picked?'rgba(155,89,182,.12)':'#1C1C1C')+';border:1.5px solid '+(picked?'#9B59B6':'#2A2850')+';border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer;">'
+        +'<div style="width:20px;height:20px;border-radius:6px;border:2px solid '+(picked?'#9B59B6':'#555')+';background:'+(picked?'#9B59B6':'transparent')+';color:#fff;font-size:13px;line-height:16px;text-align:center;flex-shrink:0;margin-top:2px;">'+(picked?'&#x2713;':'')+'</div>'
+        +(m.img?'<img src="'+m.img+'" style="width:40px;height:40px;border-radius:9px;object-fit:cover;flex-shrink:0">':'<span style="font-size:26px;flex-shrink:0">'+m.em+'</span>')
+        +'<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;"><div style="font-weight:800;color:#F2EDE8;font-size:14px">'+m.nm+'</div><div style="font-weight:800;color:#9B59B6;font-size:13px;flex-shrink:0;">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div></div>'
+        +((m.contents&&m.contents.length)?'<div style="font-size:12px;color:#9A9390;margin-top:6px;line-height:1.6;">'+m.contents.map(function(x){return '&#x2022; '+x;}).join('<br>')+'</div>':(m.desc?'<div style="font-size:12px;color:#9A9390;margin-top:6px;">'+m.desc+'</div>':''))
         +'</div>'
-        +'<div style="font-weight:800;color:#9B59B6;font-size:14px;flex-shrink:0;">&#x20a6;'+Number(m.pr).toLocaleString()+'/head</div>'
         +'</div>';
     }).join('')
     +ec.selections.filter(function(x){return x.custom;}).map(function(x){
@@ -16654,12 +16758,16 @@ function renderEventCateringPicker(){
     +'<button onclick="addEventCateringCustom()" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #9B59B6;background:#242424;color:#F2EDE8;font-weight:700;font-size:12px;cursor:pointer">+ Add</button>'
     +'</div>';
   }
-  h+='</div>'
-    +'<div style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px">'
-    +'<div style="text-align:center;margin-bottom:12px;color:#9A9390;font-size:11px;">Total is calculated from your guest count next</div>'
-    +'<button onclick="confirmEventCatering()" '+(ec.selections.length===0?'disabled style="width:100%;padding:14px;border-radius:12px;border:none;background:#555;color:#999;font-weight:800;font-size:14px;cursor:not-allowed"':'style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer"')+'>Continue</button>'
-    +'</div>';
+  h+='</div>';
+  if(onMeals){
+    h+='<div style="position:sticky;bottom:0;background:#1C1C1C;border-top:1px solid #2A2850;padding:14px 16px">'
+      +'<div style="text-align:center;margin-bottom:12px;color:#9A9390;font-size:11px;">'+(ec.selections.length?ec.selections.length+' meal'+(ec.selections.length===1?'':'s')+' selected &bull; ':'')+'Total is calculated from your guest count next</div>'
+      +'<button onclick="confirmEventCatering()" '+(ec.selections.length===0?'disabled style="width:100%;padding:14px;border-radius:12px;border:none;background:#555;color:#999;font-weight:800;font-size:14px;cursor:not-allowed"':'style="width:100%;padding:14px;border-radius:12px;border:none;background:#9B59B6;color:#fff;font-weight:800;font-size:14px;cursor:pointer"')+'>Continue</button>'
+      +'</div>';
+  }
+  var keepScroll=ov.scrollTop;
   ov.innerHTML=h;ov.style.display='block';
+  ov.scrollTop=keepScroll; // selecting a meal re-renders -- don't jump to the top
 }
 function toggleEventCateringItem(id,priceNaira,name){
   var i=_eventCatering.selections.findIndex(function(x){return x.menuItemId===id;});
@@ -16691,7 +16799,7 @@ function confirmEventCatering(){
   // A caterer's chosen package names the order ("Standard Catering —
   // Wedding") and brings its own non-food inclusions along.
   var ecPkg=_eventCatering.pkg;
-  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:(ecPkg?ecPkg.label:_eventCatering.tpl.nm)+' — '+_eventCatering.eventType,em:(ecPkg&&ecPkg.em)||_eventCatering.tpl.em,pr:Math.round(perHeadSum/100),needsGuestCount:true,includes:(ecPkg&&ecPkg.inc&&ecPkg.inc.length)?ecPkg.inc:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType};
+  _cb.selectedPkg={id:_eventCatering.tpl.id,nm:(ecPkg?ecPkg.label:_eventCatering.tpl.nm)+' — '+_eventCatering.eventType,em:(ecPkg&&ecPkg.em)||_eventCatering.tpl.em,pr:Math.round(perHeadSum/100),needsGuestCount:true,includes:(ecPkg&&ecPkg.inc&&ecPkg.inc.length)?ecPkg.inc:_eventCatering.tpl.includes,mealPickerItems:_eventCatering.selections,eventType:_eventCatering.eventType,cateringPackageId:ecPkg?ecPkg.id:null};
   _cb.selected={};
   // Catering has no other packages to browse/compare (this picker IS the
   // whole flow, see bookCatering/renderEventCateringPicker) -- go straight
@@ -16775,7 +16883,9 @@ async function cookBkConfirmBooking(){
   try{
     var res=await api('/bookings',{method:'POST',body:JSON.stringify({
       vendorId:_cb.cookId, type:(_cb.cook&&_cb.cook.vtype==='CATERING'?'CATERING':(_cb.cook&&_cb.cook.vtype==='CAKE'?'CAKE':'HOME_COOK')), items:items,
-      servicePackageId:pkgReal?pkgReal.id:undefined,
+      // A caterer's chosen package is linked (for its included services on
+      // the order) but never charged -- the server prices catering by meals.
+      servicePackageId:pkgReal?pkgReal.id:((_cb.selectedPkg&&_cb.selectedPkg.cateringPackageId)||undefined),
       packageKey:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.id:undefined,
       packageLabel:(!pkgReal&&_cb.selectedPkg)?_cb.selectedPkg.nm:undefined,
       eventDate:date, eventTime:time, venue:addr, phone:phone, notes:notes, eventType:eventType,
@@ -16892,6 +17002,7 @@ function epBkRender(phase){
         +(ep.avatarUrl?'<div style="width:60px;height:60px;border-radius:16px;overflow:hidden;flex-shrink:0;border:2px solid rgba(46,204,113,.3)"><img src="'+ep.avatarUrl+'" style="width:100%;height:100%;object-fit:cover"></div>':'<div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg,#0d2d1a,#111);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;border:2px solid rgba(46,204,113,.3)">'+ep.em+'</div>')
         +'<div><h2 style="font-size:18px;font-weight:900;margin:0 0 4px">'+ep.nm+'</h2>'
         +'<p style="color:#2ECC71;font-size:12px;font-weight:700;margin:0"><span onclick="openRatingsModal(\''+ep.userId+'\',\'VENDOR\',\''+ep.id+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">&#x2605;'+ep.rt+'</span> &bull; '+ep.loc+'</p></div>'
+        +_vendorBioHtml(ep.bio)
       +'</div></div>'
       +'<div style="padding:16px 16px 80px">'
         +'<p style="color:#9A9390;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Select a Package &mdash; tap to see what\'s included</p>'

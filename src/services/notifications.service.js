@@ -45,9 +45,16 @@ async function notifyAllAdmins(io, title, body, data) {
 // their dashboard's request section open at that exact moment. Nothing
 // wrote a real Notification row, so the bell/notification list never
 // showed it at all, live or otherwise.
-async function notifyAllEventPlanners(io, title, body, data) {
+// A request posted for a state (and optionally an LGA) only reaches vendors
+// registered there -- see utils/requestLocation.js.
+function locationFilter(location) {
+  if (!location || !location.state) return {};
+  return { state: location.state, ...(location.lga ? { lga: location.lga } : {}) };
+}
+
+async function notifyAllEventPlanners(io, title, body, data, location) {
   const vendors = await prisma.vendorProfile.findMany({
-    where: { vtype: "EVENT_PLANNER", user: { status: "ACTIVE" } },
+    where: { vtype: "EVENT_PLANNER", user: { status: "ACTIVE", ...locationFilter(location) } },
     select: { userId: true },
   });
   for (const v of vendors) {
@@ -60,9 +67,9 @@ async function notifyAllEventPlanners(io, title, body, data) {
 // dispatch:caterers socket room (catering-request:updated) otherwise, which
 // only helps a caterer who already has their dashboard's request section
 // open at that exact moment.
-async function notifyAllCaterers(io, title, body, data) {
+async function notifyAllCaterers(io, title, body, data, location) {
   const vendors = await prisma.vendorProfile.findMany({
-    where: { vtype: "CATERING", user: { status: "ACTIVE" } },
+    where: { vtype: "CATERING", user: { status: "ACTIVE", ...locationFilter(location) } },
     select: { userId: true },
   });
   for (const v of vendors) {
@@ -71,9 +78,9 @@ async function notifyAllCaterers(io, title, body, data) {
 }
 
 // Same fan-out pattern, for every active CAKE vendor.
-async function notifyAllCakeVendors(io, title, body, data) {
+async function notifyAllCakeVendors(io, title, body, data, location) {
   const vendors = await prisma.vendorProfile.findMany({
-    where: { vtype: "CAKE", user: { status: "ACTIVE" } },
+    where: { vtype: "CAKE", user: { status: "ACTIVE", ...locationFilter(location) } },
     select: { userId: true },
   });
   for (const v of vendors) {

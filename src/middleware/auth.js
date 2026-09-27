@@ -29,6 +29,8 @@ async function requireAuth(req, res, next) {
         name: true,
         email: true,
         phone: true,
+        state: true,
+        lga: true,
         isSuperAdmin: true,
         isContentAdmin: true,
         vendorProfile: { select: { id: true, vtype: true, isVerified: true } },

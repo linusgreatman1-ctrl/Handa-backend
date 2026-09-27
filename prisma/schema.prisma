@@ -667,6 +667,10 @@ model EventRequest {
 
   @@index([customerId])
   @@index([status])
+
+  // Only vendors in this state (and LGA, when set) see/are notified of it.
+  state String?
+  lga   String?
 }
 
 enum EventProposalStatus {
@@ -755,6 +759,10 @@ model CateringRequest {
 
   @@index([customerId])
   @@index([status])
+
+  // Only vendors in this state (and LGA, when set) see/are notified of it.
+  state String?
+  lga   String?
 }
 
 enum CateringProposalStatus {
@@ -840,6 +848,10 @@ model CakeRequest {
 
   @@index([customerId])
   @@index([status])
+
+  // Only vendors in this state (and LGA, when set) see/are notified of it.
+  state String?
+  lga   String?
 }
 
 enum CakeProposalStatus {
