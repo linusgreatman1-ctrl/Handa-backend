@@ -701,6 +701,11 @@ model EventProposal {
   // (e.g. a Mark Job Completed action) instead of having no way back to it
   // except a one-time notification.
   bookingId String?
+  // Price negotiation: the customer's pending counter offer (null when
+  // none), and every offer/counter/acceptance in order ({by, action,
+  // priceKobo, at}). priceKobo above is always the vendor's current price.
+  customerOfferKobo Int?
+  negotiation       Json @default("[]")
 
   @@index([eventRequestId])
   @@index([vendorId])
@@ -790,6 +795,11 @@ model CateringProposal {
   // Set once, the moment this proposal is accepted -- the real Booking
   // created for it (acceptProposal, cateringRequests.controller.js).
   bookingId String?
+  // Price negotiation: the customer's pending counter offer (null when
+  // none), and every offer/counter/acceptance in order ({by, action,
+  // priceKobo, at}). priceKobo above is always the vendor's current price.
+  customerOfferKobo Int?
+  negotiation       Json @default("[]")
 
   @@index([cateringRequestId])
   @@index([vendorId])
@@ -881,6 +891,11 @@ model CakeProposal {
   // Set once accepted -- the real Booking created for it (acceptProposal,
   // cakeRequests.controller.js).
   bookingId String?
+  // Price negotiation: the customer's pending counter offer (null when
+  // none), and every offer/counter/acceptance in order ({by, action,
+  // priceKobo, at}). priceKobo above is always the vendor's current price.
+  customerOfferKobo Int?
+  negotiation       Json @default("[]")
 
   @@index([cakeRequestId])
   @@index([vendorId])

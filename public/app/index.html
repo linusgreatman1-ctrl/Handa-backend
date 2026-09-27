@@ -1348,6 +1348,13 @@ function connectSocket(){
       if(crvEl&&procOv2&&procOv2.style.display!=='none'&&typeof openCateringRequestForVendor==='function')openCateringRequestForVendor(p.requestId);
     }
   });
+  // Same live refresh for cake requests (proposals, negotiation).
+  _socket.on('cake-request:updated', function(p){
+    if(!p||!p.requestId||window._openCakeRequestId!==p.requestId)return;
+    if(document.getElementById('sfm-bottom-sheet')&&typeof openCakeRequestDetailModal==='function'&&!document.getElementById('krv-body'))openCakeRequestDetailModal(p.requestId);
+    var krv=document.getElementById('krv-body');var po=document.getElementById('procedure-ov');
+    if(krv&&po&&po.style.display!=='none'&&typeof openCakeRequestForVendor==='function')openCakeRequestForVendor(p.requestId);
+  });
   // Socket.IO rooms don't survive a reconnect (network blip, idle timeout,
   // Render sleep/wake) -- without this, a client silently drops out of
   // every shop-session/booking/chat room it had joined and never gets
@@ -2252,6 +2259,7 @@ async function openEventRequestDetailModal(id){
           + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(p.servicesIncluded)+'</div>':'')
           + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
           + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
+          + (canAccept?_negCustomerHtml('event',r,p):'')
           + (canAccept?(
             '<div style="display:flex;gap:8px;margin-top:8px;">'
             +'<button onclick="acceptEventProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
@@ -2279,6 +2287,87 @@ async function openEventRequestDetailModal(id){
 function closeEventDetailModal(){
   closeBottomSheet();
   window._openEventRequestId=null;
+}
+// ── Price negotiation on request proposals (inDrive-style) ────────────
+// The customer can send their own price on any open proposal; the vendor
+// accepts it or sends a new price, back and forth until one side accepts.
+// The vendor's current price is always p.priceKobo (what Accept pays);
+// p.customerOfferKobo is the customer's pending offer.
+var _NEG_API={event:'/event-requests/',catering:'/catering-requests/',cake:'/cake-requests/'};
+function _negReload(kind,role,requestId){
+  var fn=role==='vendor'
+    ?{event:openEventRequestForVendor,catering:openCateringRequestForVendor,cake:openCakeRequestForVendor}[kind]
+    :{event:openEventRequestDetailModal,catering:openCateringRequestDetailModal,cake:openCakeRequestDetailModal}[kind];
+  if(fn)fn(requestId);
+}
+function _negHistoryHtml(p,role){
+  var hist=Array.isArray(p.negotiation)?p.negotiation:[];
+  if(!hist.length)return '';
+  var who=function(by){return by==='CUSTOMER'?(role==='customer'?'You':'Customer'):(role==='vendor'?'You':'Vendor');};
+  return '<div style="background:#1C1C1C;border-radius:10px;padding:8px 10px;margin:8px 0;">'
+    +'<div style="font-size:10px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">💬 Price negotiation</div>'
+    +hist.map(function(x,i){
+      var txt=x.action==='ACCEPTED'?(who(x.by)+' accepted '+N(Math.round(x.priceKobo/100))):(who(x.by)+(x.by==='CUSTOMER'?' offered ':' asked ')+N(Math.round(x.priceKobo/100)));
+      return '<div style="font-size:12px;color:'+(x.action==='ACCEPTED'?'#2ECC71':'#F2EDE8')+';padding:2px 0;">'+(i+1)+'. '+txt+'</div>';
+    }).join('')
+    +'</div>';
+}
+function _negBoxHtml(inputId,placeholder,btnLabel,onclick,color){
+  return '<div style="display:flex;gap:6px;margin-top:6px;">'
+    +'<input id="'+inputId+'" type="number" min="1" placeholder="'+placeholder+'" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 10px;background:#1C1C1C;border:1.5px solid #2A2850;border-radius:9px;color:#F2EDE8;font-size:13px;">'
+    +'<button onclick="'+onclick+'" style="padding:9px 14px;border-radius:9px;border:none;background:'+color+';color:#111;font-weight:800;font-size:12px;cursor:pointer;">'+btnLabel+'</button>'
+    +'</div>';
+}
+function _negCustomerHtml(kind,r,p){
+  var hist=Array.isArray(p.negotiation)?p.negotiation:[];
+  var last=hist[hist.length-1];
+  var status='';
+  if(p.customerOfferKobo){
+    status='<div style="font-size:12px;color:#F5A623;font-weight:700;margin-top:4px;">⏳ Your offer of '+N(Math.round(p.customerOfferKobo/100))+' was sent — waiting for the vendor.</div>';
+  }else if(last&&last.by==='VENDOR'&&last.action==='ACCEPTED'){
+    status='<div style="font-size:12px;color:#2ECC71;font-weight:700;margin-top:4px;">✅ The vendor accepted your price of '+N(Math.round(last.priceKobo/100))+' — tap Accept to pay and continue.</div>';
+  }else if(last&&last.by==='VENDOR'){
+    status='<div style="font-size:12px;color:#F5A623;font-weight:700;margin-top:4px;">The vendor sent a new price of '+N(Math.round(last.priceKobo/100))+' — accept it or send your offer.</div>';
+  }
+  var box='neg-box-'+p.id;
+  return _negHistoryHtml(p,'customer')+status
+    +'<button onclick="var b=document.getElementById(\''+box+'\');b.style.display=b.style.display===\'none\'?\'block\':\'none\';" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;border:1.5px solid #F5A623;background:transparent;color:#F5A623;font-weight:700;font-size:12px;cursor:pointer;">💬 Negotiate Price</button>'
+    +'<div id="'+box+'" style="display:none;">'
+    +_negBoxHtml('neg-in-'+p.id,'Your price (₦)','Send',"negSendPrice('"+kind+"','customer','"+r.id+"','"+p.id+"')",'#F5A623')
+    +'</div>';
+}
+function _negVendorHtml(kind,r,mine){
+  var html=_negHistoryHtml(mine,'vendor');
+  if(mine.customerOfferKobo){
+    var offer=N(Math.round(mine.customerOfferKobo/100));
+    html+='<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);border-radius:10px;padding:10px;margin:8px 0;">'
+      +'<div style="font-size:13px;color:#F5A623;font-weight:800;">💬 The customer offered '+offer+'</div>'
+      +'<button onclick="negAcceptOffer(\''+kind+'\',\''+r.id+'\',\''+mine.id+'\')" style="width:100%;margin-top:8px;padding:10px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:800;font-size:13px;cursor:pointer;">✓ Accept '+offer+'</button>'
+      +'<div style="font-size:11px;color:#9A9390;margin-top:8px;">Or send your own price:</div>'
+      +_negBoxHtml('neg-in-'+mine.id,'Your new price (₦)','Send',"negSendPrice('"+kind+"','vendor','"+r.id+"','"+mine.id+"')",'#F5A623')
+      +'</div>';
+  }else{
+    html+='<div style="font-size:11px;color:#9A9390;margin:8px 0 0;">Change your price (the customer sees it right away):</div>'
+      +_negBoxHtml('neg-in-'+mine.id,'New price (₦)','Send',"negSendPrice('"+kind+"','vendor','"+r.id+"','"+mine.id+"')",'#F5A623');
+  }
+  return html+'<div style="height:8px;"></div>';
+}
+async function negSendPrice(kind,role,requestId,proposalId){
+  var inp=document.getElementById('neg-in-'+proposalId);
+  var v=parseFloat((inp&&inp.value)||'');
+  if(!v||v<=0){showToast&&showToast('Enter a price','warning');return;}
+  try{
+    await api(_NEG_API[kind]+requestId+'/proposals/'+proposalId+'/counter',{method:'POST',body:JSON.stringify({priceKobo:Math.round(v*100)})});
+    showToast&&showToast(role==='customer'?'Your offer was sent':'Your new price was sent','success');
+    _negReload(kind,role,requestId);
+  }catch(err){showToast&&showToast(err.message||'Could not send price','warning');}
+}
+async function negAcceptOffer(kind,requestId,proposalId){
+  try{
+    await api(_NEG_API[kind]+requestId+'/proposals/'+proposalId+'/accept-offer',{method:'POST'});
+    showToast&&showToast('Offer accepted — the customer can now pay','success');
+    _negReload(kind,'vendor',requestId);
+  }catch(err){showToast&&showToast(err.message||'Could not accept offer','warning');}
 }
 async function acceptEventProposal(requestId, proposalId){
   if(!confirm('Accept this proposal? This creates a real booking and declines the others.')) return;
@@ -2354,6 +2443,7 @@ async function openEventRequestForVendor(requestId){
         +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(mine.servicesIncluded)+'</div>':'')
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
         +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Note: '+mine.notes+'</div>':'')
+        +(mine.status==='PENDING'&&r.status==='OPEN'?_negVendorHtml('event',r,mine):'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
         +'<div id="erv-job-action"></div>'
         +'</div>';
@@ -2720,6 +2810,7 @@ async function openCateringRequestDetailModal(id){
           + (p.servicesIncluded&&p.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(p.servicesIncluded)+'</div>':'')
           + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
           + (p.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">Note: '+p.notes+'</div>':'')
+          + (canAccept?_negCustomerHtml('catering',r,p):'')
           + (canAccept?(
             '<div style="display:flex;gap:8px;margin-top:8px;">'
             +'<button onclick="acceptCateringProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
@@ -2801,6 +2892,7 @@ async function openCateringRequestForVendor(requestId){
         +(mine.servicesIncluded&&mine.servicesIncluded.length?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;line-height:1.6;"><div>Services To Render Include:</div>'+_numberedListHtml(mine.servicesIncluded)+'</div>':'')
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
         +(mine.notes?'<div style="font-size:12px;color:#9A9390;margin-bottom:10px;">Note: '+mine.notes+'</div>':'')
+        +(mine.status==='PENDING'&&r.status==='OPEN'?_negVendorHtml('catering',r,mine):'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
         +'<div id="crv-job-action"></div>'
         +'</div>';
@@ -3053,6 +3145,7 @@ async function openCakeRequestDetailModal(id){
           + '<div style="font-weight:900;font-size:17px;color:#2ECC71;margin-bottom:6px;">'+N(Math.round(p.priceKobo/100))+'</div>'
           + (p.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+p.timeline+'</div>':'')
           + (p.notes?'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin:6px 0 2px;">Describe what will be in the cake / Anything else</div><div style="font-size:12px;color:#F2EDE8;margin-bottom:6px;">'+p.notes+'</div>':'')
+          + (canAccept?_negCustomerHtml('cake',r,p):'')
           + (canAccept?(
             '<div style="display:flex;gap:8px;margin-top:8px;">'
             +'<button onclick="acceptCakeProposal(\''+r.id+'\',\''+p.id+'\')" style="flex:2;padding:9px;border-radius:9px;border:none;background:#2ECC71;color:#111;font-weight:700;font-size:12px;cursor:pointer;">✓ Accept</button>'
@@ -3160,6 +3253,7 @@ async function openCakeRequestForVendor(requestId){
         +'<div style="font-weight:900;font-size:18px;color:#2ECC71;margin-bottom:6px;">₦'+Number(Math.round(mine.priceKobo/100)).toLocaleString()+'</div>'
         +(mine.timeline?'<div style="font-size:12px;color:#9A9390;margin-bottom:4px;">⏱ '+mine.timeline+'</div>':'')
         +(mine.notes?'<div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;margin:6px 0 2px;">Describe what will be in the cake / Anything else</div><div style="font-size:12px;color:#F2EDE8;margin-bottom:6px;">'+mine.notes+'</div>':'')
+        +(mine.status==='PENDING'&&r.status==='OPEN'?_negVendorHtml('cake',r,mine):'')
         +'<div style="text-align:center;padding:10px;border-radius:9px;background:'+sc+'1a;border:1px solid '+sc+'4d;color:'+sc+';font-weight:700;font-size:12px;">'+(stateLabels[mine.status]||mine.status)+'</div>'
         +'<div id="krv-job-action"></div>'
         +'</div>';
