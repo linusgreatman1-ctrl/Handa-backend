@@ -3819,15 +3819,15 @@ function openAddMenu(itemId){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">'+(S.vtype==='cake'?((editing?'Edit':'Add')+' Cake'):(editing?'Edit Food Menu':'Add Food Menu'))+'</div></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='cake'?'Cake Name *':'Food Name *')+'</label>'
-    +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="e.g. Jollof Rice" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
+    +'<input id="new-item-name" type="text" value="'+(item?item.name:'')+'" placeholder="'+(S.vtype==='cake'?'e.g. 3-Tier Vanilla Wedding Cake':(S.vtype==='catering'?'e.g. Party Jollof & Chicken':'e.g. Egusi Soup & Pounded Yam'))+'" oninput="autoSuggestFoodEmoji(this.value)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;"></div>'
     +'<div style="margin-bottom:10px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">'+(S.vtype==='catering'?'Price per Head (&#x20a6;) *':(S.vtype==='cake'?'Price (&#x20a6;) *':'Price Per Cooking Session (&#x20a6;) *'))+'</label>'
-    +'<input id="new-item-price" type="number" oninput="checkNewItemPackageRange()" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="'+(S.vtype==='catering'?'e.g. 3000':'e.g. 2500')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
+    +'<input id="new-item-price" type="number" oninput="checkNewItemPackageRange()" value="'+(item?Math.round(item.priceKobo/100):'')+'" placeholder="'+(S.vtype==='catering'?'e.g. 3000':(S.vtype==='cake'?'e.g. 45000':'e.g. 8000'))+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:14px;box-sizing:border-box;">'
     +'<div style="font-size:11px;color:#F5A623;margin-top:6px;">💡 Handa takes 10% commission from what you\'re paid — add it on top so this price is what you keep.'+(S.vtype==='catering'?' This is charged per guest when a customer books you for their event.':'')+'</div>'
     +'</div>'
     +'<div style="margin-bottom:16px;">'
     +'<label style="font-size:12px;color:#9A9390;display:block;margin-bottom:6px;">Emoji (optional — or add a photo below)</label>'
-    +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="🍛" maxlength="4" oninput="window._emojiManuallySet=true" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
+    +'<input id="new-item-emoji" type="text" value="'+(item&&item.emoji?item.emoji:'')+'" placeholder="'+(S.vtype==='cake'?'🎂':(S.vtype==='catering'?'🍛':'🍲'))+'" maxlength="4" oninput="window._emojiManuallySet=true" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:12px;padding:12px;color:#F2EDE8;font-size:18px;box-sizing:border-box;"></div>'
     // Catering: every dish sits under one of the caterer's packages, and its
     // price must fall inside that package's per-head range.
     +(S.vtype==='catering'?(
