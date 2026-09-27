@@ -240,7 +240,8 @@ async function acceptProposal(req, res, next) {
           guestCount: request.guestCount,
           eventType: request.eventType,
           selectedItems: selectedItemsSnapshot,
-          notes: [request.notes, proposal.notes].filter(Boolean).join(" — ") || null,
+          // Each note labelled by who wrote it (shown as Me / Customer / Vendor).
+          notes: [request.notes ? "Customer note: " + request.notes : null, proposal.notes ? "Vendor note: " + proposal.notes : null].filter(Boolean).join("\n\n") || null,
           paymentMethod: "CARD",
           totalKobo: proposal.priceKobo,
         },
