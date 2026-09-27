@@ -9773,8 +9773,9 @@ async function renderVendorMenu(){
     +(isCake?'':(
       '<div style="display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px;">'
       +'<h2 style="font-family:\'Playfair Display\',serif;font-size:18px;font-weight:900;margin:0;color:#F2EDE8;">My Packages</h2>'
-      +'<button onclick="openAddCustomPackage()" style="background:#E8392E;border:none;border-radius:9px;color:#fff;padding:6px 12px;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:11px;cursor:pointer;">+ Add a Package</button></div>'
-      +'<p style="color:#9A9390;font-size:12px;margin:0 0 12px;">'+(S.vtype==='catering'?'Basic/Standard/Premium tiers shown on your catalog card.':'Offer meal bundles alongside your a la carte menu.')+'</p>'
+      // Home cooks only offer the three packages listed (tap + Offer).
+      +((S.vtype==='catering'||S.vtype==='event_planner')?'<button onclick="openAddCustomPackage()" style="background:#E8392E;border:none;border-radius:9px;color:#fff;padding:6px 12px;font-family:\'DM Sans\',sans-serif;font-weight:700;font-size:11px;cursor:pointer;">+ Add a Package</button>':'')+'</div>'
+      +'<p style="color:#9A9390;font-size:12px;margin:0 0 12px;">'+(S.vtype==='catering'?'Basic/Standard/Premium tiers shown on your catalog card.':'Tap + Offer on the packages you want customers to book.')+'</p>'
       +'<div id="vendor-pkgs-list"><div style="text-align:center;padding:20px;color:#9A9390">Loading…</div></div>'
     ))+'</div>';
   try{
@@ -12136,6 +12137,12 @@ async function openEditProfileModal(role){
     html+=f('Business Name','epf-bizname',u.bizName,'text','Business name')
       +f('Description','epf-desc',u.vendorDescription,'text','What you offer');
     if(u.vtype==='home_cook'){
+      var curTags=u.tags||[];
+      var otherTags=curTags.filter(function(t){return VENDOR_CUISINE_TAGS.indexOf(t)===-1;});
+      html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Cooking Speciality (customers find you under these)</label>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'+VENDOR_CUISINE_TAGS.map(function(t){var on=curTags.some(function(x){return String(x).toLowerCase().indexOf(t.toLowerCase())>=0;});return '<label style="display:flex;align-items:center;gap:5px;background:#242424;border:1.5px solid #2A2850;border-radius:9px;padding:7px 10px;font-size:12px;color:#F2EDE8;cursor:pointer;"><input type="checkbox" class="epf-tag" value="'+t+'"'+(on?' checked':'')+' style="margin:0;">'+t+'</label>';}).join('')+'</div>'
+        +'<input id="epf-tag-other" value="'+otherTags.filter(function(x){return !VENDOR_CUISINE_TAGS.some(function(t){return String(x).toLowerCase().indexOf(t.toLowerCase())>=0;});}).join(', ').replace(/"/g,'&quot;')+'" placeholder="Other, e.g. Swallow, Seafood (comma-separated)" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'
+        +'</div>';
       html+='<div style="margin-bottom:10px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">Price per Cooking Session (₦) — a range, depending on the food</label>'
         +'<div style="display:flex;gap:8px;align-items:center;">'
         +'<input id="epf-rate-min" type="number" value="'+(u.rateMin||'')+'" placeholder="From e.g. 4000" style="flex:1;min-width:0;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;">'
@@ -12202,9 +12209,12 @@ async function saveEditProfile(role){
         var rMin=parseFloat(val('epf-rate-min')||'0'),rMax=parseFloat(val('epf-rate-max')||'0');
         if(rMin>0&&rMax>0&&rMax<rMin)throw new Error('The first price must be lower than the second');
         vBody.hourlyRateKobo=rMin>0?Math.round(rMin*100):null;vBody.maxRateKobo=rMax>0?Math.round(rMax*100):null;vBody.ratePeriod='per session';
+        var pickedTags=[].slice.call(document.querySelectorAll('.epf-tag:checked')).map(function(c){return c.value;});
+        (val('epf-tag-other')||'').split(',').map(function(t){return t.trim();}).filter(Boolean).forEach(function(t){if(pickedTags.indexOf(t)<0)pickedTags.push(t);});
+        vBody.tags=pickedTags;
       }
       var vRes=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify(vBody)});
-      if(vRes.vendorProfile){S.user.bizName=vRes.vendorProfile.bizName;S.user.vendorDescription=vRes.vendorProfile.description||'';S.user.rateMin=vRes.vendorProfile.hourlyRateKobo?Math.round(vRes.vendorProfile.hourlyRateKobo/100):'';S.user.rateMax=vRes.vendorProfile.maxRateKobo?Math.round(vRes.vendorProfile.maxRateKobo/100):'';}
+      if(vRes.vendorProfile){S.user.bizName=vRes.vendorProfile.bizName;S.user.vendorDescription=vRes.vendorProfile.description||'';S.user.tags=vRes.vendorProfile.tags||S.user.tags;S.user.rateMin=vRes.vendorProfile.hourlyRateKobo?Math.round(vRes.vendorProfile.hourlyRateKobo/100):'';S.user.rateMax=vRes.vendorProfile.maxRateKobo?Math.round(vRes.vendorProfile.maxRateKobo/100):'';}
     }else if(role==='rider'){
       var rRes=await api('/users/me/rider-profile',{method:'PATCH',body:JSON.stringify({vehicleType:val('epf-vehicle')||undefined,plateNumber:val('epf-plate')||undefined})});
       if(rRes.riderProfile){S.user.vehicleType=rRes.riderProfile.vehicleType||'';S.user.plateNumber=rRes.riderProfile.plateNumber||'';}
@@ -13442,7 +13452,9 @@ async function doRegister(){
     if(_eRole==='cook'){
       fd.append('role','VENDOR');fd.append('vtype','HOME_COOK');fd.append('bizName',nm.trim());
       var cookSp=((document.getElementById('r-sp')||{}).value||'').trim();
-      if(cookSp)fd.append('tags',cookSp);
+      // Each speciality typed (comma-separated) is its own tag, so the cook
+      // shows under every matching cuisine button.
+      if(cookSp)cookSp.split(',').map(function(t){return t.trim();}).filter(Boolean).forEach(function(t){fd.append('tags',t);});
       if(regBio)fd.append('description',regBio);
       var cookRate=parseFloat((document.getElementById('r-rate')||{}).value);
       var cookRateMax=parseFloat((document.getElementById('r-rate-max')||{}).value);
@@ -13754,44 +13766,57 @@ function selectHomeSearchResult(type,id){
 // even when a state name did appear it could false-match an unrelated
 // LGA/street name), which is why state/LGA search never found any real
 // registered cooks or event planners.
+// The page's current location search (remembered per page so the cuisine /
+// cake-category buttons can re-apply it).
+window._locSearch=window._locSearch||{};
+function _cookMatchesCuisine(c,cat){
+  if(!cat||cat==='all')return true;
+  var text=((c.tags||[]).join(' ')+' '+(c.sp||'')).toLowerCase();
+  return text.indexOf(String(cat).toLowerCase())>=0;
+}
 function filterByState(state,lga,screen){
   if(!state){showToast&&showToast('Please select a state first','warning');return;}
+  // Which page is decided by the Search button that was pressed (never by
+  // guessing from what happens to be visible).
   var s=screen||S.curScreen||'';
   var eq=function(a,b){return a&&b&&String(a).toLowerCase()===String(b).toLowerCase();};
   var cfg;
-  if(s==='cooks'||document.getElementById('screen-ecooks')&&document.getElementById('screen-ecooks').style.display!=='none'){
-    cfg={all:D.cooks||[],render:renderCooks,st:'state',lg:'lga',noun:'cooks',el:function(){return document.getElementById('cook-list')||document.getElementById('e-cook-list');}};
+  if(s==='cooks'){
+    cfg={all:(D.cooks||[]).filter(function(c){return _cookMatchesCuisine(c,window._cookCuisine);}),render:renderCooks,st:'state',lg:'lga',one:'cook',many:'cooks',el:function(){return document.getElementById('cook-list')||document.getElementById('e-cook-list');}};
   }else if(s==='caterers'){
-    cfg={all:D.catering||[],render:renderCatering,st:'state',lg:'lga',noun:'caterers',el:function(){return document.getElementById('e-catering-list')||document.getElementById('catering-list');}};
+    cfg={all:D.catering||[],render:renderCatering,st:'state',lg:'lga',one:'caterer',many:'caterers',el:function(){return document.getElementById('e-catering-list')||document.getElementById('catering-list');}};
   }else if(s==='cakes'){
     // D.cakes is item-level -- the baker's location lives on vendorState/vendorLga.
-    cfg={all:D.cakes||[],render:renderCakes,st:'vendorState',lg:'vendorLga',noun:'cakes',grid:true,el:function(){return document.getElementById('cake-list');}};
+    cfg={all:(window._cakeCatFilter?window._cakeCatFilter(window._CAKE_DATA||D.cakes||[]):(D.cakes||[])),render:renderCakes,st:'vendorState',lg:'vendorLga',one:'cake baker',many:'cake bakers',grid:true,el:function(){return document.getElementById('cake-list');}};
   }else{
-    cfg={all:D.ep||[],render:renderEP,st:'state',lg:'lga',noun:'planners',el:function(){return document.getElementById('e-ep-list')||document.getElementById('ep-list');}};
+    s='events';
+    cfg={all:D.ep||[],render:renderEP,st:'state',lg:'lga',one:'event planner',many:'event planners',el:function(){return document.getElementById('e-ep-list')||document.getElementById('ep-list');}};
   }
+  window._locSearch[s]={state:state,lga:lga||''};
+  var el=cfg.el();if(!el)return;
+  var span=cfg.grid?'grid-column:1/-1;':'';
+  var note=function(title,sub){return '<div style="'+span+'background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:16px;text-align:center;margin-bottom:14px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">'+title+'</div>'+(sub?'<div style="font-size:12px;color:#9A9390;margin-top:4px;">'+sub+'</div>':'')+'</div>';};
+  var badge=function(html){var tmp=document.createElement('div');tmp.innerHTML=html;[].slice.call(tmp.children).forEach(function(card){card.insertAdjacentHTML('afterbegin','<div style="display:inline-block;margin:8px 0 0 8px;background:rgba(59,159,232,.15);color:#3B9FE8;font-size:10px;font-weight:800;padding:3px 8px;border-radius:8px;">SIMILAR</div>');});return tmp.innerHTML;};
   var inState=cfg.all.filter(function(v){return eq(v[cfg.st],state);});
-  var exact=lga?inState.filter(function(v){return eq(v[cfg.lg],lga);}):inState;
-  // Searching by LGA: after the vendors in that LGA, show the rest of the
-  // state's vendors as "Similar vendors".
-  var similar=lga?inState.filter(function(v){return !eq(v[cfg.lg],lga);}):[];
-  if(!exact.length&&!similar.length){
-    cfg.render(cfg.all);
-    showToast&&showToast('No '+cfg.noun+' in '+(lga?lga+', ':'')+state+'. Showing all.','info');
+  // Nothing at all in the state: say so on the page.
+  if(!inState.length){
+    el.innerHTML=note('No '+cfg.many+' in '+state+' State yet','Check back soon — new '+cfg.many+' join Handa all the time.');
     return;
   }
-  var el=cfg.el();
-  var simHtml='';
-  if(similar.length&&el){
-    cfg.render(similar);
-    var tmp=document.createElement('div');tmp.innerHTML=el.innerHTML;
-    [].slice.call(tmp.children).forEach(function(card){
-      card.insertAdjacentHTML('afterbegin','<div style="display:inline-block;margin:8px 0 0 8px;background:rgba(59,159,232,.15);color:#3B9FE8;font-size:10px;font-weight:800;padding:3px 8px;border-radius:8px;">SIMILAR VENDOR</div>');
-    });
-    simHtml='<div style="'+(cfg.grid?'grid-column:1/-1;':'')+'margin:14px 0 10px;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">Similar vendors</div><div style="font-size:12px;color:#9A9390;">Other local governments in '+state+'</div></div>'+tmp.innerHTML;
+  if(!lga){cfg.render(inState);return;}
+  var exact=inState.filter(function(v){return eq(v[cfg.lg],lga);});
+  var others=inState.filter(function(v){return !eq(v[cfg.lg],lga);});
+  // No one in the LGA: the rest of the state, captioned as similar.
+  if(!exact.length){
+    cfg.render(others);
+    el.innerHTML=note('No '+cfg.one+' in '+lga+' yet','Similar '+cfg.many+' in '+state+' State')+badge(el.innerHTML);
+    return;
   }
-  if(exact.length){cfg.render(exact);}
-  else if(el){el.innerHTML='<div style="'+(cfg.grid?'grid-column:1/-1;':'')+'text-align:center;padding:16px;color:#9A9390;font-size:13px;">No '+cfg.noun+' in '+lga+' yet.</div>';}
-  if(el&&simHtml)el.insertAdjacentHTML('beforeend',simHtml);
+  // The LGA's own first, then the rest of the state as similar.
+  var simHtml='';
+  if(others.length){cfg.render(others);simHtml=note('Similar '+cfg.many,'Other local governments in '+state+' State')+badge(el.innerHTML);}
+  cfg.render(exact);
+  if(simHtml)el.insertAdjacentHTML('beforeend',simHtml);
 }
 
 // ── RENDER FUNCTIONS ──────────────────────────────────────────────────────────
@@ -13945,11 +13970,14 @@ function filterCakesCat(cat,btn){
   btn.classList.add('pkon');
   var list=window._CAKE_DATA||D.cakes||[];
   var words={birthday:['birthday'],wedding:['wedding'],cupcake:['cupcake','cup cake'],custom:['custom']}[cat]||[cat];
-  renderCakes(cat==='all'?list:list.filter(function(c){
+  window._cakeCatFilter=cat==='all'?null:function(arr){return arr.filter(function(c){
     if(c.cat===cat)return true;
     var t=c.vendorTags||'';
     return words.some(function(w){return t.indexOf(w)>=0;});
-  }));
+  });};
+  var loc=window._locSearch&&window._locSearch.cakes;
+  if(loc&&loc.state){filterByState(loc.state,loc.lga,'cakes');return;}
+  renderCakes(window._cakeCatFilter?window._cakeCatFilter(list):list);
 }
 function openCake(id){
   var c=(window._CAKE_DATA||D.cakes||[]).find(function(x){return String(x.id)===String(id);});
@@ -17625,7 +17653,13 @@ function loadLGAs(state,targetId){
 function filterCooks(cat,btn){
   document.querySelectorAll('#cook-pills .pill').forEach(function(p){p.classList.remove('pon');});
   if(btn)btn.classList.add('pon');
-  var list=cat==='all'?D.cooks:(D.cooks||[]).filter(function(c){return c.tags&&c.tags.indexOf(cat)>-1;});
+  window._cookCuisine=cat;
+  // A cook shows under every cuisine their specialities mention
+  // ("Continental & Local Cuisine" counts for Continental).
+  var loc=window._locSearch&&window._locSearch.cooks;
+  if(loc&&loc.state){filterByState(loc.state,loc.lga,'cooks');return;}
+  var list=(D.cooks||[]).filter(function(c){return _cookMatchesCuisine(c,cat);});
+  if(!list.length){var el=document.getElementById('cook-list')||document.getElementById('e-cook-list');if(el)el.innerHTML='<div style="background:#1C1C1C;border:1.5px dashed #2A2850;border-radius:14px;padding:16px;text-align:center;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;">No '+cat+' cooks yet</div><div style="font-size:12px;color:#9A9390;margin-top:4px;">Check back soon.</div></div>';return;}
   renderCooks(list);
 }
 
