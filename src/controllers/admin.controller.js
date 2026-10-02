@@ -478,12 +478,25 @@ async function getShopperDetailForAdmin(req, res, next) {
   }
 }
 
+// Tells the vendor / rider / shopper their verification changed: a
+// notification, plus a live push so their own dashboard badge updates.
+function tellVerification(req, userId, isVerified, roleLabel) {
+  const io = req.app.get("io");
+  notify(io, userId, "SYSTEM", isVerified ? "You're verified ✅" : "Verification removed",
+    isVerified
+      ? `Your ${roleLabel} account has been verified by Handa — customers now see the Verified badge on your profile.`
+      : `Your ${roleLabel} account is no longer marked verified. Contact support if you think this is a mistake.`,
+    { verification: true, isVerified }).catch(() => {});
+  io?.to(`user:${userId}`).emit("account:verification", { isVerified, role: roleLabel });
+}
+
 async function setVendorVerified(req, res, next) {
   try {
     const { isVerified } = req.body;
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const vendor = await prisma.vendorProfile.update({ where: { id: req.params.id }, data: { isVerified } });
     await logAdminAction(req.user, "VENDOR_VERIFIED", "VendorProfile", vendor.id, `Set isVerified=${isVerified} for ${vendor.bizName}`);
+    tellVerification(req, vendor.userId, isVerified, "vendor");
     res.json({ vendor });
   } catch (err) {
     next(err);
@@ -496,6 +509,7 @@ async function setRiderVerified(req, res, next) {
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const rider = await prisma.riderProfile.update({ where: { id: req.params.id }, data: { isVerified } });
     await logAdminAction(req.user, "RIDER_VERIFIED", "RiderProfile", rider.id, `Set isVerified=${isVerified}`);
+    tellVerification(req, rider.userId, isVerified, "rider");
     res.json({ rider });
   } catch (err) {
     next(err);
@@ -532,6 +546,7 @@ async function setShopperVerified(req, res, next) {
     if (typeof isVerified !== "boolean") return res.status(400).json({ error: "isVerified (boolean) is required." });
     const shopper = await prisma.shopperProfile.update({ where: { id: req.params.id }, data: { isVerified } });
     await logAdminAction(req.user, "SHOPPER_VERIFIED", "ShopperProfile", shopper.id, `Set isVerified=${isVerified}`);
+    tellVerification(req, shopper.userId, isVerified, "shopper");
     res.json({ shopper });
   } catch (err) {
     next(err);

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Handa Admin</title>
+<link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,'DM Sans',Segoe UI,Arial,sans-serif;background:#111;color:#F2EDE8;min-height:100vh}
@@ -463,12 +464,16 @@ function authHeaders() {
   return accessToken ? { 'Authorization': 'Bearer ' + accessToken } : {};
 }
 
-async function api(path, opts = {}) {
+async function api(path, opts = {}, _retried) {
   const res = await fetch(API + path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(opts.headers || {}) },
     credentials: 'include',
   });
+  // Expired access token: renew it with this tab's refresh token and retry once.
+  if (res.status === 401 && !_retried && path !== '/auth/refresh' && path !== '/auth/login' && _adminRefreshToken()) {
+    if (await _renewAdminSession()) return api(path, opts, true);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || ('Request failed (' + res.status + ')'));
   return data;
@@ -506,7 +511,18 @@ async function doLogin() {
     const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
     if (data.user.role !== 'ADMIN') { throw new Error('This account is not an admin account.'); }
     accessToken = data.accessToken;
-    currentUser = data.user;
+    _saveAdminSession(data.accessToken, data.refreshToken);
+    _enterAdmin(data.user);
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+// Shows the dashboard for a signed-in admin (fresh sign-in or restored after a refresh).
+function _enterAdmin(user) {
+    currentUser = user;
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-screen').classList.remove('hidden');
     document.getElementById('who-name').textContent = currentUser.name + (currentUser.isSuperAdmin ? ' (Super Admin)' : currentUser.isContentAdmin ? ' (Content Admin)' : '');
@@ -517,15 +533,41 @@ async function doLogin() {
     connectAdminNotifSocket();
     refreshSysNotifBadge();
     switchTab('dashboard');
-  } catch (e) {
-    err.textContent = e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = 'Sign In';
-  }
+}
+
+// The admin session is kept for this browser tab, so refreshing the page
+// doesn't sign you out (Sign Out clears it).
+function _saveAdminSession(at, rt) {
+  try { if (at) sessionStorage.setItem('handa_admin_token', at); if (rt) sessionStorage.setItem('handa_admin_refresh', rt); } catch (e) {}
+}
+function _adminRefreshToken() { try { return sessionStorage.getItem('handa_admin_refresh'); } catch (e) { return null; } }
+async function _renewAdminSession() {
+  try {
+    const r = await fetch(API + '/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ refreshToken: _adminRefreshToken() }) });
+    if (!r.ok) return false;
+    const d = await r.json();
+    if (!d.accessToken) return false;
+    accessToken = d.accessToken;
+    _saveAdminSession(d.accessToken, d.refreshToken);
+    return true;
+  } catch (e) { return false; }
+}
+async function _restoreAdminSession() {
+  let saved = null;
+  try { saved = sessionStorage.getItem('handa_admin_token'); } catch (e) {}
+  if (!saved && !_adminRefreshToken()) return;
+  accessToken = saved;
+  try {
+    const me = await api('/auth/me');
+    if (me.user && me.user.role === 'ADMIN') { _enterAdmin(me.user); return; }
+  } catch (e) {}
+  accessToken = null;
+  try { sessionStorage.removeItem('handa_admin_token'); sessionStorage.removeItem('handa_admin_refresh'); } catch (e) {}
 }
 
 function logout() {
   accessToken = null; currentUser = null;
+  try { sessionStorage.removeItem('handa_admin_token'); sessionStorage.removeItem('handa_admin_refresh'); } catch (e) {}
   document.getElementById('app-screen').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('login-password').value = '';
@@ -2510,5 +2552,6 @@ document.getElementById('login-password').addEventListener('keydown', (e) => { i
 </script>
 <script>['renderUsers','renderVendors','renderRiders','renderShoppers','renderKycDocuments','renderDashboard','renderCustomerDetail','renderVendorDetail','renderRiderDetail','renderShopperDetail','renderReports','renderTickets','renderBookings'].forEach(_trackAdminView);
 (function(){const st=window.switchTab;if(typeof st==='function'){window.switchTab=function(){_adminView=null;return st.apply(this,arguments);};}})();</script>
+<script>_restoreAdminSession();</script>
 </body>
 </html>

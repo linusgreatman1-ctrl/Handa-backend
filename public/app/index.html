@@ -1222,6 +1222,10 @@ function connectSocket(){
   });
   _socket.on('connect', function(){ setTimeout(showPendingVendorBookingPopups,1500); });
   _socket.on('catalog:updated', onLiveCatalogUpdate);
+  // An admin verified (or unverified) this account: refresh the badge now.
+  _socket.on('account:verification', function(){
+    api('/auth/me').then(function(d){ if(d&&d.user){ S.user=Object.assign(S.user||{},mapApiUser(d.user)); _refreshVerifyBadges(); } }).catch(function(){});
+  });
   _socket.on('notification:new', function(n){
     if(typeof toast==='function') toast(n.title + ': ' + n.body);
     bumpNotifBadge();
@@ -1600,9 +1604,9 @@ function mapApiUser(u){
     avatarUrl: u.avatarUrl || '',
     balance: u.wallet ? Math.round(u.wallet.balanceKobo/100) : 0,
   };
-  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; mapped.rateMin = u.vendorProfile.hourlyRateKobo ? Math.round(u.vendorProfile.hourlyRateKobo/100) : ''; mapped.rateMax = u.vendorProfile.maxRateKobo ? Math.round(u.vendorProfile.maxRateKobo/100) : ''; }
-  if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
-  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; mapped.shopperIsOnline = !!u.shopperProfile.isOnline; }
+  if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; mapped.vendorVerified = !!u.vendorProfile.isVerified; mapped.rateMin = u.vendorProfile.hourlyRateKobo ? Math.round(u.vendorProfile.hourlyRateKobo/100) : ''; mapped.rateMax = u.vendorProfile.maxRateKobo ? Math.round(u.vendorProfile.maxRateKobo/100) : ''; }
+  if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.riderVerified = !!u.riderProfile.isVerified; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
+  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.shopperVerified = !!u.shopperProfile.isVerified; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; mapped.shopperIsOnline = !!u.shopperProfile.isOnline; }
   return mapped;
 }
 
@@ -10184,6 +10188,15 @@ async function loadVendorChatThreads(){
 // screen, so the two carry the exact same size/layout banner instead of
 // the dashboard's plain single-line fullProfileHeader() next to the
 // Profile screen's full styled card.
+// The account owner's own Verified / pending badge on their dashboard
+// (kind: vendor | rider | shopper). Updated live when an admin changes it.
+function _verifyBadgeHtml(kind){
+  var u=S.user||{};var v=!!u[kind+'Verified'];
+  return '<span class="verify-badge" data-kind="'+kind+'" style="display:inline-block;margin-top:6px;background:'+(v?'rgba(46,204,113,.2)':'rgba(245,166,35,.15)')+';color:'+(v?'#4ADE80':'#F5A623')+';font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">'+(v?'✅ Verified':'⏳ Verification pending')+'</span>';
+}
+function _refreshVerifyBadges(){
+  document.querySelectorAll('.verify-badge').forEach(function(el){var t=document.createElement('div');t.innerHTML=_verifyBadgeHtml(el.getAttribute('data-kind'));el.replaceWith(t.firstChild);});
+}
 function vendorBannerCard(kindOrIsCook,compact){
   // Historically took a plain isCook boolean (true=cook, false=EP) -- now
   // takes either that boolean (back-compat) or a real 'cook'/'ep'/'catering'
@@ -10204,6 +10217,7 @@ function vendorBannerCard(kindOrIsCook,compact){
     +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba('+iconRgb+',.2);border:2px solid rgba('+iconRgb+',.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">'+(isCook?'👩‍🍳':(isCatering?'👨‍🍳':'🎉'))+'</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+'</div>'
     +'<div style="font-size:12px;color:'+accent+';margin-top:2px;">'+vLabel+' @ '+(u.bizName||'Not set')+'</div>'
+    +_verifyBadgeHtml('vendor')
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">📍 '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
     +(!compact&&u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+u.phone+'</p>':'')
     +'</div></div>'
@@ -10689,6 +10703,7 @@ function renderRiderProfile(){
     +'<div onclick="uploadRiderPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="rider-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="rider-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F6F5;</span></div>'
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+'</div>'
+    +_verifyBadgeHtml('rider')
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
     +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
     +'</div></div>'
@@ -12378,7 +12393,7 @@ function buildShopperProfile(){
     +((S.user&&[S.user.address,S.user.lga,S.user.state].filter(Boolean).length)?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[S.user.address,S.user.lga,S.user.state].filter(Boolean).join(', ')+'</p>':'')
     +((S.user&&S.user.phone)?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+S.user.phone+'</p>':'')
     +'<div style="display:flex;gap:6px;margin-top:6px;">'
-    +'<span style="background:rgba(46,204,113,.25);color:#4ADE80;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x2705; Verified</span>'
+    +_verifyBadgeHtml('shopper').replace('margin-top:6px;','')
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
     +'</div></div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
@@ -13441,10 +13456,15 @@ async function doAuth(){
   setRefreshToken(null);
   try{
     var loginBody=idf.indexOf('@')>-1?{email:idf,password:pw}:{phone:idf,password:pw};
+    // Each role tab only signs in its own accounts (a Home Cook account can't
+    // sign in on the Catering tab, a vendor can't on the Customer tab, etc.).
+    var signInAs=_eRole||'customer';
+    loginBody.as=signInAs;
     var data=await api('/auth/login',{method:'POST',body:JSON.stringify(loginBody)});
     setAccessToken(data.accessToken);
     setRefreshToken(data.refreshToken);
-    S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=apiRoleToERole(S.user);
+    S.user=mapApiUser(data.user);S.role=S.user.role;_eRole=signInAs;
+    try{sessionStorage.setItem('handa_active_role',signInAs==='customer'?'home':signInAs);}catch(e){}
     _finishLogin(S.user.name);
     // Catches a rider/shopper/cook/EP who dodged the mandatory upload last
     // time (closed the tab mid-flow, etc.) -- re-blocks them here too, not
@@ -13510,6 +13530,10 @@ async function doRegister(){
     if(regState&&regLga)fd.append('lga',regLga);
     if(bankName.trim())fd.append('bankName',bankName.trim());
     if(bankAcct.trim())fd.append('bankAccountNumber',bankAcct.trim());
+    // Account holder name, rider vehicle/plate and shopper market were on the
+    // form but never sent.
+    var bankHolder=((document.getElementById('r-bankname')||{}).value||'').trim();
+    if(bankHolder)fd.append('bankAccountName',bankHolder);
     // Speciality/Rate/Bio were all collected on every vendor registration
     // form but none of them were ever actually sent -- the account got
     // created with none of what the vendor just typed, silently discarded,
@@ -13554,8 +13578,15 @@ async function doRegister(){
       _readSpecTicks('r-sp-cb','r-sp-other').forEach(function(t){fd.append('tags',t);});
       if(regBio)fd.append('description',regBio);
     }
-    else if(_eRole==='rider'){fd.append('role','RIDER');}
-    else if(_eRole==='shopper'){fd.append('role','SHOPPER');}
+    else if(_eRole==='rider'){
+      fd.append('role','RIDER');
+      var veh=((document.getElementById('r-vehicle')||{}).value||'').trim();if(veh)fd.append('vehicleType',veh);
+      var plate=((document.getElementById('r-plate')||{}).value||'').trim();if(plate)fd.append('plateNumber',plate);
+    }
+    else if(_eRole==='shopper'){
+      fd.append('role','SHOPPER');
+      var mkt=((document.getElementById('r-market')||{}).value||'').trim();if(mkt)fd.append('market',mkt);
+    }
     else{fd.append('role','CUSTOMER');}
     if(_regIdentityComplete()){
       fd.append('docType','ID_DOCUMENT');
@@ -13671,7 +13702,8 @@ async function tryRestoreSession(attempt){
         ||(savedRole==='rider'&&S.user.riderProfileId)
         ||((savedRole==='cook'||savedRole==='homecook')&&S.user.vendorProfileId&&S.user.vtype!=='event_planner'&&S.user.vtype!=='catering')
         ||(savedRole==='event_planner'&&S.user.vendorProfileId&&S.user.vtype==='event_planner')
-        ||(savedRole==='catering'&&S.user.vendorProfileId&&S.user.vtype==='catering');
+        ||(savedRole==='catering'&&S.user.vendorProfileId&&S.user.vtype==='catering')
+        ||(savedRole==='cake'&&S.user.vendorProfileId&&S.user.vtype==='cake');
       if(savedRole&&stillHasIt)_eRole=savedRole;
     }catch(e){}
     syncProfileHeaderDom(S.user.name);

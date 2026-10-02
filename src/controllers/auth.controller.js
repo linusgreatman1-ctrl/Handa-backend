@@ -253,6 +253,27 @@ async function login(req, res, next) {
     if (user.status !== "ACTIVE") {
       return res.status(403).json({ error: "This account is not active." });
     }
+    // The app's role tab the person signed in on (customer / cook / catering /
+    // cake / event_planner / rider / shopper) must be this account's own --
+    // a Home Cook's details can't open the Catering side, etc. Checked only
+    // after the password matched. Callers that don't send it (admin) skip it.
+    if (req.body.as) {
+      const vt = user.vendorProfile && user.vendorProfile.vtype;
+      const owns = {
+        customer: user.role === "CUSTOMER",
+        cook: vt === "HOME_COOK",
+        catering: vt === "CATERING",
+        cake: vt === "CAKE",
+        event_planner: vt === "EVENT_PLANNER",
+        rider: !!user.riderProfile,
+        shopper: !!user.shopperProfile,
+      }[String(req.body.as)];
+      if (!owns) {
+        const label = vt ? { HOME_COOK: "Home Cook", CATERING: "Catering", CAKE: "Cake Baker", EVENT_PLANNER: "Event Planner" }[vt]
+          : user.riderProfile ? "Rider" : user.shopperProfile ? "Shopper" : user.role === "ADMIN" ? "Admin" : "Customer";
+        return res.status(403).json({ error: `This is a ${label} account. Choose "${label}" to sign in with it.` });
+      }
+    }
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
