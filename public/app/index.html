@@ -10198,6 +10198,11 @@ async function loadVendorChatThreads(){
 // Profile screen's full styled card.
 // The account owner's own Verified / pending badge on their dashboard
 // (kind: vendor | rider | shopper). Updated live when an admin changes it.
+// The owner's own header: their bio, or a nudge to add one (never shown to customers).
+function _ownBioHtml(bio){
+  if(bio&&String(bio).trim())return _vendorBioHtml(bio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0');
+  return '<p style="color:#6E6A80;font-size:11px;font-style:italic;margin:4px 0 0;">No bio yet — add one in Profile → Edit</p>';
+}
 function _verifyBadgeHtml(kind){
   var u=S.user||{};var v=!!u[kind+'Verified'];
   return '<span class="verify-badge" data-kind="'+kind+'" style="display:inline-block;margin-left:6px;vertical-align:middle;background:'+(v?'rgba(46,204,113,.2)':'rgba(245,166,35,.15)')+';color:'+(v?'#4ADE80':'#F5A623')+';font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">'+(v?'✅ Verified':'⏳ Verification pending')+'</span>';
@@ -10226,7 +10231,7 @@ function vendorBannerCard(kindOrIsCook,compact){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+_verifyBadgeHtml('vendor')+'</div>'
     +'<div style="font-size:12px;color:'+accent+';margin-top:2px;">'+vLabel+' @ '+(u.bizName||'Not set')+'</div>'
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">📍 '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
-    +_vendorBioHtml(u.vendorDescription,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0')
+    +_ownBioHtml(u.vendorDescription)
     +(!compact&&u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+u.phone+'</p>':'')
     +'</div></div>'
     +(compact?'':(
@@ -10712,7 +10717,7 @@ function renderRiderProfile(){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+_verifyBadgeHtml('rider')+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+'</div>'
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
-    +_vendorBioHtml(u.riderBio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0')
+    +_ownBioHtml(u.riderBio)
     +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
     +'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
@@ -11774,7 +11779,7 @@ function fullProfileHeader(o){
     +'<div><div class="h3" style="margin-top:0;">'+(o.name||'')+(o.verifyKind?_verifyBadgeHtml(o.verifyKind):'')+'</div>'
     +(o.roleLine?'<p style="color:'+(o.accentColor||'#F5A623')+';font-size:12px;font-weight:700;margin:2px 0 0;">'+o.roleLine+'</p>':'')
     +(addr?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📍 '+addr+'</p>':'')
-    +(o.bio?_vendorBioHtml(o.bio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0'):'')
+    +(o.verifyKind?_ownBioHtml(o.bio):(o.bio?_vendorBioHtml(o.bio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0'):''))
     +'</div></div>';
 }
 function renderShopperHome() {
@@ -12404,7 +12409,7 @@ function buildShopperProfile(){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+_verifyBadgeHtml('shopper')+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Live Shopper'+((S.user&&S.user.market)?' @ '+S.user.market:'')+'</div>'
     +((S.user&&[S.user.address,S.user.lga,S.user.state].filter(Boolean).length)?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[S.user.address,S.user.lga,S.user.state].filter(Boolean).join(', ')+'</p>':'')
-    +_vendorBioHtml(S.user&&S.user.shopperBio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0')
+    +_ownBioHtml(S.user&&S.user.shopperBio)
     +((S.user&&S.user.phone)?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+S.user.phone+'</p>':'')
     +'<div style="display:flex;gap:6px;margin-top:6px;">'
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
