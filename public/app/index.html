@@ -10200,7 +10200,7 @@ async function loadVendorChatThreads(){
 // (kind: vendor | rider | shopper). Updated live when an admin changes it.
 function _verifyBadgeHtml(kind){
   var u=S.user||{};var v=!!u[kind+'Verified'];
-  return '<span class="verify-badge" data-kind="'+kind+'" style="display:inline-block;margin-top:6px;background:'+(v?'rgba(46,204,113,.2)':'rgba(245,166,35,.15)')+';color:'+(v?'#4ADE80':'#F5A623')+';font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">'+(v?'✅ Verified':'⏳ Verification pending')+'</span>';
+  return '<span class="verify-badge" data-kind="'+kind+'" style="display:inline-block;margin-left:6px;vertical-align:middle;background:'+(v?'rgba(46,204,113,.2)':'rgba(245,166,35,.15)')+';color:'+(v?'#4ADE80':'#F5A623')+';font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">'+(v?'✅ Verified':'⏳ Verification pending')+'</span>';
 }
 function _refreshVerifyBadges(){
   document.querySelectorAll('.verify-badge').forEach(function(el){var t=document.createElement('div');t.innerHTML=_verifyBadgeHtml(el.getAttribute('data-kind'));el.replaceWith(t.firstChild);});
@@ -10223,11 +10223,10 @@ function vendorBannerCard(kindOrIsCook,compact){
   return '<div style="background:linear-gradient(135deg,'+gradA+','+gradB+');border-radius:18px;padding:20px;margin-bottom:14px;">'
     +'<div style="display:flex;gap:14px;align-items:center;">'
     +'<div onclick="uploadVendorPic()" style="width:58px;height:58px;border-radius:16px;background:rgba('+iconRgb+',.2);border:2px solid rgba('+iconRgb+',.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="vendor-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="vendor-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">'+(isCook?'👩‍🍳':(isCatering?'👨‍🍳':'🎉'))+'</span></div>'
-    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+'</div>'
+    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+_verifyBadgeHtml('vendor')+'</div>'
     +'<div style="font-size:12px;color:'+accent+';margin-top:2px;">'+vLabel+' @ '+(u.bizName||'Not set')+'</div>'
-    +_verifyBadgeHtml('vendor')
-    +_vendorBioHtml(u.vendorDescription,'#9A9390')
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">📍 '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
+    +_vendorBioHtml(u.vendorDescription,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0')
     +(!compact&&u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+u.phone+'</p>':'')
     +'</div></div>'
     +(compact?'':(
@@ -10365,7 +10364,7 @@ async function renderRiderDeliveries(){
   body.innerHTML=''
     +'<div style="background:linear-gradient(180deg,rgba(245,166,35,.1) 0%,transparent 50%);padding:52px 22px 0;">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">'
-    +fullProfileHeader({avatarUrl:u.avatarUrl,uploadFn:'uploadRiderPic()',icon:'🏍️',name:nm,roleLine:'Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+(u.state?' @ '+u.state:''),address:u.address,lga:u.lga,state:u.state,phone:u.phone})
+    +fullProfileHeader({verifyKind:'rider',bio:u.riderBio,avatarUrl:u.avatarUrl,uploadFn:'uploadRiderPic()',icon:'🏍️',name:nm,roleLine:'Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+(u.state?' @ '+u.state:''),address:u.address,lga:u.lga,state:u.state,phone:u.phone})
     +'<button class="online-pill" id="rider-pill" onclick="toggleOnline()" style="border-color:'+(S.rdrOnline?'#2ECC71':'#2A2850')+';background:'+(S.rdrOnline?'rgba(46,204,113,0.10)':'#242424')+';flex-shrink:0;">'
     +'<div class="status-dot '+(S.rdrOnline?'online':'offline')+'" id="rdr-status-dot"></div>'
     +'<span style="font-size:14px;font-weight:700;color:'+(S.rdrOnline?'#2ECC71':'#9A9390')+';" id="rdr-status-lbl">'+(S.rdrOnline?'Online':'Go Online')+'</span>'
@@ -10710,11 +10709,10 @@ function renderRiderProfile(){
     +'<div style="background:linear-gradient(135deg,#1a1a0d,#2a2a0d);border-radius:18px;padding:20px;margin-bottom:14px;">'
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
     +'<div onclick="uploadRiderPic()" style="width:58px;height:58px;border-radius:16px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="rider-pic-img" style="display:'+(u.avatarUrl?'block':'none')+';width:58px;height:58px;object-fit:cover;position:absolute;" src="'+(u.avatarUrl||'')+'" /><span id="rider-pic-icon" style="display:'+(u.avatarUrl?'none':'block')+';">&#x1F6F5;</span></div>'
-    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
+    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+_verifyBadgeHtml('rider')+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+'</div>'
-    +_verifyBadgeHtml('rider')
-    +_vendorBioHtml(u.riderBio,'#9A9390')
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
+    +_vendorBioHtml(u.riderBio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0')
     +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
     +'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
@@ -11773,9 +11771,10 @@ function fullProfileHeader(o){
     +'<div'+(o.uploadFn?' onclick="'+o.uploadFn+'"':'')+' style="width:52px;height:52px;border-radius:15px;background:rgba('+rgb+',.2);border:2px solid rgba('+rgb+',.4);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;'+(o.uploadFn?'cursor:pointer;':'')+'position:relative;overflow:hidden;">'
     +'<img style="display:'+(o.avatarUrl?'block':'none')+';width:52px;height:52px;object-fit:cover;position:absolute;" src="'+(o.avatarUrl||'')+'" />'
     +'<span style="display:'+(o.avatarUrl?'none':'block')+';">'+(o.icon||'👤')+'</span></div>'
-    +'<div><div class="h3" style="margin-top:0;">'+(o.name||'')+'</div>'
+    +'<div><div class="h3" style="margin-top:0;">'+(o.name||'')+(o.verifyKind?_verifyBadgeHtml(o.verifyKind):'')+'</div>'
     +(o.roleLine?'<p style="color:'+(o.accentColor||'#F5A623')+';font-size:12px;font-weight:700;margin:2px 0 0;">'+o.roleLine+'</p>':'')
     +(addr?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📍 '+addr+'</p>':'')
+    +(o.bio?_vendorBioHtml(o.bio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0'):'')
     +'</div></div>';
 }
 function renderShopperHome() {
@@ -11794,7 +11793,7 @@ function renderShopperHome() {
   document.getElementById('shopper-body').innerHTML = `
     <div style="background:linear-gradient(180deg,rgba(184,120,0,.1) 0%,transparent 50%);padding:52px 22px 0;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
-        ${fullProfileHeader({avatarUrl:u.avatarUrl,uploadFn:'uploadShopperPic()',icon:'🛒',name:nm,roleLine:'Shopper @ '+(u.market||'Market not set'),address:u.address,lga:u.lga,state:u.state,phone:u.phone})}
+        ${fullProfileHeader({verifyKind:'shopper',bio:u.shopperBio,avatarUrl:u.avatarUrl,uploadFn:'uploadShopperPic()',icon:'🛒',name:nm,roleLine:'Shopper @ '+(u.market||'Market not set'),address:u.address,lga:u.lga,state:u.state,phone:u.phone})}
         <button class="online-pill" id="shopper-pill" onclick="toggleShopperOnline()" style="border-color:${isShopperOnline?'#2ECC71':'#2A2850'};background:${isShopperOnline?'rgba(46,204,113,0.10)':'#242424'};flex-shrink:0;">
           <div class="status-dot ${isShopperOnline?'online':'offline'}" id="shopper-dot"></div>
           <span style="font-size:14px;font-weight:700;color:${isShopperOnline?'#2ECC71':'#9A9390'};" id="shopper-label">${isShopperOnline?'Online':'Go Online'}</span>
@@ -12402,12 +12401,12 @@ function buildShopperProfile(){
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
     +'<div onclick="uploadShopperPic()" style="width:64px;height:64px;border-radius:18px;background:rgba(245,166,35,.2);border:2px solid rgba(245,166,35,.4);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;"><img id="shopper-pic-img" style="display:'+(S.user&&S.user.avatarUrl?'block':'none')+';width:64px;height:64px;object-fit:cover;position:absolute;" src="'+((S.user&&S.user.avatarUrl)||'')+'" /><span id="shopper-pic-icon" style="display:'+(S.user&&S.user.avatarUrl?'none':'block')+';">&#x1F6D2;</span>'
     +'<div style="position:absolute;bottom:-4px;right:-4px;width:20px;height:20px;background:#F5A623;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid #18140C;">&#x1F4F7;</div></div>'
-    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
+    +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+_verifyBadgeHtml('shopper')+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Live Shopper'+((S.user&&S.user.market)?' @ '+S.user.market:'')+'</div>'
     +((S.user&&[S.user.address,S.user.lga,S.user.state].filter(Boolean).length)?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[S.user.address,S.user.lga,S.user.state].filter(Boolean).join(', ')+'</p>':'')
+    +_vendorBioHtml(S.user&&S.user.shopperBio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0')
     +((S.user&&S.user.phone)?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+S.user.phone+'</p>':'')
     +'<div style="display:flex;gap:6px;margin-top:6px;">'
-    +_verifyBadgeHtml('shopper').replace('margin-top:6px;','')+_vendorBioHtml(S.user&&S.user.shopperBio,'#9A9390')
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
     +'</div></div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
