@@ -20,6 +20,7 @@ router.get("/me/stats", ctrl.getMyStats);
 router.post("/me/avatar", broadcastCatalogChange, upload.single("avatar"), ctrl.uploadAvatar);
 
 router.get("/banks", ctrl.listBanks);
+router.get("/:id/whatsapp", ctrl.getWhatsappContact);
 router.post("/me/bank-account", ctrl.linkBankAccount);
 
 router.get("/me/addresses", ctrl.listAddresses);

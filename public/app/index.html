@@ -1599,14 +1599,14 @@ async function openNotification(id){
 function mapApiUser(u){
   var mapped = {
     id: u.id, name: u.name, email: u.email, phone: u.phone, role: (u.role||'CUSTOMER').toLowerCase(),
-    address: u.address || '', state: u.state || '', lga: u.lga || '',
+    address: u.address || '', state: u.state || '', lga: u.lga || '', whatsapp: u.whatsapp || '',
     bankName: u.bankName || '', bankAcct: u.bankAccountNumber || '', bankAccountName: u.bankAccountName || '',
     avatarUrl: u.avatarUrl || '',
     balance: u.wallet ? Math.round(u.wallet.balanceKobo/100) : 0,
   };
   if (u.vendorProfile) { mapped.vendorProfileId = u.vendorProfile.id; mapped.vtype = (u.vendorProfile.vtype||'').toLowerCase(); mapped.bizName = u.vendorProfile.bizName; mapped.vendorDescription = u.vendorProfile.description || ''; mapped.tags = u.vendorProfile.tags || []; mapped.rating = u.vendorProfile.ratingAvg ? u.vendorProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.vendorProfile.ratingCount || 0; mapped.vendorVerified = !!u.vendorProfile.isVerified; mapped.rateMin = u.vendorProfile.hourlyRateKobo ? Math.round(u.vendorProfile.hourlyRateKobo/100) : ''; mapped.rateMax = u.vendorProfile.maxRateKobo ? Math.round(u.vendorProfile.maxRateKobo/100) : ''; }
-  if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.riderVerified = !!u.riderProfile.isVerified; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
-  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.shopperVerified = !!u.shopperProfile.isVerified; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; mapped.shopperIsOnline = !!u.shopperProfile.isOnline; }
+  if (u.riderProfile) { mapped.riderProfileId = u.riderProfile.id; mapped.riderBio = u.riderProfile.bio || ''; mapped.riderVerified = !!u.riderProfile.isVerified; mapped.vehicleType = u.riderProfile.vehicleType || ''; mapped.plateNumber = u.riderProfile.plateNumber || ''; mapped.rating = u.riderProfile.ratingAvg ? u.riderProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.riderProfile.ratingCount || 0; mapped.deliveries = u.riderProfile.deliveries || 0; mapped.acceptRate = u.riderProfile.acceptRate != null ? Math.round(u.riderProfile.acceptRate) : null; }
+  if (u.shopperProfile) { mapped.shopperProfileId = u.shopperProfile.id; mapped.shopperBio = u.shopperProfile.bio || ''; mapped.shopperVerified = !!u.shopperProfile.isVerified; mapped.market = u.shopperProfile.market || ''; mapped.rating = u.shopperProfile.ratingAvg ? u.shopperProfile.ratingAvg.toFixed(1) : 'New'; mapped.ratingCount = u.shopperProfile.ratingCount || 0; mapped.shopperIsOnline = !!u.shopperProfile.isOnline; }
   return mapped;
 }
 
@@ -3444,10 +3444,10 @@ async function loadRealCatalog(){
       return o;
     }
     var newEp = byType.EVENT_PLANNER.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, em:v.emoji||'🎊', avatarUrl:(v.user&&v.user.avatarUrl)||null, rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', tags:v.tags||[], loc:(v.user&&v.user.address)||'', dist:'1.0 km', ph:(v.user&&v.user.phone)||'', wa:(v.user&&(v.user.whatsapp||v.user.phone))||'', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||v.bio||'', svcs:(v.tags||[]), icons:['🏛️','💐','🎵'], pkgs:pkgObj(v) };
     });
     var newCooks = byType.HOME_COOK.map(function(v){
-      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags.length?v.tags.join(' · '):'Home cooking'), rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), rateMax:Math.round((v.maxRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags.length?v.tags.join(' · '):'Home cooking'), rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👩‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&(v.user.whatsapp||v.user.phone))||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), rateMax:Math.round((v.maxRateKobo||0)/100), period:v.ratePeriod||'per session', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         // Real menu items (id = actual backend MenuItem id) — cookBkRender's
         // package picker uses c.menu when present instead of its hardcoded
         // fallback list, so a booking's selected package ids are real and
@@ -3456,7 +3456,7 @@ async function loadRealCatalog(){
         pkgs:pkgObj(v) };
     });
     var newCatering = byType.CATERING.map(function(v){
-      return { id:v.id, vtype:'CATERING', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Continental & Local', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👨‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per head', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
+      return { id:v.id, vtype:'CATERING', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Continental & Local', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'👨‍🍳', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&(v.user.whatsapp||v.user.phone))||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', specials:v.menuItems.map(function(m){return m.name;}), rate:Math.round((v.hourlyRateKobo||0)/100), period:v.ratePeriod||'per head', avail:'Daily', langs:v.languages&&v.languages.length?v.languages:['English'], tags:v.tags||[],
         menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🍲', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'', contents:m.contents||[], tier:m.packageTier||null }; }),
         pkgs:pkgObj(v) };
     });
@@ -3468,7 +3468,7 @@ async function loadRealCatalog(){
     // (registration/dashboard identity, and the cake detail screen's own
     // "Designer" info card), same field names as newCatering above.
     var newCakeVendors = byType.CAKE.map(function(v){
-      return { id:v.id, vtype:'CAKE', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Custom Cakes', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'🎂', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&v.user.phone)||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', tags:v.tags||[], startPr:Math.round((v.hourlyRateKobo||0)/100),
+      return { id:v.id, vtype:'CAKE', userId:(v.user&&v.user.id)||null, nm:v.bizName, sp:(v.tags&&v.tags[0])||'Custom Cakes', rt:v.ratingAvg?v.ratingAvg.toFixed(1):'New', rv:v.ratingCount||0, em:v.emoji||'🎂', avatarUrl:(v.user&&v.user.avatarUrl)||null, dist:'1.0 km', addr:(v.user&&v.user.address)||'', state:(v.user&&v.user.state)||'', lga:(v.user&&v.user.lga)||'', ph:(v.user&&v.user.phone)||'', wa:(v.user&&(v.user.whatsapp||v.user.phone))||'', promo:!!(v.featuredUntil&&new Date(v.featuredUntil)>new Date()), bio:v.description||'', tags:v.tags||[], startPr:Math.round((v.hourlyRateKobo||0)/100),
         menu:v.menuItems.map(function(m){ return { id:m.id, nm:m.name, em:m.emoji||'🎂', img:m.imageUrl||null, pr:Math.round(m.priceKobo/100), desc:m.description||'', leadTime:m.leadTimeNote||'', cat:m.category||'custom' }; }) };
     });
     var newCakes=[];
@@ -3486,7 +3486,7 @@ async function loadRealCatalog(){
 
     var shopperRes = await api('/shoppers?pageSize=50').catch(function(){ return {shoppers:[]}; });
     var newShoppers = (shopperRes.shoppers||[]).map(function(s){
-      return { id:s.id, nm:(s.user&&s.user.name)||'Shopper', em:'👤', market:s.market||'', dist:'1.0 km', rt:s.ratingAvg?s.ratingAvg.toFixed(1):'New', rv:s.ratingCount||0, available:s.isOnline, ph:(s.user&&s.user.phone)||'', specialties:s.specialties||[] };
+      return { id:s.id, nm:(s.user&&s.user.name)||'Shopper', em:'👤', market:s.market||'', dist:'1.0 km', rt:s.ratingAvg?s.ratingAvg.toFixed(1):'New', rv:s.ratingCount||0, available:s.isOnline, ph:(s.user&&s.user.phone)||'', specialties:s.specialties||[], bio:s.bio||'' };
     });
 
     D.ep = newEp; D.cooks = newCooks; D.catering = newCatering; D.cakeVendors = newCakeVendors; D.cakes = newCakes; D.shoppers = newShoppers;
@@ -4342,6 +4342,7 @@ function renderShoppers(){
           B(sh.available?'● Available':'Offline',sh.available?'bg':'bm')+
         '</div>'+
         '<p style="color:#9A9390;font-size:12px;margin:0 0 4px">\ud83d\uded2 '+sh.market+'</p>'+
+        (sh.bio?_vendorBioHtml(sh.bio).replace('margin:6px 0 0','margin:0 0 6px'):'')+
         '<p style="color:#9A9390;font-size:12px;margin:0 0 8px">\ud83d\udccd '+sh.dist+' away · '+St(sh.rt)+'</p>'+
         '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+sh.specialties.map(function(s){return '<span style="background:#2D2D2D;border-radius:8px;padding:3px 8px;font-size:11px;color:#3B9FE8;border:1px solid rgba(59,159,232,.3)">'+s+'</span>';}).join('')+'</div>'+
         (sh.available?
@@ -5233,9 +5234,8 @@ function renderShopPhase(phase) {
           <div style="flex:1;">
             <div style="font-weight:800;font-size:16px;">${sfmShopperName()}</div>
             <div style="font-size:12px;color:#9A9390;margin-top:3px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="openRatingsModal(window._sfmSession&&window._sfmSession.shopper&&window._sfmSession.shopper.userId,'SHOPPER',window._sfmSession&&window._sfmSession.shopper&&window._sfmSession.shopper.id)">★ ${sfmShopperRating()}</div>
-            <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;">
-              <span class="badge b-gold">✅ ID Verified</span>
-            </div>
+            ${(window._sfmSession&&window._sfmSession.shopper&&window._sfmSession.shopper.bio)?_vendorBioHtml(window._sfmSession.shopper.bio,'#9A9390'):''}
+            ${(window._sfmSession&&window._sfmSession.shopper&&window._sfmSession.shopper.isVerified)?'<div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;"><span class="badge b-gold">✅ ID Verified</span></div>':''}
           </div>
         </div>
         <div style="border-top:1px solid #2A2850;padding-top:12px;display:flex;flex-direction:column;gap:8px;">
@@ -6450,7 +6450,7 @@ function _renderEtrackBooking(b,dt){
   window._bookingDetailRider=b.rider?{id:b.rider.user.id,name:riderName,phone:b.rider.user.phone||'',bookingId:b.id}:null;
   var cName=(b.selectedItems&&b.selectedItems[0]&&b.selectedItems[0].name)||'Your cake';
   var bakerCard=_cakeContactCard('🎂',bakerName,'Your baker','openBookingCall()','openBookingChat()');
-  var riderCard=b.rider?_cakeContactCard('🏍️',riderName,b.vendorHandoverConfirmedAt?'Your rider — bringing your cake':'Your rider — picking up your cake','openBookingRiderCall()','openBookingRiderChat()','rgba(245,166,35,.4)'):'';
+  var riderCard=b.rider?_cakeContactCard('🏍️',riderName,b.vendorHandoverConfirmedAt?'Your rider — bringing your cake':'Your rider — picking up your cake','openBookingRiderCall()','openBookingRiderChat()','rgba(245,166,35,.4)',b.rider.bio):'';
 
   // ── Completed: rate + report + done ──
   if(b.status==='COMPLETED'){
@@ -8180,6 +8180,7 @@ function renderShopperPhase(phase) {
           <div style="flex:1;">
             <div style="font-weight:800;font-size:15px;">${_rNm}</div>
             <div style="font-size:12px;color:#9A9390;margin-top:2px;">${_rVeh?_rVeh+' &nbsp;•&nbsp; ':''}★${_rRating}</div>
+            ${(window._shopperSession&&window._shopperSession.rider&&window._shopperSession.rider.bio)?_vendorBioHtml(window._shopperSession.rider.bio,'#9A9390'):''}
             <div class="badge b-purple" style="margin-top:6px;display:inline-flex;font-size:11px;">🏍️ ${_riderHere?'Arrived':'En Route'}</div>
           </div>
           <button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(59,159,232,.4);margin-right:6px;" onclick="openShopperRiderChat()">💬</button>
@@ -9640,7 +9641,14 @@ function doCallAction(type){
   document.getElementById('call-modal').style.display='none';
   if(type==='inapp')bcallStart();
   else if(type==='phone'){window.location.href='tel:'+_callPhone;}
-  else{window.open('https://wa.me/'+waPhoneDigits(_callPhone),'_blank');}
+  else{
+    // Their WhatsApp number when they've added one, otherwise their phone.
+    var uid=window._callOtherUserId;
+    if(!uid){window.open('https://wa.me/'+waPhoneDigits(_callPhone),'_blank');return;}
+    var w=window.open('about:blank','_blank'); // opened now so it isn't blocked as a pop-up
+    api('/users/'+uid+'/whatsapp').then(function(r){return (r&&r.whatsapp)||_callPhone;}).catch(function(){return _callPhone;})
+      .then(function(num){var url='https://wa.me/'+waPhoneDigits(num);if(w)w.location.href=url;else window.open(url,'_blank');});
+  }
 }
 function callPhone(ph){openCallModal('Contact',ph,'','');}
 
@@ -10704,6 +10712,7 @@ function renderRiderProfile(){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+'</div>'
     +_verifyBadgeHtml('rider')
+    +_vendorBioHtml(u.riderBio,'#9A9390')
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
     +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
     +'</div></div>'
@@ -12214,6 +12223,7 @@ async function openEditProfileModal(role){
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Edit Profile</div></div>'
     +f('Full Name','epf-name',u.name,'text','Your full name')
     +f('Phone','epf-phone',u.phone,'tel','+234...')
+    +f('WhatsApp (used when customers WhatsApp you)','epf-whatsapp',u.whatsapp,'tel','+234... (leave empty to use your phone)')
     +f('Email','epf-email',u.email,'email','you@example.com')
     +f('Address','epf-address',u.address,'text','Street address')
     +stateSel
@@ -12235,11 +12245,13 @@ async function openEditProfileModal(role){
     }
   }
   if(role==='rider'){
-    html+=f('Vehicle Type','epf-vehicle',u.vehicleType,'text','e.g. Motorcycle')
+    html+=f('Short Bio','epf-bio',u.riderBio,'text','A line or two customers see about you')
+      +f('Vehicle Type','epf-vehicle',u.vehicleType,'text','e.g. Motorcycle')
       +f('Plate Number','epf-plate',u.plateNumber,'text','e.g. ABC-123-XY');
   }
   if(role==='shopper'){
-    html+=f('Home Market','epf-market',u.market,'text','e.g. Mile 12, Lagos');
+    html+=f('Short Bio','epf-bio',u.shopperBio,'text','A line or two customers see about you')
+      +f('Home Market','epf-market',u.market,'text','e.g. Mile 12, Lagos');
   }
   if(role!=='customer'){
     html+='<div style="font-weight:800;font-size:13px;color:#F2EDE8;margin:14px 0 8px;">&#x1F3E6; Bank Details</div>';
@@ -12279,6 +12291,7 @@ async function saveEditProfile(role){
   try{
     var profileBody={
       name:val('epf-name')||undefined, phone:val('epf-phone')||undefined, email:val('epf-email')||undefined,
+      whatsapp:document.getElementById('epf-whatsapp')?(val('epf-whatsapp')||null):undefined,
       address:val('epf-address')||undefined, state:val('epf-state')||undefined,
       // A state change clears an LGA that belonged to the old state.
       lga:val('epf-state')?(val('epf-lga')||null):undefined,
@@ -12297,11 +12310,11 @@ async function saveEditProfile(role){
       var vRes=await api('/users/me/vendor-profile',{method:'PATCH',body:JSON.stringify(vBody)});
       if(vRes.vendorProfile){S.user.bizName=vRes.vendorProfile.bizName;S.user.vendorDescription=vRes.vendorProfile.description||'';S.user.tags=vRes.vendorProfile.tags||S.user.tags;S.user.rateMin=vRes.vendorProfile.hourlyRateKobo?Math.round(vRes.vendorProfile.hourlyRateKobo/100):'';S.user.rateMax=vRes.vendorProfile.maxRateKobo?Math.round(vRes.vendorProfile.maxRateKobo/100):'';}
     }else if(role==='rider'){
-      var rRes=await api('/users/me/rider-profile',{method:'PATCH',body:JSON.stringify({vehicleType:val('epf-vehicle')||undefined,plateNumber:val('epf-plate')||undefined})});
-      if(rRes.riderProfile){S.user.vehicleType=rRes.riderProfile.vehicleType||'';S.user.plateNumber=rRes.riderProfile.plateNumber||'';}
+      var rRes=await api('/users/me/rider-profile',{method:'PATCH',body:JSON.stringify({vehicleType:val('epf-vehicle')||undefined,plateNumber:val('epf-plate')||undefined,bio:document.getElementById('epf-bio')?(val('epf-bio')||null):undefined})});
+      if(rRes.riderProfile){S.user.riderBio=rRes.riderProfile.bio||'';S.user.vehicleType=rRes.riderProfile.vehicleType||'';S.user.plateNumber=rRes.riderProfile.plateNumber||'';}
     }else if(role==='shopper'){
-      var sRes=await api('/users/me/shopper-profile',{method:'PATCH',body:JSON.stringify({market:val('epf-market')||undefined})});
-      if(sRes.shopperProfile){S.user.market=sRes.shopperProfile.market||'';}
+      var sRes=await api('/users/me/shopper-profile',{method:'PATCH',body:JSON.stringify({market:val('epf-market')||undefined,bio:document.getElementById('epf-bio')?(val('epf-bio')||null):undefined})});
+      if(sRes.shopperProfile){S.user.market=sRes.shopperProfile.market||'';S.user.shopperBio=sRes.shopperProfile.bio||'';}
     }
 
     var bankSel=document.getElementById('epf-bankname');
@@ -12393,7 +12406,7 @@ function buildShopperProfile(){
     +((S.user&&[S.user.address,S.user.lga,S.user.state].filter(Boolean).length)?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[S.user.address,S.user.lga,S.user.state].filter(Boolean).join(', ')+'</p>':'')
     +((S.user&&S.user.phone)?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+S.user.phone+'</p>':'')
     +'<div style="display:flex;gap:6px;margin-top:6px;">'
-    +_verifyBadgeHtml('shopper').replace('margin-top:6px;','')
+    +_verifyBadgeHtml('shopper').replace('margin-top:6px;','')+_vendorBioHtml(S.user&&S.user.shopperBio,'#9A9390')
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
     +'</div></div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
@@ -13532,6 +13545,8 @@ async function doRegister(){
     if(bankAcct.trim())fd.append('bankAccountNumber',bankAcct.trim());
     // Account holder name, rider vehicle/plate and shopper market were on the
     // form but never sent.
+    var regWa=((document.getElementById('r-wa')||{}).value||'').trim();
+    if(regWa)fd.append('whatsapp',regWa);
     var bankHolder=((document.getElementById('r-bankname')||{}).value||'').trim();
     if(bankHolder)fd.append('bankAccountName',bankHolder);
     // Speciality/Rate/Bio were all collected on every vendor registration
@@ -13582,10 +13597,12 @@ async function doRegister(){
       fd.append('role','RIDER');
       var veh=((document.getElementById('r-vehicle')||{}).value||'').trim();if(veh)fd.append('vehicleType',veh);
       var plate=((document.getElementById('r-plate')||{}).value||'').trim();if(plate)fd.append('plateNumber',plate);
+      if(regBio)fd.append('bio',regBio);
     }
     else if(_eRole==='shopper'){
       fd.append('role','SHOPPER');
       var mkt=((document.getElementById('r-market')||{}).value||'').trim();if(mkt)fd.append('market',mkt);
+      if(regBio)fd.append('bio',regBio);
     }
     else{fd.append('role','CUSTOMER');}
     if(_regIdentityComplete()){
@@ -15810,10 +15827,10 @@ function _bindCakeTrackLiveListener(){
   });
 }
 // Shared Shop-For-Me-style contact card (avatar, name, role, call + chat).
-function _cakeContactCard(emoji,name,role,callFn,chatFn,accent){
+function _cakeContactCard(emoji,name,role,callFn,chatFn,accent,bio){
   return '<div style="background:#1C1C1C;border:1.5px solid '+(accent||'#2A2850')+';border-radius:14px;padding:12px 14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;">'
     +'<div style="width:46px;height:46px;border-radius:14px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">'+emoji+'</div>'
-    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+name+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+role+'</div></div>'
+    +'<div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:14px;color:#F2EDE8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+name+'</div><div style="font-size:12px;color:#9A9390;margin-top:2px;">'+role+'</div>'+(bio?_vendorBioHtml(bio,'#9A9390').replace('margin:6px 0 0','margin:4px 0 0'):'')+'</div>'
     +'<button class="ibtn" style="background:rgba(46,204,113,0.10);border-color:rgba(26,140,80,.4);" onclick="'+callFn+'">📞</button>'
     +'<button class="ibtn" style="background:rgba(59,159,232,0.10);border-color:rgba(26,95,212,.4);" onclick="'+chatFn+'">💬</button>'
     +'</div>';
@@ -17731,12 +17748,12 @@ function buildRegForm(){
   }).join('');
   var switchRow='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">'+roleSwitchBar+'</div>';
   var h='';
-  if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+stateLGA;}
+  if(role==='customer'){h=fld('Full Name','&#x1F464;','r-name','e.g. Adaeze Okafor','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp (optional)','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+stateLGA;}
   else if(role==='cook'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Cooking Speciality (tick all that apply)</label>'+_specTicksHtml('cook','r-sp-cb','r-sp-other',[])+'<label class="il">Price per Cooking Session (&#x20a6;) — a range, depending on the food</label>'+'<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;"><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate" type="number" placeholder="From e.g. 4000"></div><span style="color:#9A9390;">–</span><div class="ir" style="flex:1;margin:0;"><span class="ii">&#x20a6;</span><input class="if ic" id="r-rate-max" type="number" placeholder="To e.g. 10000"></div></div>'+ta('Short Bio','r-bio','Describe your cooking experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='catering'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Elite Gourmet Catering','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Catering Speciality (tick all that apply)</label>'+_specTicksHtml('catering','r-sp-cb','r-sp-other',[])+fld('Starting Price per Head (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 8000','number')+ta('Short Bio','r-bio','Describe your catering experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='cake'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Sweet Creations by Temi','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Cake Speciality (tick all that apply)</label>'+_specTicksHtml('cake','r-sp-cb','r-sp-other',[])+fld('Starting Price (&#x20a6;)','&#x1F4B0;','r-rate','e.g. 15000','number')+ta('Short Bio','r-bio','Describe your cake-making experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
-  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Event Speciality (tick all that apply)</label>'+_specTicksHtml('event_planner','r-sp-cb','r-sp-other',[])+ta('Short Bio','r-bio','Describe your event planning experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
-  else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='event_planner'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Business Name','&#x1F38A;','r-bizname','e.g. Celebrate Lagos Events','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','business@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+'<label class="il">Event Speciality (tick all that apply)</label>'+_specTicksHtml('event_planner','r-sp-cb','r-sp-other',[])+ta('Short Bio','r-bio','Describe your event planning experience...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
+  else if(role==='rider'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+sel('Vehicle Type','r-vehicle','<option>Motorcycle (Okada)</option><option>Bicycle</option><option>Car</option><option>Tricycle (Keke)</option>')+fld('Plate Number','&#x1F516;','r-plate','e.g. LG-123-AA','')+ta('Short Bio','r-bio','e.g. Fast, careful rider covering Ikeja and Yaba...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   else if(role==='shopper'){h=fld('Full Name','&#x1F464;','r-name','Your full name','')+fld('Phone','&#x1F4F1;','r-phone','+234 800 000 0000','tel')+addr+fld('WhatsApp','&#x1F4AC;','r-wa','+234 800 000 0000','tel')+fld('Email','&#x2709;','r-email','you@example.com','email')+fld('Password','&#x1F512;','r-pass','Min 8 characters','password')+fld('Primary Market','&#x1F6D2;','r-market','e.g. Mile 12 Market, Lagos','')+ta('Short Bio','r-bio','e.g. I specialise in fresh produce at Mile 12 Market...')+'<div id="reg-identity-field">'+regIdentityFieldHtml()+'</div>'+bank+stateLGA;}
   var rf=document.getElementById('reg-form');if(rf)rf.innerHTML=switchRow+h;
 }

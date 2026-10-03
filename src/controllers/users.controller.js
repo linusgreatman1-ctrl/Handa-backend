@@ -8,7 +8,7 @@ function publicUser(user) {
 
 async function updateProfile(req, res, next) {
   try {
-    const { name, phone, email, address, state, lga, lat, lng } = req.body;
+    const { name, phone, email, address, state, lga, lat, lng, whatsapp } = req.body;
 
     if (phone !== undefined && phone) {
       const existing = await prisma.user.findUnique({ where: { phone } });
@@ -26,6 +26,7 @@ async function updateProfile(req, res, next) {
         ...(phone !== undefined && { phone: phone || null }),
         ...(email !== undefined && { email: email || null }),
         ...(address !== undefined && { address }),
+        ...(whatsapp !== undefined && { whatsapp: whatsapp ? String(whatsapp).trim() : null }),
         ...(state !== undefined && { state }),
         ...(lga !== undefined && { lga }),
         ...(lat !== undefined && { lat }),
@@ -72,12 +73,13 @@ async function updateVendorProfile(req, res, next) {
 async function updateRiderProfile(req, res, next) {
   try {
     if (!req.user.riderProfile) return res.status(403).json({ error: "No rider profile found." });
-    const { vehicleType, plateNumber } = req.body;
+    const { vehicleType, plateNumber, bio } = req.body;
     const profile = await prisma.riderProfile.update({
       where: { id: req.user.riderProfile.id },
       data: {
         ...(vehicleType !== undefined && { vehicleType }),
         ...(plateNumber !== undefined && { plateNumber }),
+        ...(bio !== undefined && { bio }),
       },
     });
     res.json({ riderProfile: profile });
@@ -89,12 +91,13 @@ async function updateRiderProfile(req, res, next) {
 async function updateShopperProfile(req, res, next) {
   try {
     if (!req.user.shopperProfile) return res.status(403).json({ error: "No shopper profile found." });
-    const { market, specialties } = req.body;
+    const { market, specialties, bio } = req.body;
     const profile = await prisma.shopperProfile.update({
       where: { id: req.user.shopperProfile.id },
       data: {
         ...(market !== undefined && { market }),
         ...(specialties !== undefined && { specialties }),
+        ...(bio !== undefined && { bio }),
       },
     });
     res.json({ shopperProfile: profile });
@@ -295,7 +298,20 @@ async function updateNotificationPreferences(req, res, next) {
   }
 }
 
+// The number the WhatsApp call/chat option should use for a person: their
+// WhatsApp number if they added one, otherwise their phone.
+async function getWhatsappContact(req, res, next) {
+  try {
+    const u = await prisma.user.findUnique({ where: { id: req.params.id }, select: { whatsapp: true, phone: true } });
+    if (!u) return res.status(404).json({ error: "User not found." });
+    res.json({ whatsapp: u.whatsapp || u.phone || null });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  getWhatsappContact,
   updateProfile,
   updateVendorProfile,
   updateRiderProfile,

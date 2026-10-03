@@ -49,11 +49,12 @@ async function issueSession(res, user) {
 // Every account gets a Wallet + default NotificationPreference regardless
 // of role — customers hold escrow refunds/change there too, not just
 // payable roles.
-function baseCreateData({ name, email, phone, passwordHash, role, address, state, lga, bankName, bankAccountNumber, bankAccountName, isGuest }) {
+function baseCreateData({ name, email, phone, whatsapp, passwordHash, role, address, state, lga, bankName, bankAccountNumber, bankAccountName, isGuest }) {
   return {
     name,
     email: email ? String(email).trim() : null,
     phone: phone ? String(phone).trim() : null,
+    whatsapp: whatsapp ? String(whatsapp).trim() : null,
     passwordHash: passwordHash || null,
     isGuest: !!isGuest,
     role,
@@ -96,6 +97,8 @@ async function register(req, res, next) {
       hourlyRateKobo,
       maxRateKobo,
       ratePeriod,
+      whatsapp,
+      bio,
       // RIDER-only
       vehicleType,
       plateNumber,
@@ -153,7 +156,7 @@ async function register(req, res, next) {
 
     const passwordHash = await hashPassword(password);
 
-    const data = baseCreateData({ name, email, phone, passwordHash, role, address, state, lga, bankName, bankAccountNumber, bankAccountName });
+    const data = baseCreateData({ name, email, phone, whatsapp, passwordHash, role, address, state, lga, bankName, bankAccountNumber, bankAccountName });
 
     if (role === "VENDOR") {
       const parsedRateKobo = Number(hourlyRateKobo);
@@ -172,9 +175,9 @@ async function register(req, res, next) {
         },
       };
     } else if (role === "RIDER") {
-      data.riderProfile = { create: { vehicleType: vehicleType || null, plateNumber: plateNumber || null } };
+      data.riderProfile = { create: { vehicleType: vehicleType || null, plateNumber: plateNumber || null, bio: bio || null } };
     } else if (role === "SHOPPER") {
-      data.shopperProfile = { create: { market: market || null } };
+      data.shopperProfile = { create: { market: market || null, bio: bio || null } };
     }
 
     // Atomic: the account and (for the four KYC roles) their identity

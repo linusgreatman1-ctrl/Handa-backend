@@ -40,6 +40,7 @@ model User {
   name         String
   email        String?       @unique
   phone        String?       @unique
+  whatsapp          String? // WhatsApp number (WhatsApp call/chat option); falls back to phone
   passwordHash String? // null for guest accounts
   isGuest      Boolean       @default(false)
   role         Role          @default(CUSTOMER)
@@ -201,6 +202,7 @@ model RiderProfile {
 
   vehicleType String? // "Motorcycle", "Bicycle", "Car"...
   plateNumber String?
+  bio         String? // short intro customers see
 
   isOnline    Boolean @default(false)
   isVerified  Boolean @default(false)
@@ -228,6 +230,7 @@ model ShopperProfile {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   market      String? // usual market they shop from
+  bio         String? // short intro customers see
   specialties String[] @default([])
 
   isOnline    Boolean @default(false)

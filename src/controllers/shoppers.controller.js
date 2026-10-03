@@ -9,7 +9,7 @@ async function listShoppers(req, res, next) {
         ...(market && { market }),
         ...(online === "true" && { isOnline: true }),
       },
-      include: { user: { select: { name: true, avatarUrl: true } } },
+      include: { user: { select: { name: true, avatarUrl: true, whatsapp: true } } },
       orderBy: { ratingAvg: "desc" },
     });
     res.json({ shoppers });

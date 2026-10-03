@@ -136,7 +136,7 @@ async function listUsers(req, res, next) {
       prisma.user.findMany({
         where,
         select: {
-          id: true, name: true, email: true, phone: true, address: true, role: true, status: true, state: true, lga: true, createdAt: true, lastLoginAt: true,
+          id: true, name: true, email: true, phone: true, whatsapp: true, address: true, role: true, status: true, state: true, lga: true, createdAt: true, lastLoginAt: true,
           vendorProfile: { select: { id: true, vtype: true, bizName: true, isVerified: true, isOnline: true } },
           riderProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true, deliveries: true } },
           shopperProfile: { select: { id: true, isOnline: true, isVerified: true, ratingAvg: true } },
@@ -225,7 +225,7 @@ async function listVendorsForAdmin(req, res, next) {
         ...(verified !== undefined && { isVerified: verified === "true" }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ vendors });
@@ -260,7 +260,7 @@ async function getVendorDetailForAdmin(req, res, next) {
   try {
     const vendor = await prisma.vendorProfile.findUnique({
       where: { id: req.params.id },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
     });
     if (!vendor) return res.status(404).json({ error: "Vendor not found." });
     const [kycDocuments, commissionPeriods, finance, menuItems, servicePackages] = await Promise.all([
@@ -287,7 +287,7 @@ async function getCustomerDetailForAdmin(req, res, next) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.params.id },
-      select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, avatarUrl: true, createdAt: true, lastLoginAt: true },
+      select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true, avatarUrl: true, createdAt: true, lastLoginAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found." });
 
@@ -446,7 +446,7 @@ async function getRiderDetailForAdmin(req, res, next) {
   try {
     const rider = await prisma.riderProfile.findUnique({
       where: { id: req.params.id },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
     });
     if (!rider) return res.status(404).json({ error: "Rider not found." });
     const [kycDocuments, finance, payoutHistory] = await Promise.all([
@@ -464,7 +464,7 @@ async function getShopperDetailForAdmin(req, res, next) {
   try {
     const shopper = await prisma.shopperProfile.findUnique({
       where: { id: req.params.id },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true, createdAt: true } } },
     });
     if (!shopper) return res.status(404).json({ error: "Shopper not found." });
     const [kycDocuments, finance, payoutHistory] = await Promise.all([
@@ -926,7 +926,7 @@ async function listRidersForAdmin(req, res, next) {
         ...(verified === "false" && { isVerified: false }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ riders });
@@ -945,7 +945,7 @@ async function listShoppersForAdmin(req, res, next) {
         ...(verified === "false" && { isVerified: false }),
         ...(state && { user: { state } }),
       },
-      include: { user: { select: { id: true, name: true, email: true, phone: true, address: true, state: true, lga: true, status: true } } },
+      include: { user: { select: { id: true, name: true, email: true, phone: true, whatsapp: true, address: true, state: true, lga: true, status: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ shoppers });

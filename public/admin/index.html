@@ -493,8 +493,8 @@ function contactCell(email, phone, address) {
   const extra = [phone, address].filter(Boolean);
   return (email || '—') + (extra.length ? '<br><span style="color:#9A9390;font-size:11px">' + extra.join('<br>') + '</span>' : '');
 }
-function contactBreakdown(phone, address) {
-  return [phone, address].filter(Boolean).join(' · ') || 'No phone/address on file';
+function contactBreakdown(phone, address, whatsapp) {
+  return [phone, whatsapp && whatsapp !== phone ? 'WhatsApp: ' + whatsapp : '', address].filter(Boolean).join(' · ') || 'No phone/address on file';
 }
 const NG_STATES = ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno','Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT (Abuja)','Gombe','Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
 function stateFilterOptions(selected) { return '<option value="">All states</option>' + NG_STATES.map(s => '<option' + (selected === s ? ' selected' : '') + '>' + s + '</option>').join(''); }
@@ -858,7 +858,7 @@ async function renderCustomerDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'users\')">&larr; Back to list</button>' +
       '<h2>' + u.name + '</h2>' +
       '<div class="grid">' +
-        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address)) +
+        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address, u.whatsapp)) +
         card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
         card('Total Spend', money(a.totalSpendKobo), a.completedOrders + ' completed order(s)') +
         card('Account Status', pill(u.status), 'Joined ' + new Date(u.createdAt).toLocaleDateString()) +
@@ -1622,7 +1622,7 @@ async function renderRiderDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'riders\')">&larr; Back to list</button>' +
       '<h2>' + u.name + '</h2>' +
       '<div class="grid">' +
-        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address)) +
+        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address, u.whatsapp)) +
         card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
         card('Vehicle', (r.vehicleType || 'Not set') + (r.plateNumber ? ' · ' + r.plateNumber : ''), '') +
         card('Deliveries', r.deliveries, 'Rating ' + (r.ratingAvg || 0).toFixed(1)) +
@@ -1686,7 +1686,7 @@ async function renderShopperDetail(id) {
       '<button class="action-btn" style="margin-bottom:14px" onclick="switchTab(\'shoppers\')">&larr; Back to list</button>' +
       '<h2>' + u.name + '</h2>' +
       '<div class="grid">' +
-        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address)) +
+        card('Contact', (u.email || '—'), contactBreakdown(u.phone, u.address, u.whatsapp)) +
         card('Location', (u.state || 'Not set') + (u.lga ? ' · ' + u.lga : ''), u.address || '') +
         card('Market', s.market || 'Not set', '') +
         card('Rating', (s.ratingAvg || 0).toFixed(1), s.ratingCount + ' ratings') +

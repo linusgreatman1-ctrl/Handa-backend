@@ -20,7 +20,7 @@ async function listVendors(req, res, next) {
     const [vendors, total] = await Promise.all([
       prisma.vendorProfile.findMany({
         where,
-        include: { user: { select: { name: true, address: true, state: true, lga: true, avatarUrl: true } } },
+        include: { user: { select: { name: true, address: true, state: true, lga: true, avatarUrl: true, whatsapp: true } } },
         orderBy: [{ featuredUntil: "desc" }, { ratingAvg: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -39,7 +39,7 @@ async function getVendor(req, res, next) {
     const vendor = await prisma.vendorProfile.findUnique({
       where: { id: req.params.id },
       include: {
-        user: { select: { id: true, name: true, address: true, state: true, lga: true, avatarUrl: true, phone: true } },
+        user: { select: { id: true, name: true, address: true, state: true, lga: true, avatarUrl: true, phone: true, whatsapp: true } },
         menuItems: { orderBy: [{ popular: "desc" }, { name: "asc" }] },
         servicePackages: true,
       },
