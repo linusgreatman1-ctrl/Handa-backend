@@ -10226,6 +10226,7 @@ function vendorBannerCard(kindOrIsCook,compact){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+'</div>'
     +'<div style="font-size:12px;color:'+accent+';margin-top:2px;">'+vLabel+' @ '+(u.bizName||'Not set')+'</div>'
     +_verifyBadgeHtml('vendor')
+    +_vendorBioHtml(u.vendorDescription,'#9A9390')
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">📍 '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
     +(!compact&&u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+u.phone+'</p>':'')
     +'</div></div>'
@@ -10257,7 +10258,7 @@ function renderVendorProfile(){
   var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct+(u.bankAccountName?' \u2022 '+u.bankAccountName:'')):'Not linked';
   body.innerHTML='<div style="padding:52px 16px 24px;">'
     +vendorBannerCard(profKind)
-    +[['Business Name',bizName],['Address',addr],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Phone',phone],['Bank',bank]]
+    +[['Business Name',bizName],['Bio',u.vendorDescription||'Not set — tap Edit to add a short bio'],['Address',addr],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Phone',phone],['Bank',bank]]
       // Home cooks: their price per cooking session (a range).
       .concat(u.vtype==='home_cook'?[['Price per Cooking Session',(u.rateMin||u.rateMax)?('₦'+Number(u.rateMin||0).toLocaleString()+' – ₦'+Number(u.rateMax||u.rateMin||0).toLocaleString()):'₦0 – ₦0 (not set yet — tap Edit)']]:[])
       .map(function(r){
@@ -10721,7 +10722,7 @@ function renderRiderProfile(){
     +'<div onclick="openRatingsModal(\''+u.id+'\',\'RIDER\',\''+(u.riderProfileId||'')+'\')" style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;cursor:pointer;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;text-decoration:underline;text-decoration-style:dotted;">'+rating+'</div></div>'
     +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Accept</div><div style="font-weight:800;color:#2ECC71;">'+acceptRate+'</div></div>'
     +'</div></div>'
-    +[['Full Name',nm],['Phone',phone],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Vehicle',vehicle],['Bank',bank]].map(function(r){
+    +[['Full Name',nm],['Bio',u.riderBio||'Not set — tap Edit to add a short bio'],['Phone',phone],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Vehicle',vehicle],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="openEditProfileModal(\'rider\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
@@ -12232,7 +12233,7 @@ async function openEditProfileModal(role){
     +'<select id="epf-lga" data-current="'+(u.lga||'').replace(/"/g,'&quot;')+'" style="width:100%;background:#242424;border:1.5px solid #2A2850;border-radius:11px;padding:11px;color:#F2EDE8;font-size:13px;box-sizing:border-box;"></select></div>';
   if(role==='vendor'){
     html+=f('Business Name','epf-bizname',u.bizName,'text','Business name')
-      +f('Description','epf-desc',u.vendorDescription,'text','What you offer');
+      +f('Bio (customers see this on your page)','epf-desc',u.vendorDescription,'text','A line or two about you and what you offer');
     // Specialities (every vendor type) -- customers find you under these.
     html+='<div style="margin-bottom:4px;"><label style="font-size:12px;color:#9A9390;display:block;margin-bottom:5px;">'+(u.vtype==='home_cook'?'Cooking Speciality':'Speciality')+' (customers find you under these)</label>'+_specTicksHtml(u.vtype,'epf-tag','epf-tag-other',u.tags||[])+'</div>';
     if(u.vtype==='home_cook'){
@@ -12395,7 +12396,7 @@ function buildShopperProfile(){
   if(!body)return;
   var nm=S.user?S.user.name:'Aisha Abdullahi';
   var em=S.user?(S.user.email||'aisha@email.com'):'aisha@email.com';
-  var prows=[['Full Name',nm],['Email',em],['Phone',(S.user&&S.user.phone)||'Not set'],['State',(S.user&&S.user.state)||'Not set'],['Local Government',(S.user&&S.user.lga)||'Not set'],['Home Market',(S.user&&S.user.market)||'Not set']];
+  var prows=[['Full Name',nm],['Bio',(S.user&&S.user.shopperBio)||'Not set — tap Edit Info to add a short bio'],['Email',em],['Phone',(S.user&&S.user.phone)||'Not set'],['State',(S.user&&S.user.state)||'Not set'],['Local Government',(S.user&&S.user.lga)||'Not set'],['Home Market',(S.user&&S.user.market)||'Not set']];
   var html=''
     +'<div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:20px;padding:20px;margin-bottom:16px;">'
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
