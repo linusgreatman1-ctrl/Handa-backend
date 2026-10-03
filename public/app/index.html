@@ -10231,8 +10231,8 @@ function vendorBannerCard(kindOrIsCook,compact){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+(u.name||vLabel)+_verifyBadgeHtml('vendor')+'</div>'
     +'<div style="font-size:12px;color:'+accent+';margin-top:2px;">'+vLabel+' @ '+(u.bizName||'Not set')+'</div>'
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">📍 '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
-    +_ownBioHtml(u.vendorDescription)
     +(!compact&&u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">📞 '+u.phone+'</p>':'')
+    +_ownBioHtml(u.vendorDescription)
     +'</div></div>'
     +(compact?'':(
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;">'
@@ -10262,7 +10262,7 @@ function renderVendorProfile(){
   var bank=(u.bankName&&u.bankAcct)?(u.bankName+' \u2022 '+u.bankAcct+(u.bankAccountName?' \u2022 '+u.bankAccountName:'')):'Not linked';
   body.innerHTML='<div style="padding:52px 16px 24px;">'
     +vendorBannerCard(profKind)
-    +[['Business Name',bizName],['Bio',u.vendorDescription||'Not set — tap Edit to add a short bio'],['Address',addr],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Phone',phone],['Bank',bank]]
+    +[['Business Name',bizName],['Phone',phone],['Bio',u.vendorDescription||'Not set — tap Edit to add a short bio'],['Address',addr],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Bank',bank]]
       // Home cooks: their price per cooking session (a range).
       .concat(u.vtype==='home_cook'?[['Price per Cooking Session',(u.rateMin||u.rateMax)?('₦'+Number(u.rateMin||0).toLocaleString()+' – ₦'+Number(u.rateMax||u.rateMin||0).toLocaleString()):'₦0 – ₦0 (not set yet — tap Edit)']]:[])
       .map(function(r){
@@ -10717,15 +10717,15 @@ function renderRiderProfile(){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+_verifyBadgeHtml('rider')+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Rider'+(u.vehicleType?' &bull; '+u.vehicleType:'')+'</div>'
     +([u.address,u.lga,u.state].filter(Boolean).length?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[u.address,u.lga,u.state].filter(Boolean).join(', ')+'</p>':'')
-    +_ownBioHtml(u.riderBio)
     +(u.phone?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+u.phone+'</p>':'')
+    +_ownBioHtml(u.riderBio)
     +'</div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
     +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Deliveries</div><div style="font-weight:800;color:#fff;">'+deliveries+'</div></div>'
     +'<div onclick="openRatingsModal(\''+u.id+'\',\'RIDER\',\''+(u.riderProfileId||'')+'\')" style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;cursor:pointer;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Rating</div><div style="font-weight:800;color:#F5A623;text-decoration:underline;text-decoration-style:dotted;">'+rating+'</div></div>'
     +'<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.4);">Accept</div><div style="font-weight:800;color:#2ECC71;">'+acceptRate+'</div></div>'
     +'</div></div>'
-    +[['Full Name',nm],['Bio',u.riderBio||'Not set — tap Edit to add a short bio'],['Phone',phone],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Vehicle',vehicle],['Bank',bank]].map(function(r){
+    +[['Full Name',nm],['Phone',phone],['Bio',u.riderBio||'Not set — tap Edit to add a short bio'],['State',u.state||'Not set'],['Local Government',u.lga||'Not set'],['Vehicle',vehicle],['Bank',bank]].map(function(r){
       return '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:13px;padding:13px 14px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;">'
         +'<div><div style="font-size:10px;color:#9A9390;">'+r[0]+'</div><div style="font-weight:700;font-size:13px;color:#F2EDE8;margin-top:2px;">'+r[1]+'</div></div>'
         +'<button onclick="openEditProfileModal(\'rider\')" style="background:#242424;border:1px solid #2A2850;border-radius:8px;padding:5px 11px;color:#9A9390;font-family:\'DM Sans\',sans-serif;font-size:11px;cursor:pointer;">Edit</button>'
@@ -12400,7 +12400,7 @@ function buildShopperProfile(){
   if(!body)return;
   var nm=S.user?S.user.name:'Aisha Abdullahi';
   var em=S.user?(S.user.email||'aisha@email.com'):'aisha@email.com';
-  var prows=[['Full Name',nm],['Bio',(S.user&&S.user.shopperBio)||'Not set — tap Edit Info to add a short bio'],['Email',em],['Phone',(S.user&&S.user.phone)||'Not set'],['State',(S.user&&S.user.state)||'Not set'],['Local Government',(S.user&&S.user.lga)||'Not set'],['Home Market',(S.user&&S.user.market)||'Not set']];
+  var prows=[['Full Name',nm],['Email',em],['Phone',(S.user&&S.user.phone)||'Not set'],['Bio',(S.user&&S.user.shopperBio)||'Not set — tap Edit Info to add a short bio'],['State',(S.user&&S.user.state)||'Not set'],['Local Government',(S.user&&S.user.lga)||'Not set'],['Home Market',(S.user&&S.user.market)||'Not set']];
   var html=''
     +'<div style="background:linear-gradient(135deg,#18140C,#2A2418);border-radius:20px;padding:20px;margin-bottom:16px;">'
     +'<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">'
@@ -12409,8 +12409,8 @@ function buildShopperProfile(){
     +'<div><div style="font-weight:800;font-size:17px;color:#F2EDE8;">'+nm+_verifyBadgeHtml('shopper')+'</div>'
     +'<div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;">Live Shopper'+((S.user&&S.user.market)?' @ '+S.user.market:'')+'</div>'
     +((S.user&&[S.user.address,S.user.lga,S.user.state].filter(Boolean).length)?'<p style="color:#9A9390;font-size:11px;margin:4px 0 0;">&#x1F4CD; '+[S.user.address,S.user.lga,S.user.state].filter(Boolean).join(', ')+'</p>':'')
-    +_ownBioHtml(S.user&&S.user.shopperBio)
     +((S.user&&S.user.phone)?'<p style="color:#9A9390;font-size:11px;margin:2px 0 0;">&#x1F4DE; '+S.user.phone+'</p>':'')
+    +_ownBioHtml(S.user&&S.user.shopperBio)
     +'<div style="display:flex;gap:6px;margin-top:6px;">'
     +'<span style="background:rgba(245,166,35,.25);color:#FFD700;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;">&#x1F3C5; Top Shopper</span>'
     +'</div></div></div>'
