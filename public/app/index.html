@@ -841,6 +841,13 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="time"]::-webki
         <span style="font-size:22px;">📱</span><div><div style="font-weight:700;font-size:14px;">USSD</div><div style="font-size:11px;color:#9A9390;">*737#, *901# and more</div></div>
       </button>
     </div>
+    <div id="escrow-gateway-pick" style="display:none;margin:-4px 0 14px;">
+      <div style="font-size:11px;color:#9A9390;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Pay with</div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" data-gw="paystack" onclick="_setPayGateway('paystack')" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;">Paystack</button>
+        <button type="button" data-gw="flutterwave" onclick="_setPayGateway('flutterwave')" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;">Flutterwave</button>
+      </div>
+    </div>
     <button id="escrow-confirm-btn" onclick="confirmEscrowPayment()" style="width:100%;padding:14px;border-radius:13px;border:none;background:#E8392E;color:#fff;font-family:'DM Sans',sans-serif;font-weight:800;font-size:15px;cursor:pointer;opacity:.4;pointer-events:none;transition:all .2s;">🔒 Pay With Escrow & Place Order</button>
     <button onclick="cancelEscrowModal()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-top:8px;">Cancel</button>
   </div>
@@ -1142,6 +1149,12 @@ document.addEventListener('visibilitychange', function(){
 
 async function api(path, opts){
   opts = opts || {};
+  // Card / USSD payments go through the gateway the customer picked
+  // (Paystack or Flutterwave -- see the escrow sheet); the server falls back
+  // to whichever is set up when none was picked.
+  if (opts.body && typeof opts.body === 'string' && opts.body.indexOf('"paymentMethod"') >= 0 && _payGateway()) {
+    try { var _pb = JSON.parse(opts.body); if ((_pb.paymentMethod === 'CARD' || _pb.paymentMethod === 'USSD') && !_pb.gateway) { _pb.gateway = _payGateway(); opts = Object.assign({}, opts, { body: JSON.stringify(_pb) }); } } catch (e) {}
+  }
   var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (_accessToken) headers['Authorization'] = 'Bearer ' + _accessToken;
   var res = await fetch(API_BASE + path, Object.assign({}, opts, { headers: headers, credentials: 'include' }));
@@ -9354,6 +9367,7 @@ function _applyAvailablePayMethods(){
 }
 function openEscrowModal(total,cb,breakdown,onCancel){
   _escrowTotal=total;_escrowCallback=cb;_escrowMethod=null;_escrowOnCancel=onCancel||null;
+  _applyAvailablePayMethods();_renderGatewayPick();
   document.querySelectorAll('#escrow-pay-methods button').forEach(function(b){b.style.borderColor='#2A2850';b.style.background='#242424';});
   var btn=document.getElementById('escrow-confirm-btn');if(btn){btn.style.opacity='.4';btn.style.pointerEvents='none';}
   var amt=document.getElementById('escrow-amount');if(amt)amt.textContent='\u20a6'+Number(total).toLocaleString();
@@ -9393,11 +9407,33 @@ function cancelEscrowModal(){
   document.getElementById('escrow-modal').style.display='none';
   if(_escrowOnCancel){var fn=_escrowOnCancel;_escrowOnCancel=null;fn();}
 }
+// Which gateway handles Card / USSD: the customer's last choice when that
+// gateway is live, otherwise whichever one is (Paystack first).
+function _payGateway(){
+  var g=(_payMethodsAvail&&_payMethodsAvail.gateways)||null;
+  var saved=null;try{saved=localStorage.getItem('handa_pay_gateway');}catch(e){}
+  if(!g)return saved||null;
+  if(saved&&g[saved])return saved;
+  return g.paystack?'paystack':(g.flutterwave?'flutterwave':null);
+}
+function _setPayGateway(gw){
+  try{localStorage.setItem('handa_pay_gateway',gw);}catch(e){}
+  _renderGatewayPick();
+}
+function _renderGatewayPick(){
+  var box=document.getElementById('escrow-gateway-pick');if(!box)return;
+  var g=(_payMethodsAvail&&_payMethodsAvail.gateways)||{};
+  var show=(_escrowMethod==='card'||_escrowMethod==='ussd')&&g.paystack&&g.flutterwave;
+  box.style.display=show?'block':'none';
+  var cur=_payGateway();
+  box.querySelectorAll('button[data-gw]').forEach(function(b){var on=b.getAttribute('data-gw')===cur;b.style.borderColor=on?'#E8392E':'#2A2850';b.style.background=on?'rgba(232,57,46,.1)':'#242424';});
+}
 function selectEscrowMethod(btn,method){
   _escrowMethod=method;
   document.querySelectorAll('#escrow-pay-methods button').forEach(function(b){b.style.borderColor='#2A2850';b.style.background='#242424';});
   btn.style.borderColor='#E8392E';btn.style.background='rgba(232,57,46,.1)';
   var cb=document.getElementById('escrow-confirm-btn');if(cb){cb.style.opacity='1';cb.style.pointerEvents='auto';}
+  _renderGatewayPick();
 }
 function confirmEscrowPayment(){
   document.getElementById('escrow-modal').style.display='none';
@@ -11033,7 +11069,7 @@ var _LEGAL_TERMS = [
 var _LEGAL_PRIVACY = [
   ['1. What We Collect', 'Account details you provide (name, email, phone, address, state/LGA, bank account for payouts), profile photos, KYC documents (government ID, proof of address, vehicle documents for riders) submitted for verification, booking and order history, in-app chat messages, location data during an active Shop-For-Me session or delivery, and payment references from our payment processor (we do not store your card number).'],
   ['2. How We Use It', 'To create and secure your account, process bookings/orders and escrow payments, match you with a shopper or rider, verify vendor/rider/shopper identity documents, send order and booking notifications, respond to support requests and disputes, and improve the platform. AI features (like the meal planner or support chat) may process your inputs to generate a response, but this data is not used to build advertising profiles.'],
-  ['3. Who We Share It With', 'The other party on a booking or session sees what\'s needed to fulfil it (e.g. a rider sees a delivery address, a vendor sees your booking details) -- never your full payment details. We use trusted third-party services to operate the platform: Paystack for processing card, bank transfer, and USSD payments; Africa\'s Talking for SMS and voice call delivery; and an AI provider (currently Google Gemini) for AI-assisted features such as meal planning and support chat replies. These providers only receive what\'s necessary to perform their specific function.'],
+  ['3. Who We Share It With', 'The other party on a booking or session sees what\'s needed to fulfil it (e.g. a rider sees a delivery address, a vendor sees your booking details) -- never your full payment details. We use trusted third-party services to operate the platform: Paystack and Flutterwave for processing card, bank transfer, and USSD payments; Africa\'s Talking for SMS and voice call delivery; and an AI provider (currently Google Gemini) for AI-assisted features such as meal planning and support chat replies. These providers only receive what\'s necessary to perform their specific function.'],
   ['4. Data Retention', 'We keep your account and transaction history for as long as your account is active and for a reasonable period afterward to meet legal, tax, and dispute-resolution obligations. KYC documents are retained only as long as needed for verification and compliance purposes.'],
   ['5. Your Rights', 'You can review and update most of your profile information directly in the app (Settings -> Edit Profile). You can request a copy of your data or request account deletion by contacting support -- we\'ll action this within a reasonable time, subject to any records we\'re legally required to keep (e.g. completed transaction history).'],
   ['6. Security', 'We use industry-standard measures (encrypted connections, hashed passwords, access-controlled admin tools) to protect your data. No system is 100% secure, so please also protect your own password and never share your login with anyone.'],

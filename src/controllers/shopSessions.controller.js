@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const paystack = require("../services/paystack.service");
+const gateway = require("../services/paymentGateway.service"); // Paystack or Flutterwave
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
 const orderFlow = require("../services/orderFlow.service");
@@ -518,7 +518,8 @@ async function topUpItems(req, res, next) {
 
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("ITOP");
-    const payment = await paystack.initializeTransaction({
+    const payment = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo,
       reference,
@@ -564,7 +565,8 @@ async function paySession(req, res, next) {
 
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("SHP");
-    const payment = await paystack.initializeTransaction({
+    const payment = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo,
       reference,
@@ -819,7 +821,8 @@ async function payCallTopUp(req, res, next) {
 
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("TOPUP");
-    const payment = await paystack.initializeTransaction({
+    const payment = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo: topUpKobo,
       reference,
@@ -1072,7 +1075,8 @@ async function payRiderFeeTopUp(req, res, next) {
 
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("TOPUP");
-    const payment = await paystack.initializeTransaction({
+    const payment = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo: topUpKobo,
       reference,
@@ -1125,7 +1129,8 @@ async function payShopSessionShortfall(req, res, next) {
 
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("SHORT");
-    const payment = await paystack.initializeTransaction({
+    const payment = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo: totalKobo,
       reference,
@@ -2054,8 +2059,8 @@ async function confirmSellerPayouts(req, res, next) {
           await prisma.sellerPayout.update({ where: { id: payout.id }, data: { status: "FAILED" } });
           continue;
         }
-        const recipient = await paystack.createTransferRecipient({ name: seller.bankAccountName, accountNumber: seller.bankAccountNumber, bankCode: seller.bankCode });
-        const transfer = await paystack.initiateTransfer({ amountKobo: alloc.amountKobo, recipientCode: recipient.recipient_code, reason: "Handa market seller payout", reference });
+        const recipient = await gateway.createTransferRecipient({ name: seller.bankAccountName, accountNumber: seller.bankAccountNumber, bankCode: seller.bankCode });
+        const transfer = await gateway.initiateTransfer({ amountKobo: alloc.amountKobo, recipientCode: recipient.recipient_code, reason: "Handa market seller payout", reference });
         await prisma.sellerPayout.update({ where: { id: payout.id }, data: { status: "PROCESSING", reference: transfer.transfer_code } });
         results.push({ sellerId: seller.id, status: "PROCESSING" });
       } catch (transferErr) {

@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const paystack = require("../services/paystack.service");
+const gateway = require("../services/paymentGateway.service"); // Paystack or Flutterwave
 
 async function listShoppers(req, res, next) {
   try {
@@ -61,7 +61,7 @@ async function createSeller(req, res, next) {
     let resolvedName = accountName ? String(accountName).trim() : "";
     if (bankCode !== "CUSTOM") {
       try {
-        const resolved = await paystack.resolveBankAccount(accountNumber, bankCode);
+        const resolved = await gateway.resolveBankAccount(accountNumber, bankCode);
         resolvedName = resolved.account_name;
       } catch (err) {
         if (!resolvedName) resolvedName = "Not verified — confirm with the seller before paying";

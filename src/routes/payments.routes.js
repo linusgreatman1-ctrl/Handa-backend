@@ -6,7 +6,9 @@ const router = express.Router();
 
 // Paystack POSTs here with no auth header — signature verification inside
 // the controller is what authenticates this route instead.
-router.post("/webhook", ctrl.webhook);
+router.post("/webhook", ctrl.webhook); // Paystack
+// Flutterwave -- authenticated by its verif-hash header inside the controller.
+router.post("/webhook/flutterwave", ctrl.flutterwaveWebhook);
 
 // Test-mode Card/USSD checkout (see paystack.service.js devCheckoutEnabled).
 // Opened in a new tab like Paystack's hosted page, so no auth header --
@@ -43,8 +45,7 @@ router.post("/dev-checkout/:reference/pay", async (req, res, next) => {
       paystackSvc.markDevTransactionPaid(ref);
       // Applied exactly once, right here; later verify polls see "applied"
       // (not "success") so they can never apply it a second time.
-      await ctrl.applyVerifiedPayment({ status: "success", reference: ref, amount: t.amount, metadata: t.metadata }, req.app.get("io"));
-      t.status = "applied";
+      await ctrl.confirmAndApply(ref, req.app.get("io")); // applied exactly once
     }
     res.redirect(303, `/api/payments/dev-checkout/${encodeURIComponent(ref)}`);
   } catch (err) {
@@ -52,13 +53,31 @@ router.post("/dev-checkout/:reference/pay", async (req, res, next) => {
   }
 });
 
+// Flutterwave sends the customer back here after its hosted checkout:
+// confirm the payment, apply it (once), and show a "go back to Handa" page.
+router.get("/return", async (req, res) => {
+  let ok = false;
+  try {
+    const ref = String(req.query.tx_ref || "");
+    if (ref) ok = (await ctrl.confirmAndApply(ref, req.app.get("io"))).paid;
+  } catch (e) {
+    ok = false;
+  }
+  devCheckoutPage(res, ok ? "Payment successful" : "Payment not completed", ok
+    ? '<div style="font-size:48px">✅</div><div class="a">Payment successful</div><div class="m">Your payment is safely in Handa escrow. You can close this tab and return to Handa.</div>'
+    : '<div style="font-size:44px">⚠️</div><div class="a" style="font-size:22px">Payment not completed</div><div class="m">No money was taken, or it is still being confirmed. Close this tab and return to Handa to check or try again.</div>');
+});
+
 router.use(requireAuth);
 // Which payment methods can actually go through right now -- Card/USSD need
 // Paystack configured; the escrow sheet hides whatever can't succeed
 // instead of offering a method that's guaranteed to fail.
+// gateways: which card/USSD gateways the customer can choose between.
+const gatewaySvc = require("../services/paymentGateway.service");
 router.get("/methods", (req, res) => {
-  const paystack = !!process.env.PAYSTACK_SECRET_KEY;
-  res.json({ wallet: true, bankTransfer: true, card: paystack, ussd: paystack });
+  const g = gatewaySvc.available();
+  const card = g.paystack || g.flutterwave || gatewaySvc.devCheckoutEnabled(); // test checkout counts in test mode
+  res.json({ wallet: true, bankTransfer: true, card, ussd: card, gateways: g });
 });
 router.post("/wallet/deposit/initialize", ctrl.initializeWalletDeposit);
 router.get("/verify/:reference", ctrl.verifyPayment);

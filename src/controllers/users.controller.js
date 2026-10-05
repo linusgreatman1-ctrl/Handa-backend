@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const paystack = require("../services/paystack.service");
+const gateway = require("../services/paymentGateway.service"); // Paystack or Flutterwave
 
 function publicUser(user) {
   const { passwordHash, ...rest } = user;
@@ -206,7 +206,7 @@ async function linkBankAccount(req, res, next) {
     // configured, an unrecognized bank, a transient API issue).
     let resolvedName = accountName ? String(accountName).trim() : "";
     try {
-      const resolved = await paystack.resolveBankAccount(accountNumber, bankCode);
+      const resolved = await gateway.resolveBankAccount(accountNumber, bankCode);
       resolvedName = resolved.account_name;
     } catch (err) {
       if (!resolvedName) throw err;
@@ -223,7 +223,7 @@ async function linkBankAccount(req, res, next) {
 
 async function listBanks(req, res, next) {
   try {
-    const banks = await paystack.listBanks();
+    const banks = await gateway.listBanks();
     res.json({ banks });
   } catch (err) {
     next(err);

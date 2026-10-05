@@ -67,7 +67,7 @@ app.use(
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com"],
         "frame-src": ["'self'", "https://*.paystack.co", "https://*.paystack.com", "https://*.flutterwave.com"],
-        "connect-src": ["'self'", "https://*.paystack.co", "https://*.paystack.com", "ws:", "wss:"],
+        "connect-src": ["'self'", "https://*.paystack.co", "https://*.paystack.com", "https://*.flutterwave.com", "ws:", "wss:"],
         "img-src": ["'self'", "data:", "blob:"],
       },
     },

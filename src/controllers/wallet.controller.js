@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const paystack = require("../services/paystack.service");
+const gateway = require("../services/paymentGateway.service"); // Paystack or Flutterwave
 const walletSvc = require("../services/wallet.service");
 const { generateReference } = require("../utils/reference");
 
@@ -163,12 +163,12 @@ async function requestWithdrawal(req, res, next) {
     });
 
     try {
-      const recipient = await paystack.createTransferRecipient({
+      const recipient = await gateway.createTransferRecipient({
         name: req.user.bankAccountName || req.user.name,
         accountNumber: req.user.bankAccountNumber,
         bankCode: req.body.bankCode,
       });
-      const transfer = await paystack.initiateTransfer({
+      const transfer = await gateway.initiateTransfer({
         amountKobo,
         recipientCode: recipient.recipient_code,
         reason: "Handa wallet withdrawal",

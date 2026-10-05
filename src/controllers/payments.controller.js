@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const prisma = require("../config/db");
-const paystack = require("../services/paystack.service");
+const gateway = require("../services/paymentGateway.service"); // Paystack or Flutterwave
 const wallet = require("../services/wallet.service");
 const { generateReference } = require("../utils/reference");
 const orderFlow = require("../services/orderFlow.service");
@@ -22,7 +22,8 @@ async function initializeWalletDeposit(req, res, next) {
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before funding your wallet." });
 
     const reference = generateReference("DEP");
-    const data = await paystack.initializeTransaction({
+    const data = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo,
       reference,
@@ -73,15 +74,34 @@ async function confirmManualPaymentDev(req, res, next) {
 // reference can only fund one wallet credit / unlock one escrow hold
 // because each verify call is gated by the transaction/booking/session's
 // own current state, not by "has this reference been seen").
+// Confirms a payment with the gateway it was paid on (Paystack or
+// Flutterwave) and, if it really succeeded (NGN, full amount), applies it --
+// exactly once, however many times it is verified (app polling, the return
+// page, either webhook).
+async function confirmAndApply(reference, io) {
+  const data = await gateway.verifyTransaction(reference);
+  if (data.status !== "success") return { paid: false, status: data.status };
+  const meta = data.metadata || {};
+  if (!(await gateway.claimApplication(reference))) {
+    return { paid: true, alreadyApplied: true, purpose: meta.purpose, bookingId: meta.bookingId, sessionId: meta.sessionId };
+  }
+  try {
+    const result = await applyVerifiedPayment(data, io);
+    return { paid: true, ...result };
+  } catch (err) {
+    await gateway.releaseApplication(reference); // let a retry apply it
+    throw err;
+  }
+}
+
 async function verifyPayment(req, res, next) {
   try {
     const { reference } = req.params;
-    const data = await paystack.verifyTransaction(reference);
-    if (data.status !== "success") {
-      return res.status(402).json({ error: "Payment was not successful.", status: data.status });
+    const r = await confirmAndApply(reference, req.app.get("io"));
+    if (!r.paid) {
+      return res.status(402).json({ error: "Payment was not successful.", status: r.status });
     }
-    const result = await applyVerifiedPayment(data, req.app.get("io"));
-    res.json({ success: true, ...result });
+    res.json({ success: true, ...r });
   } catch (err) {
     next(err);
   }
@@ -148,11 +168,44 @@ async function webhook(req, res, next) {
     await prisma.paymentWebhookEvent.create({ data: { eventRef, payload: event } });
 
     if (event.event === "charge.success") {
-      await applyVerifiedPayment(event.data, req.app.get("io"));
+      await confirmAndApply(event.data.reference, req.app.get("io"));
     } else if (event.event === "transfer.success" || event.event === "transfer.failed" || event.event === "transfer.reversed") {
       await orderFlow.applyTransferWebhook(event, req.app.get("io"));
     }
 
+    res.json({ received: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Flutterwave webhook. Flutterwave sends the "secret hash" set in its
+// dashboard in the verif-hash header -- it must equal FLW_SECRET_HASH, which
+// stops anyone POSTing a fake "payment succeeded" here. Even then, a charge
+// is re-confirmed with Flutterwave's API before anything is credited.
+async function flutterwaveWebhook(req, res, next) {
+  try {
+    const expected = process.env.FLW_SECRET_HASH || "";
+    const got = String(req.headers["verif-hash"] || "");
+    if (!expected || got.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected))) {
+      return res.status(401).json({ error: "Invalid webhook signature." });
+    }
+    const event = req.body || {};
+    const d = event.data || {};
+    if (!d.id && !d.tx_ref) return res.status(400).json({ error: "Missing event reference." });
+    const eventRef = "flw:" + String(event.event || "event") + ":" + String(d.id || d.tx_ref);
+
+    const already = await prisma.paymentWebhookEvent.findUnique({ where: { eventRef } });
+    if (already) return res.json({ received: true, duplicate: true });
+    await prisma.paymentWebhookEvent.create({ data: { eventRef, provider: "flutterwave", payload: event } });
+
+    if (event.event === "charge.completed" && d.tx_ref) {
+      await confirmAndApply(String(d.tx_ref), req.app.get("io"));
+    } else if (event.event === "transfer.completed" && d.id) {
+      // Same shape the payout code already handles for Paystack transfers.
+      const ok = String(d.status || "").toUpperCase() === "SUCCESSFUL";
+      await orderFlow.applyTransferWebhook({ event: ok ? "transfer.success" : "transfer.failed", data: { transfer_code: "flw_" + String(d.id), reason: d.complete_message } }, req.app.get("io"));
+    }
     res.json({ received: true });
   } catch (err) {
     next(err);
@@ -193,7 +246,8 @@ async function initializeCommissionPayment(req, res, next) {
       return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
-    const data = await paystack.initializeTransaction({
+    const data = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo,
       reference,
@@ -234,7 +288,8 @@ async function initializeFeatureBoostPayment(req, res, next) {
       return res.json({ manual: true, requestId: request.id, reference: request.reference, bankDetails });
     }
 
-    const data = await paystack.initializeTransaction({
+    const data = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo,
       reference,
@@ -246,4 +301,4 @@ async function initializeFeatureBoostPayment(req, res, next) {
   }
 }
 
-module.exports = { initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest, confirmManualPaymentDev };
+module.exports = { confirmAndApply, flutterwaveWebhook, initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest, confirmManualPaymentDev };

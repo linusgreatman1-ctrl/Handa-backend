@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const paystack = require("../services/paystack.service");
+const gateway = require("../services/paymentGateway.service"); // Paystack or Flutterwave
 const walletSvc = require("../services/wallet.service");
 const escrow = require("../services/escrow.service");
 const orderFlow = require("../services/orderFlow.service");
@@ -746,7 +746,8 @@ async function payBooking(req, res, next) {
 
     if (!req.user.email) return res.status(400).json({ error: "Add an email to your profile before paying by card/USSD." });
     const reference = generateReference("BKG");
-    const payment = await paystack.initializeTransaction({
+    const payment = await gateway.initializeTransaction({
+      gateway: req.body && req.body.gateway,
       email: req.user.email,
       amountKobo: booking.totalKobo,
       reference,

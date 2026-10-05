@@ -1718,3 +1718,17 @@ model AiConversationLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+// Every card/USSD checkout started with a payment gateway (Paystack or
+// Flutterwave): which gateway, what it is for, how much is due, and when it
+// was applied (exactly once).
+model PaymentIntent {
+  id         String    @id @default(uuid())
+  reference  String    @unique
+  gateway    String    @default("paystack") // "paystack" | "flutterwave"
+  amountKobo Int
+  metadata   Json
+  email      String?
+  appliedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
