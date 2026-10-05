@@ -6156,7 +6156,7 @@ function promptSessionShortfall(sessionShortfallKobo,riderShortfallKobo,totalSho
           promptSessionShortfall(sessionShortfallKobo,riderShortfallKobo,totalShortfallKobo);
         });
       }else if(res.authorizationUrl){
-        window.open(res.authorizationUrl,'_blank');
+        window._lastPayWin=window.open(res.authorizationUrl,'_blank');
         showToast('Complete payment in the new tab to continue.','success');
         pollPaystackVerify(res.reference, async function(){
           var r=await api('/shop-sessions/'+window._sfmSession.id);
@@ -6639,7 +6639,7 @@ async function payForShopSessionDeposit(budgetKobo){
   }
 
   if(payRes.authorizationUrl){
-    window.open(payRes.authorizationUrl,'_blank');
+    window._lastPayWin=window.open(payRes.authorizationUrl,'_blank');
     showToast('Complete payment in the new tab, then return here.','success');
     // Real Paystack redirect for card/USSD — don't show "searching for a
     // shopper" (and don't let the session become visible to shoppers,
@@ -9556,23 +9556,52 @@ async function confirmManualBankTransfer(requestId){
 // frontend-calls-verify path payments.controller.js's own verifyPayment
 // already expects, and is safe to call repeatedly (idempotent, and a
 // no-op once the webhook -- or an earlier tick -- already applied it).
+// Payments still waiting on a checkout tab, by reference -- so the checkout
+// page (back arrow / Cancel / Return, via postMessage) or simply closing
+// that tab ends the wait instead of leaving this screen stuck on "Sending…".
+var _payPolls={};
 function pollPaystackVerify(reference, checkDone, onDone, opts){
   opts = opts || {};
+  var win = opts.win || window._lastPayWin || null;
+  window._lastPayWin = null;
   var maxTries = opts.maxTries || 150; // ~10 minutes at 4s/tick
-  var tries = 0;
+  var tries = 0, closedTicks = 0, finished = false;
+  var stop = function(){ finished = true; clearInterval(iv); delete _payPolls[reference]; };
+  // Checks once more (a payment may have just landed), then either carries on
+  // as paid or treats it as cancelled.
+  var settle = async function(cancelled){
+    if(finished) return;
+    try{ await api('/payments/verify/'+reference); }catch(e){}
+    try{ if(await checkDone()){ stop(); onDone(); return; } }catch(e){}
+    if(!cancelled) return;
+    stop();
+    if(opts.onCancel) opts.onCancel();
+    else showToast&&showToast('Payment cancelled — no money was taken.','info');
+  };
   var iv = setInterval(async function(){
+    if(finished) return;
     tries++;
-    try{ await api('/payments/verify/'+reference); }catch(e){ /* not confirmed by Paystack yet -- keep polling */ }
+    try{ await api('/payments/verify/'+reference); }catch(e){ /* not confirmed yet -- keep polling */ }
     try{
-      if(await checkDone()){ clearInterval(iv); onDone(); return; }
+      if(await checkDone()){ stop(); onDone(); return; }
     }catch(e){}
+    // Checkout tab closed without paying (checked twice, a payment can lag).
+    try{ if(win && win.closed){ closedTicks++; if(closedTicks>=2){ settle(true); return; } } }catch(e){}
     if(tries>=maxTries){
-      clearInterval(iv);
+      stop();
       showToast&&showToast('Still waiting on your payment — reopen this if it completed.','warning');
     }
   },4000);
+  _payPolls[reference] = { cancel: function(){ settle(true); }, check: function(){ settle(false); } };
   return iv;
 }
+// Messages from the checkout page: "cancelled" (back arrow / Cancel) or "done".
+window.addEventListener('message', function(e){
+  if(e.origin !== location.origin) return;
+  var d = e.data || {};
+  if(d.type !== 'handa-checkout' || !_payPolls[d.ref]) return;
+  if(d.status === 'cancelled') _payPolls[d.ref].cancel(); else _payPolls[d.ref].check();
+});
 
 function openDeliveryConfirm(vendorAmt){
   // Vendor info: get from current context
@@ -11399,7 +11428,7 @@ function promptItemsTopUp(shortfallKobo,itemId){
           promptItemsTopUp(shortfallKobo,itemId);
         });
       }else if(res.authorizationUrl){
-        window.open(res.authorizationUrl,'_blank');
+        window._lastPayWin=window.open(res.authorizationUrl,'_blank');
         showToast('Complete payment in the new tab, then approve the item again.','success');
         var baseDeposit=(window._sfmSession&&window._sfmSession.depositKobo)||0;
         pollPaystackVerify(res.reference, async function(){
@@ -12684,7 +12713,7 @@ async function submitAddFunds(){
     }
     closeProcedureModal();
     if(res.authorizationUrl){
-      window.open(res.authorizationUrl,'_blank');
+      window._lastPayWin=window.open(res.authorizationUrl,'_blank');
       toast('Complete payment in the new tab, then return here.');
       var baseBal=0;
       try{ baseBal=(await api('/wallet')).balanceKobo||0; }catch(e){}
@@ -14276,11 +14305,8 @@ async function renderVendorDashboard(kind){
   // information onto the Orders/Bookings home screen.
   h+=vendorBannerCard(kind,true);
   if(isCake)h+='<div id="cake-active-delivery-banner"></div>';
-  h+='<div style="background:linear-gradient(135deg,'+accent+'26,rgba(59,159,232,.08));border:1.5px solid '+accent+'4d;border-radius:16px;padding:16px;margin-bottom:16px">';
-  h+='<p style="color:'+accent+';font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px">Weekly Commission (10%)</p>';
-  h+='<div id="vendor-commission-row" style="display:flex;justify-content:space-between;align-items:center"><div><p style="font-size:22px;font-weight:900;color:#F2EDE8;margin:0" id="vendor-commission-amt">₦…</p><p style="color:#9A9390;font-size:11px;margin:0">Due every Sunday</p></div>';
-  h+='<button onclick="payCommission()" style="padding:10px 14px;background:'+accent+';color:'+(isCook?'#fff':'#111')+';border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer">Pay Now</button></div>';
-  h+='<p style="color:#E74C3C;font-size:10px;margin:8px 0 0;font-weight:600">⚠️ Failure to pay weekly commission leads to account suspension.</p></div>';
+  // (No weekly commission card: Handa's 10% is deducted automatically from
+  // each payment released to the vendor, so there is nothing to pay.)
   // Commission on a booking (any type) is now deducted for real, on the
   // spot, from whatever amount is actually released to the vendor --
   // every partial release during negotiation, and the final remaining
@@ -14318,18 +14344,6 @@ async function renderVendorDashboard(kind){
   // whether -- and as which kind -- to live-refresh this list when a new
   // booking notification arrives while the vendor is sitting right here.
   window._vendorDashKind=kind;
-
-  try{
-    var period=await api('/vendors/me/commission-period');
-    var amtEl=document.getElementById('vendor-commission-amt');
-    // amountDueKobo is the running gross total ever owed for this period --
-    // paying it (confirmCommissionPayment) sets amountPaidKobo to match but
-    // never touches amountDueKobo itself, so showing that raw field kept
-    // displaying the same due amount even right after a successful payment.
-    // The real outstanding balance is the difference.
-    var outstandingKobo=Math.max(0,(period.period.amountDueKobo||0)-(period.period.amountPaidKobo||0));
-    if(amtEl)amtEl.textContent='₦'+Number(Math.round(outstandingKobo/100)).toLocaleString();
-  }catch(err){/* not HOME_COOK/EVENT_PLANNER, or not yet onboarded — leave the placeholder */}
 
   var _listP=loadVendorBookingsList(isCook);
   if(isCake&&_listP&&_listP.then)_listP.then(_cakeVendorResumeOrBanner);
@@ -16654,7 +16668,8 @@ function openVendorPayMethodModal(kind){
     + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:16px;max-width:360px;width:100%;padding:20px;font-family:\'DM Sans\',sans-serif;">'
     + '<div style="font-weight:800;font-size:16px;color:#F2EDE8;margin-bottom:14px;">Choose payment method</div>'
     + '<button onclick="closeVendorPayMethodModal();'+fn+'(\'WALLET\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💰 Wallet Balance</button>'
-    + '<button onclick="closeVendorPayMethodModal();'+fn+'(\'CARD\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💳 Card / USSD</button>'
+    + '<button onclick="closeVendorPayMethodModal();'+fn+'(\'CARD\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">💳 Debit / Credit Card</button>'
+    + '<button onclick="closeVendorPayMethodModal();'+fn+'(\'USSD\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">📱 USSD</button>'
     + '<button onclick="closeVendorPayMethodModal();'+fn+'(\'BANK_TRANSFER\')" style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:13px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-weight:700;font-size:14px;cursor:pointer;">🏦 Bank Transfer</button>'
     + '<button onclick="closeVendorPayMethodModal()" style="width:100%;padding:10px;border-radius:13px;border:1.5px solid #333;background:transparent;color:#9A9390;font-weight:700;font-size:13px;cursor:pointer;">Cancel</button>'
     + '</div></div>';
@@ -16670,7 +16685,7 @@ async function payCommission(method){
     if(res.paid){showToast&&showToast('Commission paid from wallet','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':(S.vtype==='catering'?'catering':'cook'));}
     else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Commission payment confirmed','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':(S.vtype==='catering'?'catering':'cook'));},function(){openVendorPayMethodModal('commission');});}
     else if(res.authorizationUrl){
-      window.open(res.authorizationUrl,'_blank');
+      window._lastPayWin=window.open(res.authorizationUrl,'_blank');
       showToast&&showToast('Complete payment in the new tab','info');
       pollPaystackVerify(res.reference, async function(){
         var p=await api('/vendors/me/commission-period');
@@ -16689,7 +16704,7 @@ async function payToFeature(method){
     if(res.paid){showToast&&showToast('Feature boost paid from wallet','success');}
     else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Feature boost payment confirmed','success');},function(){openVendorPayMethodModal('feature');});}
     else if(res.authorizationUrl){
-      window.open(res.authorizationUrl,'_blank');
+      window._lastPayWin=window.open(res.authorizationUrl,'_blank');
       showToast&&showToast('Complete payment in the new tab','info');
       pollPaystackVerify(res.reference, async function(){
         var v=await api('/vendors/me');
@@ -16765,6 +16780,7 @@ window.addEventListener('DOMContentLoaded',async function(){
   // Coming back from a card/USSD checkout page (#payment-return=REF): once the
   // session is restored, confirm that payment and show where it landed.
   var _payRet=(location.hash.match(/payment-return=([^&]*)/)||[])[1];
+  window._payRetCancelled=/status=cancelled/.test(location.hash);
   if(_payRet){try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}}
   tryRestoreSession().then(function(restored){
     if(!restored){eGo('login');return;}
@@ -16777,8 +16793,13 @@ function _resumeAfterCheckout(ref){
     showToast&&showToast('Payment successful — it is safely in escrow.','success');
     if(r&&r.sessionId&&typeof promptOrEnterActiveShopSession==='function'&&S.role==='customer'){promptOrEnterActiveShopSession('customer');return;}
     if(typeof eGo==='function')eGo('history');
-  }).catch(function(){
-    showToast&&showToast('That payment was not completed — no money was taken. You can try again from your History.','warning');
+  }).catch(function(err){
+    // Cancelled a booking checkout: nothing was charged, so the unpaid booking
+    // is cancelled -- same as backing out of the escrow sheet.
+    if(window._payRetCancelled&&err&&err.data&&err.data.bookingId&&err.data.purpose==='BOOKING_PAYMENT'){
+      api('/bookings/'+err.data.bookingId+'/cancel',{method:'POST',body:JSON.stringify({reason:'Payment not completed'})}).then(function(){ if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory(); }).catch(function(){});
+    }
+    showToast&&showToast(window._payRetCancelled?'Payment cancelled — no money was taken. You can pay again from your History.':'That payment was not completed — no money was taken. You can try again from your History.','warning');
     if(typeof eGo==='function')eGo('history');
   });
 }
@@ -18242,7 +18263,7 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel)
         return;
       }
       if(res.authorizationUrl){
-        window.open(res.authorizationUrl,'_blank');
+        window._lastPayWin=window.open(res.authorizationUrl,'_blank');
         showToast&&showToast('Complete payment in the new tab, then return here.','success');
         pollPaystackVerify(res.reference, async function(){
           var r=await api('/bookings/'+bookingId);
@@ -18250,7 +18271,14 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel)
         }, function(){
           showToast&&showToast(booking&&booking.type==='CAKE'?'Payment confirmed — your order has been sent to the baker.':'Payment confirmed — sent to the vendor for review.','success');
           if(onSuccess)onSuccess(); else if(S.curScreen==='history')renderEHistory();
-        });
+        }, { onCancel: function(){
+          // Same as backing out of the escrow sheet: nothing was charged, so
+          // the unpaid order is cancelled and the previous screen comes back.
+          api('/bookings/'+bookingId+'/cancel',{method:'POST',body:JSON.stringify({reason:'Payment not completed'})})
+            .then(function(){ showToast&&showToast('Payment cancelled — no money was taken.','info'); if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory(); })
+            .catch(function(){});
+          if(onCancel)onCancel();
+        } });
       }
     }catch(err){
       showToast&&showToast(err.message||'Could not process payment','warning');

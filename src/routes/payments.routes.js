@@ -16,7 +16,8 @@ router.post("/webhook/flutterwave", ctrl.flutterwaveWebhook);
 // (/app/#payment-return=REF), which picks the payment up from there.
 const paystackSvc = require("../services/paystack.service");
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-function devCheckoutPage(res, title, body, ref) {
+function devCheckoutPage(res, title, body, ref, backStatus) {
+  backStatus = backStatus || "done";
   const back = "/app/#payment-return=" + encodeURIComponent(ref || "");
   res.type("html").send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
 <style>body{margin:0;background:#111;color:#F2EDE8;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
@@ -32,11 +33,22 @@ input,select{width:100%;box-sizing:border-box;padding:12px;border-radius:11px;bo
 button{width:100%;margin-top:18px;padding:14px;border:none;border-radius:12px;background:#2ECC71;color:#111;font-weight:800;font-size:15px;cursor:pointer}
 .sec{background:transparent;border:1.5px solid #2A2850;color:#9A9390;margin-top:10px;padding:11px;font-size:13px}</style></head>
 <body><div class="c"><button class="bk" type="button" onclick="handaBack()" aria-label="Back">&#8592;</button>${body}</div>
-<script>function handaBack(){try{if(window.opener&&!window.opener.closed){window.close();setTimeout(function(){location.href=${JSON.stringify(back)};},300);return;}}catch(e){}location.href=${JSON.stringify(back)};}</script>
+<script>var HANDA_REF=${JSON.stringify(ref || "")};
+// status: "cancelled" (back arrow / Cancel before paying) or "done".
+function handaBack(status){status=status||${JSON.stringify(backStatus)};
+try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'handa-checkout',status:status,ref:HANDA_REF},location.origin);window.close();setTimeout(function(){location.href=${JSON.stringify(back)}+'&status='+status;},300);return;}}catch(e){}
+location.href=${JSON.stringify(back)}+'&status='+status;}</script>
 </body></html>`);
 }
-const RETURN_BTN = '<button type="button" onclick="handaBack()">Return to Handa</button>';
-const USSD_BANKS = [["GTBank", "*737*000*"], ["Access Bank", "*901*000*"], ["First Bank", "*894*000*"], ["UBA", "*919*000*"], ["Zenith Bank", "*966*000*"], ["Fidelity Bank", "*770*000*"]];
+const RETURN_BTN = '<button type="button" onclick="handaBack(\'done\')">Return to Handa</button>';
+// Main Nigerian banks and their USSD shortcodes.
+const USSD_BANKS = [
+  ["Access Bank", "*901*000*"], ["Ecobank", "*326*000*"], ["Fidelity Bank", "*770*000*"], ["First Bank", "*894*000*"],
+  ["FCMB", "*329*000*"], ["Globus Bank", "*989*000*"], ["GTBank", "*737*000*"], ["Heritage Bank", "*745*000*"],
+  ["Keystone Bank", "*7111*000*"], ["Polaris Bank", "*833*000*"], ["Stanbic IBTC", "*909*000*"], ["Standard Chartered", "*977*000*"],
+  ["Sterling Bank", "*822*000*"], ["Titan Trust Bank", "*922*000*"], ["UBA", "*919*000*"], ["Union Bank", "*826*000*"],
+  ["Unity Bank", "*7799*000*"], ["Wema Bank (ALAT)", "*945*000*"], ["Zenith Bank", "*966*000*"],
+];
 
 // Test-mode Card/USSD checkout (see paystack.service.js devCheckoutEnabled):
 // only exists while DEV_BYPASS_PAYMENTS is on with no real gateway key. The
@@ -46,7 +58,7 @@ router.get("/dev-checkout/:reference", (req, res) => {
   const ref = req.params.reference;
   const t = paystackSvc.devCheckoutEnabled() && paystackSvc.getDevTransaction(ref);
   if (!t) {
-    return devCheckoutPage(res, "Checkout expired", '<div style="font-size:44px">⏳</div><div class="a" style="font-size:22px">This checkout has expired</div><div class="m">No money was taken. Go back to Handa and tap Pay again to start a new checkout.</div>' + RETURN_BTN, ref);
+    return devCheckoutPage(res, "Checkout expired", '<div style="font-size:44px">⏳</div><div class="a" style="font-size:22px">This checkout has expired</div><div class="m">No money was taken. Go back to Handa and tap Pay again to start a new checkout.</div>' + RETURN_BTN.replace("'done'", "'cancelled'"), ref, "cancelled");
   }
   const naira = "₦" + Math.round(t.amount / 100).toLocaleString();
   if (t.status !== "pending") {
@@ -61,7 +73,7 @@ router.get("/dev-checkout/:reference", (req, res) => {
 <div class="code" id="code">${USSD_BANKS[0][1]}${amt}#</div>
 <div class="hint">Dial this code on the phone number linked to your bank account, then follow the prompts. (Test mode: no need to actually dial.)</div>
 <form method="post" action="${action}"><button type="submit">I've completed the USSD payment</button></form>
-<button class="sec" type="button" onclick="handaBack()">Cancel payment</button>`, ref);
+<button class="sec" type="button" onclick="handaBack('cancelled')">Cancel payment</button>`, ref, "cancelled");
     return;
   }
   devCheckoutPage(res, "Pay with card", `<div class="t">TEST MODE — no real money</div><div style="font-size:40px">💳</div>
@@ -73,11 +85,11 @@ router.get("/dev-checkout/:reference", (req, res) => {
 <div class="hint">Test card filled in for you — nothing typed here is sent or stored.</div>
 <div class="err" id="err"></div>
 <button type="submit">Pay ${naira}</button></form>
-<button class="sec" type="button" onclick="handaBack()">Cancel payment</button>
+<button class="sec" type="button" onclick="handaBack('cancelled')">Cancel payment</button>
 <script>function checkCard(){var n=document.getElementById('cn').value.replace(/\\D/g,''),e=document.getElementById('ex').value,c=document.getElementById('cv').value.replace(/\\D/g,''),er=document.getElementById('err');
 if(n.length<12||n.length>19){er.textContent='Enter a valid card number';return false;}
 if(!/^(0[1-9]|1[0-2])\\/\\d{2}$/.test(e)){er.textContent='Enter the expiry as MM/YY';return false;}
-if(c.length<3){er.textContent='Enter the 3-digit CVV';return false;}return true;}</script>`, ref);
+if(c.length<3){er.textContent='Enter the 3-digit CVV';return false;}return true;}</script>`, ref, "cancelled");
 });
 router.post("/dev-checkout/:reference/pay", async (req, res, next) => {
   try {
@@ -107,7 +119,7 @@ router.get("/return", async (req, res) => {
   }
   devCheckoutPage(res, ok ? "Payment successful" : "Payment not completed", (ok
     ? '<div style="font-size:48px">✅</div><div class="a">Payment successful</div><div class="m">Your payment is safely in Handa escrow.</div>'
-    : '<div style="font-size:44px">⚠️</div><div class="a" style="font-size:22px">Payment not completed</div><div class="m">No money was taken, or it is still being confirmed. Go back to Handa to check or try again.</div>') + RETURN_BTN, ref);
+    : '<div style="font-size:44px">⚠️</div><div class="a" style="font-size:22px">Payment not completed</div><div class="m">No money was taken, or it is still being confirmed. Go back to Handa to check or try again.</div>') + (ok ? RETURN_BTN : RETURN_BTN.replace("'done'", "'cancelled'")), ref, ok ? "done" : "cancelled");
 });
 
 router.use(requireAuth);

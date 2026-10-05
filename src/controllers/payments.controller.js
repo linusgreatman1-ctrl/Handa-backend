@@ -81,7 +81,10 @@ async function confirmManualPaymentDev(req, res, next) {
 // page, either webhook).
 async function confirmAndApply(reference, io) {
   const data = await gateway.verifyTransaction(reference);
-  if (data.status !== "success") return { paid: false, status: data.status };
+  if (data.status !== "success") {
+    const m = data.metadata || {};
+    return { paid: false, status: data.status, purpose: m.purpose, bookingId: m.bookingId, sessionId: m.sessionId };
+  }
   const meta = data.metadata || {};
   if (!(await gateway.claimApplication(reference))) {
     return { paid: true, alreadyApplied: true, purpose: meta.purpose, bookingId: meta.bookingId, sessionId: meta.sessionId };
@@ -100,7 +103,8 @@ async function verifyPayment(req, res, next) {
     const { reference } = req.params;
     const r = await confirmAndApply(reference, req.app.get("io"));
     if (!r.paid) {
-      return res.status(402).json({ error: "Payment was not successful.", status: r.status });
+      // What it was for, so the app can tidy up a checkout the customer cancelled.
+      return res.status(402).json({ error: "Payment was not successful.", status: r.status, purpose: r.purpose, bookingId: r.bookingId, sessionId: r.sessionId });
     }
     res.json({ success: true, ...r });
   } catch (err) {
