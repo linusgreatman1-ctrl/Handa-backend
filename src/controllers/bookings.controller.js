@@ -748,6 +748,7 @@ async function payBooking(req, res, next) {
     const reference = generateReference("BKG");
     const payment = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo: booking.totalKobo,
       reference,

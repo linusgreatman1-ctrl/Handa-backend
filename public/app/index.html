@@ -16762,8 +16762,26 @@ function sendPlanToShopper(){
 // through to the login screen below instead of guessing.
 window.addEventListener('DOMContentLoaded',async function(){
   loadRealCatalog();
-  tryRestoreSession().then(function(restored){ if(!restored) eGo('login'); });
+  // Coming back from a card/USSD checkout page (#payment-return=REF): once the
+  // session is restored, confirm that payment and show where it landed.
+  var _payRet=(location.hash.match(/payment-return=([^&]*)/)||[])[1];
+  if(_payRet){try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}}
+  tryRestoreSession().then(function(restored){
+    if(!restored){eGo('login');return;}
+    if(_payRet)_resumeAfterCheckout(decodeURIComponent(_payRet));
+  });
 });
+function _resumeAfterCheckout(ref){
+  if(!ref)return;
+  api('/payments/verify/'+encodeURIComponent(ref)).then(function(r){
+    showToast&&showToast('Payment successful — it is safely in escrow.','success');
+    if(r&&r.sessionId&&typeof promptOrEnterActiveShopSession==='function'&&S.role==='customer'){promptOrEnterActiveShopSession('customer');return;}
+    if(typeof eGo==='function')eGo('history');
+  }).catch(function(){
+    showToast&&showToast('That payment was not completed — no money was taken. You can try again from your History.','warning');
+    if(typeof eGo==='function')eGo('history');
+  });
+}
 
 
 // ══ COOK BOOKING FLOW ══════════════════════════════════════════════════════

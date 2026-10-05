@@ -520,6 +520,7 @@ async function topUpItems(req, res, next) {
     const reference = generateReference("ITOP");
     const payment = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo,
       reference,
@@ -567,6 +568,7 @@ async function paySession(req, res, next) {
     const reference = generateReference("SHP");
     const payment = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo,
       reference,
@@ -823,6 +825,7 @@ async function payCallTopUp(req, res, next) {
     const reference = generateReference("TOPUP");
     const payment = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo: topUpKobo,
       reference,
@@ -1077,6 +1080,7 @@ async function payRiderFeeTopUp(req, res, next) {
     const reference = generateReference("TOPUP");
     const payment = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo: topUpKobo,
       reference,
@@ -1131,6 +1135,7 @@ async function payShopSessionShortfall(req, res, next) {
     const reference = generateReference("SHORT");
     const payment = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo: totalKobo,
       reference,

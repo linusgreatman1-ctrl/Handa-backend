@@ -24,6 +24,7 @@ async function initializeWalletDeposit(req, res, next) {
     const reference = generateReference("DEP");
     const data = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo,
       reference,
@@ -248,6 +249,7 @@ async function initializeCommissionPayment(req, res, next) {
 
     const data = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo,
       reference,
@@ -290,6 +292,7 @@ async function initializeFeatureBoostPayment(req, res, next) {
 
     const data = await gateway.initializeTransaction({
       gateway: req.body && req.body.gateway,
+      channel: req.body && req.body.paymentMethod === "USSD" ? "ussd" : "card",
       email: req.user.email,
       amountKobo,
       reference,

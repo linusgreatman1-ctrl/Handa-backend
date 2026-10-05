@@ -31,7 +31,7 @@ function pick(requested) {
   return "paystack";
 }
 
-async function initializeTransaction({ email, amountKobo, reference, metadata, gateway }) {
+async function initializeTransaction({ email, amountKobo, reference, metadata, gateway, channel }) {
   const gw = pick(gateway);
   await prisma.paymentIntent.upsert({
     where: { reference },
@@ -39,7 +39,7 @@ async function initializeTransaction({ email, amountKobo, reference, metadata, g
     update: { gateway: gw, amountKobo, metadata: metadata || {}, email: email || null },
   });
   const impl = gw === "flutterwave" ? flutterwave : paystack;
-  const data = await impl.initializeTransaction({ email, amountKobo, reference, metadata });
+  const data = await impl.initializeTransaction({ email, amountKobo, reference, metadata, channel });
   return { ...data, gateway: gw };
 }
 

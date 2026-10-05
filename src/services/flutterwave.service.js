@@ -52,7 +52,7 @@ function appBaseUrl() {
 
 // Hosted checkout -> { authorization_url, reference }. Flutterwave sends the
 // customer back to /api/payments/return when they finish.
-async function initializeTransaction({ email, amountKobo, reference, metadata }) {
+async function initializeTransaction({ email, amountKobo, reference, metadata, channel }) {
   const data = await flwFetch("/payments", {
     method: "POST",
     body: JSON.stringify({
@@ -60,7 +60,7 @@ async function initializeTransaction({ email, amountKobo, reference, metadata })
       amount: Math.round(amountKobo) / 100,
       currency: "NGN",
       redirect_url: `${appBaseUrl()}/api/payments/return`,
-      payment_options: "card,ussd,banktransfer",
+      payment_options: channel || "card,ussd",
       customer: { email: email || "customer@handa.app" },
       meta: { purpose: metadata && metadata.purpose },
       customizations: { title: "Handa", description: "Secure payment into Handa escrow" },

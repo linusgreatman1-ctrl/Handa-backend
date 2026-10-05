@@ -70,14 +70,14 @@ function markDevTransactionPaid(reference) {
 // Initializes a hosted checkout for an order/booking/wallet-deposit —
 // returns { authorization_url, access_code, reference } for the frontend
 // to redirect to / open in Paystack's inline popup.
-async function initializeTransaction({ email, amountKobo, reference, metadata }) {
+async function initializeTransaction({ email, amountKobo, reference, metadata, channel }) {
   if (devCheckoutEnabled()) {
-    devTransactions.set(reference, { email, amount: amountKobo, metadata, status: "pending" });
+    devTransactions.set(reference, { email, amount: amountKobo, metadata, channel: channel || "card", status: "pending" });
     return { authorization_url: `/api/payments/dev-checkout/${encodeURIComponent(reference)}`, access_code: "test", reference };
   }
   return paystackFetch("/transaction/initialize", {
     method: "POST",
-    body: JSON.stringify({ email, amount: amountKobo, reference, metadata }),
+    body: JSON.stringify({ email, amount: amountKobo, reference, metadata, ...(channel ? { channels: [channel] } : {}), ...(process.env.PUBLIC_BASE_URL ? { callback_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/payments/return` } : {}) }),
   });
 }
 
