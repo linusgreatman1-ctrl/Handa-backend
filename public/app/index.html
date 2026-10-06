@@ -9465,6 +9465,7 @@ function openManualBankTransferModal(res,onConfirmed,onCancel){
   var bd=res.bankDetails||{};
   showProcedureModal(
     '<div style="padding:0 0 20px;" id="mbt-modal">'
+    +'<div style="display:flex;margin-bottom:4px;"><button onclick="cancelManualBankTransferModal()" class="ibtn" aria-label="Back" style="background:#242424;">&#x2190;</button></div>'
     +'<div style="text-align:center;margin-bottom:16px;">'
     +'<div style="font-size:36px;margin-bottom:8px;">\ud83c\udfe6</div>'
     +'<div style="font-size:18px;font-weight:900;color:#F2EDE8;">Pay By Bank Transfer</div>'
@@ -9494,8 +9495,10 @@ function cancelManualBankTransferModal(){
   window._mbtStop&&window._mbtStop();
   var onCancel=window._mbtOnCancel;
   window._mbtOnCancel=null;
+  // Close the bank details first -- it sits above the payment-method sheet,
+  // so leaving it open made Back look like it needed a second press.
+  closeProcedureModal();
   if(onCancel){ onCancel(); }
-  else { closeProcedureModal(); }
 }
 async function confirmManualBankTransfer(requestId){
   var btn=document.getElementById('mbt-confirm-btn');if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Waiting for confirmation\u2026';}
@@ -9595,12 +9598,18 @@ function pollPaystackVerify(reference, checkDone, onDone, opts){
   // as paid or treats it as cancelled.
   var settle = async function(cancelled){
     if(finished) return;
+    if(cancelled){
+      // The customer pressed Back / Cancel: go back right away, and only
+      // confirm in the background (so a payment that did slip through is
+      // still recorded) instead of making them wait on it.
+      stop();
+      api('/payments/verify/'+reference).catch(function(){});
+      if(opts.onCancel) opts.onCancel();
+      else showToast&&showToast('Payment cancelled — no money was taken.','info');
+      return;
+    }
     try{ await api('/payments/verify/'+reference); }catch(e){}
     try{ if(await checkDone()){ stop(); onDone(); return; } }catch(e){}
-    if(!cancelled) return;
-    stop();
-    if(opts.onCancel) opts.onCancel();
-    else showToast&&showToast('Payment cancelled — no money was taken.','info');
   };
   var iv = setInterval(async function(){
     if(finished) return;
@@ -18306,7 +18315,11 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel)
         }, function(){
           showToast&&showToast(booking&&booking.type==='CAKE'?'Payment confirmed — your order has been sent to the baker.':'Payment confirmed — sent to the vendor for review.','success');
           if(onSuccess)onSuccess(); else if(S.curScreen==='history')renderEHistory();
-        }, { onCancel: function(){ _backOutOfPayment(bookingId, onCancel); } });
+        }, { onCancel: function(){
+          // Back / Cancel in the checkout returns to the payment-method sheet,
+          // the same as Back on bank transfer.
+          payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel);
+        } });
       }
     }catch(err){
       showToast&&showToast(err.message||'Could not process payment','warning');
