@@ -56,6 +56,7 @@ router.post("/:id/respond-additional-payment", ctrl.respondAdditionalPayment);
 router.post("/:id/complete", ctrl.completeBooking);
 router.post("/:id/confirm-complete", ctrl.confirmBookingCompletion);
 router.post("/:id/cancel", ctrl.cancelBooking);
+router.post("/:id/discard-unpaid", ctrl.discardUnpaidBooking);
 
 // CAKE rider delivery
 router.post("/:id/mark-ready", ctrl.markCakeReady);

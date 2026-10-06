@@ -6156,8 +6156,8 @@ function promptSessionShortfall(sessionShortfallKobo,riderShortfallKobo,totalSho
           promptSessionShortfall(sessionShortfallKobo,riderShortfallKobo,totalShortfallKobo);
         });
       }else if(res.authorizationUrl){
-        window._lastPayWin=window.open(res.authorizationUrl,'_blank');
-        showToast('Complete payment in the new tab to continue.','success');
+        window._lastPayWin=_openCheckout(res.authorizationUrl);
+        showToast('Complete your payment in the secure checkout to continue.','success');
         pollPaystackVerify(res.reference, async function(){
           var r=await api('/shop-sessions/'+window._sfmSession.id);
           var stillOwed=Math.max(0,(r.session.sessionFeeKobo-(r.session.sessionFeeCollectedKobo??r.session.sessionFeeKobo)))+Math.max(0,(r.session.riderFeeKobo-(r.session.riderFeeCollectedKobo??r.session.riderFeeKobo)));
@@ -6639,8 +6639,8 @@ async function payForShopSessionDeposit(budgetKobo){
   }
 
   if(payRes.authorizationUrl){
-    window._lastPayWin=window.open(payRes.authorizationUrl,'_blank');
-    showToast('Complete payment in the new tab, then return here.','success');
+    window._lastPayWin=_openCheckout(payRes.authorizationUrl);
+    showToast('Complete your payment in the secure checkout, then return here.','success');
     // Real Paystack redirect for card/USSD — don't show "searching for a
     // shopper" (and don't let the session become visible to shoppers,
     // which only happens once the deposit actually lands) until the
@@ -9560,13 +9560,37 @@ async function confirmManualBankTransfer(requestId){
 // page (back arrow / Cancel / Return, via postMessage) or simply closing
 // that tab ends the wait instead of leaving this screen stuck on "Sending…".
 var _payPolls={};
+// Card / USSD checkout opens in a panel over the app (not a new tab or a
+// page that replaces the app), so closing or cancelling it always lands back
+// on the exact screen the customer was on. Returns a window-like object
+// ({closed, close()}) for pollPaystackVerify.
+function _openCheckout(url){
+  var old=document.getElementById('handa-checkout-ov');if(old)old.remove();
+  var ov=document.createElement('div');
+  ov.id='handa-checkout-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:10050;background:#111;display:flex;flex-direction:column;';
+  ov.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#1C1C1C;border-bottom:1px solid #2A2850;">'
+    +'<button type="button" id="handa-checkout-close" aria-label="Back" style="width:38px;height:38px;border-radius:11px;border:1.5px solid #2A2850;background:#242424;color:#F2EDE8;font-size:18px;cursor:pointer;">&#8592;</button>'
+    +'<div style="flex:1;font-weight:800;font-size:14px;color:#F2EDE8;">🔒 Secure checkout</div>'
+    +'<a href="'+url+'" target="_blank" rel="noopener" style="font-size:11px;color:#9A9390;">Open in new tab</a>'
+    +'</div>'
+    +'<iframe src="'+url+'" title="Checkout" style="flex:1;width:100%;border:0;background:#111;" allow="payment"></iframe>';
+  document.body.appendChild(ov);
+  var w={_handaOverlay:true,closed:false,ref:null,close:function(){ if(w.closed)return; w.closed=true; var el=document.getElementById('handa-checkout-ov'); if(el)el.remove(); }};
+  ov.querySelector('#handa-checkout-close').onclick=function(){
+    var ref=w.ref; w.close();
+    if(ref&&_payPolls[ref])_payPolls[ref].cancel();
+  };
+  return w;
+}
 function pollPaystackVerify(reference, checkDone, onDone, opts){
   opts = opts || {};
   var win = opts.win || window._lastPayWin || null;
   window._lastPayWin = null;
+  if(win && win._handaOverlay) win.ref = reference;
   var maxTries = opts.maxTries || 150; // ~10 minutes at 4s/tick
   var tries = 0, closedTicks = 0, finished = false;
-  var stop = function(){ finished = true; clearInterval(iv); delete _payPolls[reference]; };
+  var stop = function(){ finished = true; clearInterval(iv); delete _payPolls[reference]; try{ if(win && win._handaOverlay) win.close(); }catch(e){} };
   // Checks once more (a payment may have just landed), then either carries on
   // as paid or treats it as cancelled.
   var settle = async function(cancelled){
@@ -9592,7 +9616,7 @@ function pollPaystackVerify(reference, checkDone, onDone, opts){
       showToast&&showToast('Still waiting on your payment — reopen this if it completed.','warning');
     }
   },4000);
-  _payPolls[reference] = { cancel: function(){ settle(true); }, check: function(){ settle(false); } };
+  _payPolls[reference] = { win: win, cancel: function(){ settle(true); }, check: function(){ settle(false); } };
   return iv;
 }
 // Messages from the checkout page: "cancelled" (back arrow / Cancel) or "done".
@@ -9600,6 +9624,7 @@ window.addEventListener('message', function(e){
   if(e.origin !== location.origin) return;
   var d = e.data || {};
   if(d.type !== 'handa-checkout' || !_payPolls[d.ref]) return;
+  var pw=_payPolls[d.ref].win; try{ if(pw && pw._handaOverlay) pw.close(); }catch(err){}
   if(d.status === 'cancelled') _payPolls[d.ref].cancel(); else _payPolls[d.ref].check();
 });
 
@@ -11428,8 +11453,8 @@ function promptItemsTopUp(shortfallKobo,itemId){
           promptItemsTopUp(shortfallKobo,itemId);
         });
       }else if(res.authorizationUrl){
-        window._lastPayWin=window.open(res.authorizationUrl,'_blank');
-        showToast('Complete payment in the new tab, then approve the item again.','success');
+        window._lastPayWin=_openCheckout(res.authorizationUrl);
+        showToast('Complete your payment in the secure checkout, then approve the item again.','success');
         var baseDeposit=(window._sfmSession&&window._sfmSession.depositKobo)||0;
         pollPaystackVerify(res.reference, async function(){
           var r=await api('/shop-sessions/'+window._sfmSession.id);
@@ -12713,8 +12738,8 @@ async function submitAddFunds(){
     }
     closeProcedureModal();
     if(res.authorizationUrl){
-      window._lastPayWin=window.open(res.authorizationUrl,'_blank');
-      toast('Complete payment in the new tab, then return here.');
+      window._lastPayWin=_openCheckout(res.authorizationUrl);
+      toast('Complete your payment in the secure checkout, then return here.');
       var baseBal=0;
       try{ baseBal=(await api('/wallet')).balanceKobo||0; }catch(e){}
       pollPaystackVerify(res.reference, async function(){
@@ -16685,8 +16710,8 @@ async function payCommission(method){
     if(res.paid){showToast&&showToast('Commission paid from wallet','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':(S.vtype==='catering'?'catering':'cook'));}
     else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Commission payment confirmed','success');renderVendorDashboard(S.vtype==='event_planner'?'ep':(S.vtype==='catering'?'catering':'cook'));},function(){openVendorPayMethodModal('commission');});}
     else if(res.authorizationUrl){
-      window._lastPayWin=window.open(res.authorizationUrl,'_blank');
-      showToast&&showToast('Complete payment in the new tab','info');
+      window._lastPayWin=_openCheckout(res.authorizationUrl);
+      showToast&&showToast('Complete your payment in the secure checkout','info');
       pollPaystackVerify(res.reference, async function(){
         var p=await api('/vendors/me/commission-period');
         return p.period.status==='PAID';
@@ -16704,8 +16729,8 @@ async function payToFeature(method){
     if(res.paid){showToast&&showToast('Feature boost paid from wallet','success');}
     else if(res.manual){openManualBankTransferModal(res,function(){showToast&&showToast('Feature boost payment confirmed','success');},function(){openVendorPayMethodModal('feature');});}
     else if(res.authorizationUrl){
-      window._lastPayWin=window.open(res.authorizationUrl,'_blank');
-      showToast&&showToast('Complete payment in the new tab','info');
+      window._lastPayWin=_openCheckout(res.authorizationUrl);
+      showToast&&showToast('Complete your payment in the secure checkout','info');
       pollPaystackVerify(res.reference, async function(){
         var v=await api('/vendors/me');
         var fu=v.vendor&&v.vendor.featuredUntil;
@@ -16797,7 +16822,7 @@ function _resumeAfterCheckout(ref){
     // Cancelled a booking checkout: nothing was charged, so the unpaid booking
     // is cancelled -- same as backing out of the escrow sheet.
     if(window._payRetCancelled&&err&&err.data&&err.data.bookingId&&err.data.purpose==='BOOKING_PAYMENT'){
-      api('/bookings/'+err.data.bookingId+'/cancel',{method:'POST',body:JSON.stringify({reason:'Payment not completed'})}).then(function(){ if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory(); }).catch(function(){});
+      api('/bookings/'+err.data.bookingId+'/discard-unpaid',{method:'POST'}).catch(function(){});
     }
     showToast&&showToast(window._payRetCancelled?'Payment cancelled — no money was taken. You can pay again from your History.':'That payment was not completed — no money was taken. You can try again from your History.','warning');
     if(typeof eGo==='function')eGo('history');
@@ -18231,6 +18256,16 @@ function _cakeEscrowBreakdown(b){
     ['Note: Both stay locked in escrow and are only released once your cake is delivered and you complete the order.', null],
   ];
 }
+// Backing out of paying: a booking created just now (the caller passed an
+// onCancel to go back to its form) is quietly discarded -- nothing was booked,
+// so no "cancelled" order anywhere -- and the previous screen comes back.
+// Resuming an existing unpaid booking just leaves it unpaid.
+function _backOutOfPayment(bookingId, onCancel){
+  if(onCancel){
+    api('/bookings/'+bookingId+'/discard-unpaid',{method:'POST'}).catch(function(){});
+    onCancel();
+  }
+}
 async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel){
   var breakdown=null;
   try{
@@ -18258,27 +18293,20 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel)
           // to be. payForBooking itself is safe to just re-invoke here:
           // it doesn't create anything new, only re-opens the picker for
           // this already-existing bookingId.
-          payForBooking(bookingId, totalKobo, onSuccess, booking);
+          payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel);
         });
         return;
       }
       if(res.authorizationUrl){
-        window._lastPayWin=window.open(res.authorizationUrl,'_blank');
-        showToast&&showToast('Complete payment in the new tab, then return here.','success');
+        window._lastPayWin=_openCheckout(res.authorizationUrl);
+        showToast&&showToast('Complete your payment in the secure checkout, then return here.','success');
         pollPaystackVerify(res.reference, async function(){
           var r=await api('/bookings/'+bookingId);
           return r.booking.status!=='REQUESTED';
         }, function(){
           showToast&&showToast(booking&&booking.type==='CAKE'?'Payment confirmed — your order has been sent to the baker.':'Payment confirmed — sent to the vendor for review.','success');
           if(onSuccess)onSuccess(); else if(S.curScreen==='history')renderEHistory();
-        }, { onCancel: function(){
-          // Same as backing out of the escrow sheet: nothing was charged, so
-          // the unpaid order is cancelled and the previous screen comes back.
-          api('/bookings/'+bookingId+'/cancel',{method:'POST',body:JSON.stringify({reason:'Payment not completed'})})
-            .then(function(){ showToast&&showToast('Payment cancelled — no money was taken.','info'); if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory(); })
-            .catch(function(){});
-          if(onCancel)onCancel();
-        } });
+        }, { onCancel: function(){ _backOutOfPayment(bookingId, onCancel); } });
       }
     }catch(err){
       showToast&&showToast(err.message||'Could not process payment','warning');
@@ -18286,20 +18314,14 @@ async function payForBooking(bookingId, totalKobo, onSuccess, booking, onCancel)
       // payment sheet to try again or pick another method, instead of
       // leaving an unpaid order with nothing on screen. (Not if it's
       // already been paid/moved on -- nothing left to pay then.)
-      if(!/isn't awaiting payment/i.test(err.message||''))payForBooking(bookingId,totalKobo,onSuccess,booking);
+      if(!/isn't awaiting payment/i.test(err.message||''))payForBooking(bookingId,totalKobo,onSuccess,booking,onCancel);
     }
   }, breakdown, function(){
     // Backing out of the escrow sheet without paying cancels the order
     // outright (nothing was charged, so nothing to refund) -- same as
     // Shop-For-Me cancelling an unpaid session -- so it never lingers as an
     // unpaid "Requested" order; its card reads Cancelled everywhere.
-    api('/bookings/'+bookingId+'/cancel',{method:'POST',body:JSON.stringify({reason:'Payment not completed'})})
-      .then(function(){
-        showToast&&showToast('Order cancelled — no payment was taken.','success');
-        if(S.curScreen==='history'&&typeof renderEHistory==='function')renderEHistory();
-      })
-      .catch(function(){});
-    if(onCancel)onCancel();
+    _backOutOfPayment(bookingId, onCancel);
   });
 }
 function filterEHistory(btn,cat){

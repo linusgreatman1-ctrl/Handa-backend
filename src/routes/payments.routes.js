@@ -36,6 +36,9 @@ button{width:100%;margin-top:18px;padding:14px;border:none;border-radius:12px;ba
 <script>var HANDA_REF=${JSON.stringify(ref || "")};
 // status: "cancelled" (back arrow / Cancel before paying) or "done".
 function handaBack(status){status=status||${JSON.stringify(backStatus)};
+// Inside the app's checkout panel: tell the app, which closes the panel and
+// returns to the screen the customer was on.
+try{if(window.parent&&window.parent!==window){window.parent.postMessage({type:'handa-checkout',status:status,ref:HANDA_REF},location.origin);return;}}catch(e){}
 try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'handa-checkout',status:status,ref:HANDA_REF},location.origin);window.close();setTimeout(function(){location.href=${JSON.stringify(back)}+'&status='+status;},300);return;}}catch(e){}
 location.href=${JSON.stringify(back)}+'&status='+status;}</script>
 </body></html>`);

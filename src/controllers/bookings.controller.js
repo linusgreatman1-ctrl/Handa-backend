@@ -1551,7 +1551,42 @@ async function finalizeDueCakeDeliveries(io) {
   return due.length;
 }
 
+// The customer backed out of paying (escrow sheet, card/USSD checkout, bank
+// transfer) for a booking they had only just created: nothing was booked
+// yet, so the unpaid booking is quietly removed -- no "cancelled" order left
+// in anyone's history. Only ever for the customer's own unpaid (REQUESTED)
+// booking with no money held and no pending bank transfer; a booking that came
+// from an accepted request proposal is kept (it can still be paid later).
+async function discardUnpaidBooking(req, res, next) {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking || booking.customerId !== req.user.id) return res.status(404).json({ error: "Booking not found." });
+    if (booking.status !== "REQUESTED") return res.json({ discarded: false, reason: "not-unpaid" });
+    const [held, fromProposal, pendingTransfer] = await Promise.all([
+      prisma.escrowHold.count({ where: { bookingId: booking.id } }),
+      Promise.all([
+        prisma.eventProposal.count({ where: { bookingId: booking.id } }),
+        prisma.cateringProposal.count({ where: { bookingId: booking.id } }),
+        prisma.cakeProposal.count({ where: { bookingId: booking.id } }),
+      ]).then((a) => a.reduce((x, y) => x + y, 0)),
+      prisma.manualPaymentRequest.count({ where: { targetId: booking.id, status: { not: "PENDING" } } }),
+    ]);
+    if (held || fromProposal || pendingTransfer) return res.json({ discarded: false, reason: "kept" });
+    const intents = await prisma.paymentIntent.findMany({ where: { metadata: { path: ["bookingId"], equals: booking.id } } });
+    if (intents.some((i) => i.appliedAt)) return res.json({ discarded: false, reason: "paid" });
+    await prisma.$transaction([
+      prisma.paymentIntent.deleteMany({ where: { metadata: { path: ["bookingId"], equals: booking.id } } }),
+      prisma.manualPaymentRequest.deleteMany({ where: { targetId: booking.id, status: "PENDING" } }),
+      prisma.booking.delete({ where: { id: booking.id } }),
+    ]);
+    res.json({ discarded: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  discardUnpaidBooking,
   completeCakeOrder,
   estimateCakeRiderFee,
   getCakeDeliveryFee,
