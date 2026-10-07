@@ -427,9 +427,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 #app-sidebar{overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
 #app-sidebar::-webkit-scrollbar{display:block;width:6px}
 #app-sidebar::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:6px}
-#pn-menu-btn{display:none;position:fixed;top:14px;right:64px;z-index:1005;width:42px;height:42px;border-radius:50%;background:#1C1C1C;border:1.5px solid #2A2850;color:#F2EDE8;font-size:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#pn-menu-btn{display:none;position:fixed;top:14px;right:14px;z-index:1005;width:42px;height:42px;border-radius:50%;background:#1C1C1C;border:1.5px solid #2A2850;color:#F2EDE8;font-size:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 #pn-menu-scrim{display:none;position:fixed;inset:0;z-index:1190;background:rgba(0,0,0,.5)}
 @media (max-width:1023px){
+  /* the bell, then the menu button after it, sit at the top of the page and scroll away with it */
+  #notif-bell{position:absolute !important;top:14px !important;right:64px !important}
+  #pn-menu-btn{position:absolute}
   body.pn-sb-open #app-sidebar{display:flex !important;visibility:visible !important;z-index:1200;box-shadow:0 0 40px rgba(0,0,0,.6)}
   body.pn-sb-open #pn-menu-scrim{display:block}
 }
