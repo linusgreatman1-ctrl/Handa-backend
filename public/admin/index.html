@@ -62,6 +62,19 @@
   .code-textarea{width:100%;min-height:60vh;background:#111;color:#F2EDE8;border:1px solid #2a2a2a;border-radius:10px;padding:14px;font-size:12px;line-height:1.5;resize:vertical;outline:none}
   .code-textarea:focus{border-color:#E8392E}
   .warn-box{background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.35);color:#F5A623;border-radius:10px;padding:10px 14px;font-size:12px;margin-bottom:14px}
+
+  /* The menu stays in place and scrolls on its own; the page beside it scrolls separately. On a phone it slides in from the ☰ button. */
+  nav{position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
+  nav::-webkit-scrollbar{width:6px}
+  nav::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:6px}
+  .nav-toggle,.nav-scrim{display:none}
+  @media (max-width:820px){
+    nav{position:fixed;left:0;top:0;bottom:0;z-index:200;transform:translateX(-102%);transition:transform .22s}
+    #app-screen.nav-open nav{transform:none;box-shadow:0 0 40px rgba(0,0,0,.6)}
+    .nav-toggle{display:flex;position:fixed;top:10px;right:12px;z-index:150;width:40px;height:40px;border-radius:10px;border:1px solid #2a2a2a;background:#1C1C1C;color:#F2EDE8;font-size:18px;align-items:center;justify-content:center;cursor:pointer}
+    #app-screen.nav-open .nav-scrim{display:block;position:fixed;inset:0;z-index:190;background:rgba(0,0,0,.5)}
+    main{padding:56px 14px 28px;min-width:0}
+  }
 </style>
 </head>
 <body>
@@ -78,7 +91,9 @@
 </div>
 
 <div id="app-screen" class="hidden">
-  <nav>
+  <button class="nav-toggle" id="nav-toggle" aria-label="Menu" title="Menu">☰</button>
+  <div class="nav-scrim" id="nav-scrim"></div>
+  <nav onclick="if(event.target.closest('button.nav-item'))document.getElementById('app-screen').classList.remove('nav-open')">
     <div class="brand">Handa <span>Admin</span></div>
     <button class="nav-item" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
     <button class="nav-item" data-tab="reports" data-elevated="1" onclick="switchTab('reports')">Reports</button>
@@ -576,6 +591,8 @@ function logout() {
   chatUnreadCount = 0; sysNotifUnread = 0;
 }
 
+document.getElementById('nav-toggle').addEventListener('click', function(){ document.getElementById('app-screen').classList.toggle('nav-open'); });
+document.getElementById('nav-scrim').addEventListener('click', function(){ document.getElementById('app-screen').classList.remove('nav-open'); });
 function switchTab(tab) {
   if (window._codesDirty && !confirm('You have unsaved edits in the Codes tab. Leave without saving?')) return;
   window._codesDirty = false;

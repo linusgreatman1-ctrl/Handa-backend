@@ -421,6 +421,19 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 .stat-label{font-size:11px;color:#9A9390;text-transform:uppercase;letter-spacing:.6px;}
 .b-blue{background:rgba(59,159,232,.12);color:#3B9FE8;border:1px solid rgba(59,159,232,.25);}
 .btn-green{background:#2ECC71;border:none;color:#111;font-weight:800;cursor:pointer;border-radius:12px;padding:11px 16px;font-size:14px;}
+
+/* MENU: on phones and tablets the desktop side menu slides in from the ☰ button, which sits beside the bell. The menu keeps its
+   own scroll and a thin scrollbar. */
+#app-sidebar{overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
+#app-sidebar::-webkit-scrollbar{display:block;width:6px}
+#app-sidebar::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:6px}
+#pn-menu-btn{display:none;position:fixed;top:14px;right:64px;z-index:1005;width:42px;height:42px;border-radius:50%;background:#1C1C1C;border:1.5px solid #2A2850;color:#F2EDE8;font-size:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#pn-menu-scrim{display:none;position:fixed;inset:0;z-index:1190;background:rgba(0,0,0,.5)}
+@media (max-width:1023px){
+  body.pn-sb-open #app-sidebar{display:flex !important;visibility:visible !important;z-index:1200;box-shadow:0 0 40px rgba(0,0,0,.6)}
+  body.pn-sb-open #pn-menu-scrim{display:block}
+}
+@media (min-width:1024px){#pn-menu-btn,#pn-menu-scrim{display:none !important}}
 </style>
 <style>
 .escreen{display:none;min-height:100vh;min-height:100dvh;padding-bottom:calc(84px + env(safe-area-inset-bottom));overflow-y:auto;-webkit-overflow-scrolling:touch}
@@ -18412,6 +18425,28 @@ function previewProfilePhoto(input, role){
   };
   reader.readAsDataURL(file);
 }
+</script>
+
+<button id="pn-menu-btn" aria-label="Menu" title="Menu">☰</button>
+<div id="pn-menu-scrim"></div>
+<script>
+// The ☰ menu button (phones and tablets): shown once someone is signed in (when the bell is), opens the same menu the desktop
+// shows on the left, and closes when an item is picked.
+(function(){
+  var btn = document.getElementById('pn-menu-btn'), scrim = document.getElementById('pn-menu-scrim');
+  function set(open){ document.body.classList.toggle('pn-sb-open', !!open); }
+  btn.addEventListener('click', function(){ set(!document.body.classList.contains('pn-sb-open')); });
+  scrim.addEventListener('click', function(){ set(false); });
+  var side = document.getElementById('app-sidebar');
+  if (side) side.addEventListener('click', function(e){ if (e.target.closest('button')) set(false); });
+  window.addEventListener('resize', function(){ if (window.innerWidth >= 1024) set(false); });
+  setInterval(function(){
+    var bell = document.getElementById('notif-bell');
+    var signedIn = bell && getComputedStyle(bell).display !== 'none';
+    btn.style.display = signedIn && window.innerWidth < 1024 ? 'block' : 'none';
+    if (!signedIn) set(false);
+  }, 700);
+})();
 </script>
 </body>
 </html>
