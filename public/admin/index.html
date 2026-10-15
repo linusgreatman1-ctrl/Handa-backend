@@ -1268,9 +1268,36 @@ async function renderManualPayments(status) {
     document.getElementById('manualpayments-table').outerHTML = data.requests.length
       ? '<table><thead><tr><th>Reference</th><th>User</th><th>Purpose</th><th>Amount</th><th>Status</th><th>Requested</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div class="empty">No ' + status.toLowerCase() + ' manual transfer requests.</div>';
+    // money that arrived in the account and the system could not tie to one request, and how the bank feed is connected
+    const kept = await api('/admin/bank-credits');
+    const origin = location.origin;
+    main.insertAdjacentHTML('beforeend',
+      '<h3 style="margin:28px 0 8px">Money that arrived and was not matched</h3>'
+      + '<p style="color:#9A9390;margin:0 0 12px">When the money arrives the system confirms the matching transfer by itself. Money that could not be tied to one request (none waiting for that amount, or several) is here: pick the request it belongs to.</p>'
+      + (kept.credits.length
+        ? '<table><thead><tr><th>When</th><th>Amount</th><th>Paid by</th><th>Note</th><th>Status</th><th>Match to</th></tr></thead><tbody>' + kept.credits.map(function(c){
+            const opts = kept.waiting.slice().sort(function(a, b){ return (b.amountKobo === c.amountKobo) - (a.amountKobo === c.amountKobo); }).map(function(w){ return '<option value="' + w.id + '">' + escHtml(w.holder || '?') + ' — ' + escHtml(w.label) + ' — ' + money(w.amountKobo) + '</option>'; }).join('');
+            return '<tr><td>' + new Date(c.createdAt).toLocaleString() + '</td><td>' + money(c.amountKobo) + '</td><td>' + escHtml(c.payerName || '') + '</td><td>' + escHtml(c.narration || c.note || '') + '</td><td>' + pill(c.status) + '</td><td>'
+              + (opts ? '<select id="bc-' + c.id + '">' + opts + '</select> <button class="action-btn" onclick="matchBankCredit(\'' + c.id + '\')">Match</button>' : '') + '</td></tr>';
+          }).join('') + '</tbody></table>'
+        : '<div class="empty">No unmatched money.</div>')
+      + '<h3 style="margin:28px 0 8px">Automatic confirmation: connect the bank feed</h3>'
+      + '<div style="background:#1C1C1C;border:1.5px solid #2A2850;border-radius:12px;padding:14px 16px;line-height:1.7;font-size:13px">'
+      + '<p style="margin:0 0 8px">Handa confirms a bank transfer by itself when a bank / payment-provider feed tells it that money arrived. Point the feed\'s webhook to one of these addresses:</p><ul style="margin:0 0 8px 18px">'
+      + '<li><b>Flutterwave</b> (virtual account transfers): <code>' + origin + '/api/payments/webhook/bank-credit?provider=flutterwave</code> — the same secret hash as <code>FLUTTERWAVE_WEBHOOK_HASH</code> on the server.</li>'
+      + '<li><b>Paystack</b> (dedicated account transfers): <code>' + origin + '/api/payments/webhook/bank-credit?provider=paystack</code> — signed with your Paystack secret key.</li>'
+      + '<li><b>Monnify</b>: <code>' + origin + '/api/payments/webhook/bank-credit?provider=monnify</code> — set <code>MONNIFY_SECRET_KEY</code>.</li>'
+      + '<li><b>Any other bank alert service</b>: <code>POST ' + origin + '/api/payments/webhook/bank-credit?provider=generic</code> with header <code>x-bank-secret: &lt;BANK_WEBHOOK_SECRET&gt;</code> and body <code>{"id":"unique id","amount":13500,"narration":"...","name":"payer name"}</code>.</li></ul>'
+      + '<p style="margin:0;color:#9A9390">A credit is matched to the waiting request that has its reference in the narration; otherwise to the only request waiting for that exact amount; if several wait for the same amount, to the one whose account holder\'s name matches the payer\'s. Anything else comes here.</p></div>');
   } catch (e) {
     document.getElementById('manualpayments-table').textContent = e.message;
   }
+}
+async function matchBankCredit(creditId) {
+  const sel = document.getElementById('bc-' + creditId);
+  if (!sel || !confirm('Match this money to that request and confirm it? This releases the real payment effect.')) return;
+  try { await api('/admin/bank-credits/' + creditId + '/match', { method: 'POST', body: JSON.stringify({ requestId: sel.value }) }); renderManualPayments('PENDING'); }
+  catch (e) { alert(e.message); }
 }
 async function confirmManualPayment(id) {
   if (!confirm('Confirm this transfer was received? This immediately releases the real payment effect (escrow/booking/wallet/commission).')) return;

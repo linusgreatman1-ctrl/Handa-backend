@@ -154,6 +154,19 @@ async function applyVerifiedPayment(data, io) {
 // Paystack signs webhook bodies with HMAC-SHA512 of the raw request body
 // using the secret key — verifying this is what stops anyone from POSTing
 // a fake "payment succeeded" event straight at this endpoint.
+// A bank / payment-provider feed tells Handa that money arrived in the company account (see services/bankCredit.service.js):
+// POST /api/payments/webhook/bank-credit?provider=flutterwave|paystack|monnify|generic
+async function bankCreditWebhook(req, res, next) {
+  try {
+    const bank = require("../services/bankCredit.service");
+    const provider = String(req.query.provider || "generic");
+    if (!bank.verifySignature(provider, req)) return res.status(401).json({ error: "Invalid signature." });
+    const credit = bank.normalize(provider, req.body);
+    if (!credit) return res.status(200).json({ received: true, ignored: true });
+    res.status(200).json({ received: true, ...(await bank.processCredit(credit, req.app.get("io"))) });
+  } catch (err) { next(err); }
+}
+
 async function webhook(req, res, next) {
   try {
     const signature = req.headers["x-paystack-signature"];
@@ -308,4 +321,4 @@ async function initializeFeatureBoostPayment(req, res, next) {
   }
 }
 
-module.exports = { confirmAndApply, flutterwaveWebhook, initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest, confirmManualPaymentDev };
+module.exports = { bankCreditWebhook, confirmAndApply, flutterwaveWebhook, initializeWalletDeposit, verifyPayment, webhook, initializeCommissionPayment, initializeFeatureBoostPayment, applyVerifiedPayment, getManualPaymentRequest, confirmManualPaymentDev };

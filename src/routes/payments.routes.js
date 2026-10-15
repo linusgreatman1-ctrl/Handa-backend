@@ -9,6 +9,8 @@ const router = express.Router();
 router.post("/webhook", ctrl.webhook); // Paystack
 // Flutterwave -- authenticated by its verif-hash header inside the controller.
 router.post("/webhook/flutterwave", ctrl.flutterwaveWebhook);
+// Money arriving in the company account: confirms the matching bank-transfer request by itself.
+router.post("/webhook/bank-credit", ctrl.bankCreditWebhook);
 
 // Checkout pages (test checkout + the page real gateways return to). Each
 // has a back arrow and a "Return to Handa" button: if the checkout was

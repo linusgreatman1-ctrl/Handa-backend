@@ -63,6 +63,9 @@ router.get("/active-codes", requireContentOrSuperAdmin, ctrl.lookupActiveCodes);
 router.get("/manual-payments", requireContentOrSuperAdmin, ctrl.listManualPaymentRequestsForAdmin);
 router.post("/manual-payments/:id/confirm", requireContentOrSuperAdmin, ctrl.confirmManualPaymentForAdmin);
 router.post("/manual-payments/:id/reject", requireContentOrSuperAdmin, ctrl.rejectManualPaymentForAdmin);
+// Money that arrived in the account and the system could not tie to one request.
+router.get("/bank-credits", requireContentOrSuperAdmin, ctrl.listBankCredits);
+router.post("/bank-credits/:id/match", requireContentOrSuperAdmin, ctrl.matchBankCredit);
 
 // Vendor "featured listing" boosts — Handa's real subscription-like
 // concept. Viewing is content-admin-or-super; manually extending one

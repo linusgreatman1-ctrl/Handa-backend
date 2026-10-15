@@ -1732,3 +1732,20 @@ model PaymentIntent {
   appliedAt  DateTime?
   createdAt  DateTime  @default(now())
 }
+
+// Money that has arrived in the company account, as reported by a bank / payment-provider feed (see services/bankCredit.service.js).
+// Each one is matched to a waiting manual transfer request and, when it is clear which one, the request is confirmed by the system.
+model BankCredit {
+  id          String   @id @default(uuid())
+  provider    String // the feed that reported it: FLUTTERWAVE | PAYSTACK | MONNIFY | GENERIC
+  providerRef String   @unique // the feed's own id for the credit (so a repeat is ignored)
+  amountKobo  Int
+  narration   String?
+  payerName   String?
+  status      String   @default("UNMATCHED") // MATCHED | UNMATCHED | AMBIGUOUS
+  matchedRef  String? // the request reference it confirmed
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([status, createdAt])
+}
